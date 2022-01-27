@@ -335,11 +335,11 @@ namespace {
       // MM: Check lambda functions/std::function
       const LayerInfo &outer_brl = trk_info.outer_barrel_layer();
 
-      const LayerInfo &tib1 = trk_info.m_layers[4];
-      const LayerInfo &tob1 = trk_info.m_layers[10];
+      const LayerInfo &tib1 = trk_info.layer(4);
+      const LayerInfo &tob1 = trk_info.layer(10);
 
-      const LayerInfo &tecp1 = trk_info.m_layers[27];
-      const LayerInfo &tecn1 = trk_info.m_layers[54];
+      const LayerInfo &tecp1 = trk_info.layer(27);
+      const LayerInfo &tecn1 = trk_info.layer(54);
 
       const LayerInfo &tec_first = z_dir_pos ? tecp1 : tecn1;
 
@@ -405,20 +405,20 @@ namespace {
                                         IterationSeedPartition &part) {
     // Seeds are placed into eta regions and sorted on region + eta.
 
-    const LayerInfo &tib1 = trk_info.m_layers[4];
-    //const LayerInfo &tib6 = trk_info.m_layers[9];
-    const LayerInfo &tob1 = trk_info.m_layers[10];
-    //const LayerInfo &tob8 = trk_info.m_layers[17];
+    const LayerInfo &tib1 = trk_info.layer(4);
+    //const LayerInfo &tib6 = trk_info.layer(9);
+    const LayerInfo &tob1 = trk_info.layer(10);
+    //const LayerInfo &tob8 = trk_info.layer(17);
 
-    const LayerInfo &tidp1 = trk_info.m_layers[21];
-    const LayerInfo &tidn1 = trk_info.m_layers[48];
+    const LayerInfo &tidp1 = trk_info.layer(21);
+    const LayerInfo &tidn1 = trk_info.layer(48);
 
-    const LayerInfo &tecp1 = trk_info.m_layers[27];
-    const LayerInfo &tecn1 = trk_info.m_layers[54];
+    const LayerInfo &tecp1 = trk_info.layer(27);
+    const LayerInfo &tecn1 = trk_info.layer(54);
 
     // Merge first two layers to account for mono/stereo coverage.
     // TrackerInfo could hold joint limits for sub-detectors.
-    const auto &L = trk_info.m_layers;
+    const auto &L = trk_info;
     const float tidp_rin = std::min(L[21].rin(), L[22].rin());
     const float tidp_rout = std::max(L[21].rout(), L[22].rout());
     const float tecp_rin = std::min(L[27].rin(), L[28].rin());
@@ -515,20 +515,20 @@ namespace {
                                              IterationSeedPartition &part) {
     // Seeds are placed into eta regions and sorted on region + eta.
 
-    const LayerInfo &tib1 = trk_info.m_layers[4];
-    //const LayerInfo &tib6 = trk_info.m_layers[9];
-    const LayerInfo &tob1 = trk_info.m_layers[10];
-    //const LayerInfo &tob8 = trk_info.m_layers[17];
+    const LayerInfo &tib1 = trk_info.layer(4);
+    //const LayerInfo &tib6 = trk_info.layer(9);
+    const LayerInfo &tob1 = trk_info.layer(10);
+    //const LayerInfo &tob8 = trk_info.layer(17);
 
-    const LayerInfo &tidp1 = trk_info.m_layers[21];
-    const LayerInfo &tidn1 = trk_info.m_layers[48];
+    const LayerInfo &tidp1 = trk_info.layer(21);
+    const LayerInfo &tidn1 = trk_info.layer(48);
 
-    const LayerInfo &tecp1 = trk_info.m_layers[27];
-    const LayerInfo &tecn1 = trk_info.m_layers[54];
+    const LayerInfo &tecp1 = trk_info.layer(27);
+    const LayerInfo &tecn1 = trk_info.layer(54);
 
     // Merge first two layers to account for mono/stereo coverage.
     // TrackerInfo could hold joint limits for sub-detectors.
-    const auto &L = trk_info.m_layers;
+    const auto &L = trk_info;
     const float tidp_rin = std::min(L[21].rin(), L[22].rin());
     const float tidp_rout = std::max(L[21].rout(), L[22].rout());
     const float tecp_rin = std::min(L[27].rin(), L[28].rin());
@@ -795,8 +795,8 @@ namespace {
 
     if (verbose) {
       printf("==========================================================================================\n");
-      for (auto &i : ti.m_layers)
-        i.print_layer();
+      for (int ii = 0; ii < ti.n_layers(); ++ii)
+        ti.layer(ii).print_layer();
       printf("==========================================================================================\n");
     }
   }
