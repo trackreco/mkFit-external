@@ -353,21 +353,21 @@ namespace {
       float maxR = S.maxReachRadius();
       float z_at_maxr;
 
-      bool can_reach_outer_brl = S.canReachRadius(outer_brl.m_rout);
+      bool can_reach_outer_brl = S.canReachRadius(outer_brl.rout());
       float z_at_outer_brl;
       bool misses_first_tec;
       if (can_reach_outer_brl) {
-        z_at_outer_brl = S.zAtR(outer_brl.m_rout);
+        z_at_outer_brl = S.zAtR(outer_brl.rout());
         if (z_dir_pos)
-          misses_first_tec = z_at_outer_brl < tec_first.m_zmin;
+          misses_first_tec = z_at_outer_brl < tec_first.zmin();
         else
-          misses_first_tec = z_at_outer_brl > tec_first.m_zmax;
+          misses_first_tec = z_at_outer_brl > tec_first.zmax();
       } else {
         z_at_maxr = S.zAtR(maxR);
         if (z_dir_pos)
-          misses_first_tec = z_at_maxr < tec_first.m_zmin;
+          misses_first_tec = z_at_maxr < tec_first.zmin();
         else
-          misses_first_tec = z_at_maxr > tec_first.m_zmax;
+          misses_first_tec = z_at_maxr > tec_first.zmax();
       }
 
       if (/*can_reach_outer_brl &&*/ misses_first_tec)
@@ -378,8 +378,8 @@ namespace {
         // This should be a list of layers
         // CMS, first tib, tob: 4, 10
 
-        if ((S.canReachRadius(tib1.m_rin) && tib1.is_within_z_limits(S.zAtR(tib1.m_rin))) ||
-            (S.canReachRadius(tob1.m_rin) && tob1.is_within_z_limits(S.zAtR(tob1.m_rin)))) {
+        if ((S.canReachRadius(tib1.rin()) && tib1.is_within_z_limits(S.zAtR(tib1.rin()))) ||
+            (S.canReachRadius(tob1.rin()) && tob1.is_within_z_limits(S.zAtR(tob1.rin())))) {
           // transition region ... we are still hitting barrel layers
 
           reg = z_dir_pos ? TrackerInfo::Reg_Transition_Pos : TrackerInfo::Reg_Transition_Neg;
@@ -419,14 +419,14 @@ namespace {
     // Merge first two layers to account for mono/stereo coverage.
     // TrackerInfo could hold joint limits for sub-detectors.
     const auto &L = trk_info.m_layers;
-    const float tidp_rin = std::min(L[21].m_rin, L[22].m_rin);
-    const float tidp_rout = std::max(L[21].m_rout, L[22].m_rout);
-    const float tecp_rin = std::min(L[27].m_rin, L[28].m_rin);
-    const float tecp_rout = std::max(L[27].m_rout, L[28].m_rout);
-    const float tidn_rin = std::min(L[48].m_rin, L[49].m_rin);
-    const float tidn_rout = std::max(L[48].m_rout, L[49].m_rout);
-    const float tecn_rin = std::min(L[54].m_rin, L[55].m_rin);
-    const float tecn_rout = std::max(L[54].m_rout, L[55].m_rout);
+    const float tidp_rin = std::min(L[21].rin(), L[22].rin());
+    const float tidp_rout = std::max(L[21].rout(), L[22].rout());
+    const float tecp_rin = std::min(L[27].rin(), L[28].rin());
+    const float tecp_rout = std::max(L[27].rout(), L[28].rout());
+    const float tidn_rin = std::min(L[48].rin(), L[49].rin());
+    const float tidn_rout = std::max(L[48].rout(), L[49].rout());
+    const float tecn_rin = std::min(L[54].rin(), L[55].rin());
+    const float tecn_rout = std::max(L[54].rout(), L[55].rout());
 
     const float tid_z_extra = 0.0f;  //  5.0f;
     const float tec_z_extra = 0.0f;  // 10.0f;
@@ -467,14 +467,14 @@ namespace {
       const float maxR = S.maxReachRadius();
 
       if (z_dir_pos) {
-        bool in_tib = barrel_pos_check(S, maxR, tib1.m_rin, tib1.m_zmax);
-        bool in_tob = barrel_pos_check(S, maxR, tob1.m_rin, tob1.m_zmax);
+        bool in_tib = barrel_pos_check(S, maxR, tib1.rin(), tib1.zmax());
+        bool in_tob = barrel_pos_check(S, maxR, tob1.rin(), tob1.zmax());
 
         if (!in_tib && !in_tob) {
           reg = TrackerInfo::Reg_Endcap_Pos;
         } else {
-          bool in_tid = endcap_pos_check(S, maxR, tidp_rout, tidp_rin, tidp1.m_zmin - tid_z_extra);
-          bool in_tec = endcap_pos_check(S, maxR, tecp_rout, tecp_rin, tecp1.m_zmin - tec_z_extra);
+          bool in_tid = endcap_pos_check(S, maxR, tidp_rout, tidp_rin, tidp1.zmin() - tid_z_extra);
+          bool in_tec = endcap_pos_check(S, maxR, tecp_rout, tecp_rin, tecp1.zmin() - tec_z_extra);
 
           if (!in_tid && !in_tec) {
             reg = TrackerInfo::Reg_Barrel;
@@ -483,14 +483,14 @@ namespace {
           }
         }
       } else {
-        bool in_tib = barrel_neg_check(S, maxR, tib1.m_rin, tib1.m_zmin);
-        bool in_tob = barrel_neg_check(S, maxR, tob1.m_rin, tob1.m_zmin);
+        bool in_tib = barrel_neg_check(S, maxR, tib1.rin(), tib1.zmin());
+        bool in_tob = barrel_neg_check(S, maxR, tob1.rin(), tob1.zmin());
 
         if (!in_tib && !in_tob) {
           reg = TrackerInfo::Reg_Endcap_Neg;
         } else {
-          bool in_tid = endcap_neg_check(S, maxR, tidn_rout, tidn_rin, tidn1.m_zmax + tid_z_extra);
-          bool in_tec = endcap_neg_check(S, maxR, tecn_rout, tecn_rin, tecn1.m_zmax + tec_z_extra);
+          bool in_tid = endcap_neg_check(S, maxR, tidn_rout, tidn_rin, tidn1.zmax() + tid_z_extra);
+          bool in_tec = endcap_neg_check(S, maxR, tecn_rout, tecn_rin, tecn1.zmax() + tec_z_extra);
 
           if (!in_tid && !in_tec) {
             reg = TrackerInfo::Reg_Barrel;
@@ -529,14 +529,14 @@ namespace {
     // Merge first two layers to account for mono/stereo coverage.
     // TrackerInfo could hold joint limits for sub-detectors.
     const auto &L = trk_info.m_layers;
-    const float tidp_rin = std::min(L[21].m_rin, L[22].m_rin);
-    const float tidp_rout = std::max(L[21].m_rout, L[22].m_rout);
-    const float tecp_rin = std::min(L[27].m_rin, L[28].m_rin);
-    const float tecp_rout = std::max(L[27].m_rout, L[28].m_rout);
-    const float tidn_rin = std::min(L[48].m_rin, L[49].m_rin);
-    const float tidn_rout = std::max(L[48].m_rout, L[49].m_rout);
-    const float tecn_rin = std::min(L[54].m_rin, L[55].m_rin);
-    const float tecn_rout = std::max(L[54].m_rout, L[55].m_rout);
+    const float tidp_rin = std::min(L[21].rin(), L[22].rin());
+    const float tidp_rout = std::max(L[21].rout(), L[22].rout());
+    const float tecp_rin = std::min(L[27].rin(), L[28].rin());
+    const float tecp_rout = std::max(L[27].rout(), L[28].rout());
+    const float tidn_rin = std::min(L[48].rin(), L[49].rin());
+    const float tidn_rout = std::max(L[48].rout(), L[49].rout());
+    const float tecn_rin = std::min(L[54].rin(), L[55].rin());
+    const float tecn_rout = std::max(L[54].rout(), L[55].rout());
 
     const float tid_z_extra = 0.0f;  //  5.0f;
     const float tec_z_extra = 0.0f;  // 10.0f;
@@ -615,15 +615,15 @@ namespace {
       printf("partitionSeeds1debug seed index %d, z_dir_pos=%d (pz=%.3f), maxR=%.3f\n", i, z_dir_pos, S.pz(), maxR);
 
       if (z_dir_pos) {
-        bool in_tib = barrel_pos_check(S, maxR, tib1.m_rin, tib1.m_zmax, "TIBp");
-        bool in_tob = barrel_pos_check(S, maxR, tob1.m_rin, tob1.m_zmax, "TOBp");
+        bool in_tib = barrel_pos_check(S, maxR, tib1.rin(), tib1.zmax(), "TIBp");
+        bool in_tob = barrel_pos_check(S, maxR, tob1.rin(), tob1.zmax(), "TOBp");
 
         if (!in_tib && !in_tob) {
           reg = TrackerInfo::Reg_Endcap_Pos;
           printf("  --> region = %d, endcap pos\n", reg);
         } else {
-          bool in_tid = endcap_pos_check(S, maxR, tidp_rout, tidp_rin, tidp1.m_zmin - tid_z_extra, "TIDp");
-          bool in_tec = endcap_pos_check(S, maxR, tecp_rout, tecp_rin, tecp1.m_zmin - tec_z_extra, "TECp");
+          bool in_tid = endcap_pos_check(S, maxR, tidp_rout, tidp_rin, tidp1.zmin() - tid_z_extra, "TIDp");
+          bool in_tec = endcap_pos_check(S, maxR, tecp_rout, tecp_rin, tecp1.zmin() - tec_z_extra, "TECp");
 
           if (!in_tid && !in_tec) {
             reg = TrackerInfo::Reg_Barrel;
@@ -634,15 +634,15 @@ namespace {
           }
         }
       } else {
-        bool in_tib = barrel_neg_check(S, maxR, tib1.m_rin, tib1.m_zmin, "TIBn");
-        bool in_tob = barrel_neg_check(S, maxR, tob1.m_rin, tob1.m_zmin, "TOBn");
+        bool in_tib = barrel_neg_check(S, maxR, tib1.rin(), tib1.zmin(), "TIBn");
+        bool in_tob = barrel_neg_check(S, maxR, tob1.rin(), tob1.zmin(), "TOBn");
 
         if (!in_tib && !in_tob) {
           reg = TrackerInfo::Reg_Endcap_Neg;
           printf("  --> region = %d, endcap neg\n", reg);
         } else {
-          bool in_tid = endcap_neg_check(S, maxR, tidn_rout, tidn_rin, tidn1.m_zmax + tid_z_extra, "TIDn");
-          bool in_tec = endcap_neg_check(S, maxR, tecn_rout, tecn_rin, tecn1.m_zmax + tec_z_extra, "TECn");
+          bool in_tid = endcap_neg_check(S, maxR, tidn_rout, tidn_rin, tidn1.zmax() + tid_z_extra, "TIDn");
+          bool in_tec = endcap_neg_check(S, maxR, tecn_rout, tecn_rin, tecn1.zmax() + tec_z_extra, "TECn");
 
           if (!in_tid && !in_tec) {
             reg = TrackerInfo::Reg_Barrel;
@@ -672,7 +672,7 @@ namespace {
     Config::seed_fit_pflags = PropagationFlags(PF_none);
     Config::pca_prop_pflags = PropagationFlags(PF_none);
 
-    ti.set_eta_regions(0.9, 1.7, 2.45, false);
+    ti.set_eta_regions(0.9, 1.7, 2.45);
     ti.create_layers(18, 27, 27);
 
     ii.resize(10);
