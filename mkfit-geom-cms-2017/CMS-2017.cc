@@ -662,8 +662,6 @@ namespace {
   void Create_CMS_2017(TrackerInfo &ti, IterationsInfo &ii, bool verbose) {
     Config::nTotalLayers = 18 + 2 * 27;
 
-    Config::useCMSGeom = true;
-
     Config::finding_requires_propagation_to_hit_pos = true;
     Config::finding_inter_layer_pflags = PropagationFlags(PF_use_param_b_field | PF_apply_material);
     Config::finding_intra_layer_pflags = PropagationFlags(PF_none);
