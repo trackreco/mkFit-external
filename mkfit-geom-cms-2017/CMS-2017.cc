@@ -660,13 +660,15 @@ namespace {
   }
 
   void Create_CMS_2017(TrackerInfo &ti, IterationsInfo &ii, bool verbose) {
-    Config::finding_requires_propagation_to_hit_pos = true;
-    Config::finding_inter_layer_pflags = PropagationFlags(PF_use_param_b_field | PF_apply_material);
-    Config::finding_intra_layer_pflags = PropagationFlags(PF_none);
-    Config::backward_fit_pflags = PropagationFlags(PF_use_param_b_field | PF_apply_material);
-    Config::forward_fit_pflags = PropagationFlags(PF_use_param_b_field | PF_apply_material);
-    Config::seed_fit_pflags = PropagationFlags(PF_none);
-    Config::pca_prop_pflags = PropagationFlags(PF_none);
+    PropagationConfig pconf;
+    pconf.finding_requires_propagation_to_hit_pos = true;
+    pconf.finding_inter_layer_pflags = PropagationFlags(PF_use_param_b_field | PF_apply_material);
+    pconf.finding_intra_layer_pflags = PropagationFlags(PF_none);
+    pconf.backward_fit_pflags = PropagationFlags(PF_use_param_b_field | PF_apply_material);
+    pconf.forward_fit_pflags = PropagationFlags(PF_use_param_b_field | PF_apply_material);
+    pconf.seed_fit_pflags = PropagationFlags(PF_none);
+    pconf.pca_prop_pflags = PropagationFlags(PF_none);
+    pconf.set_as_default();
 
     ti.set_eta_regions(0.9, 1.7, 2.45);
     ti.create_layers(18, 27, 27);
