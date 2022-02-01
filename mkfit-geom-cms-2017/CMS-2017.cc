@@ -3,6 +3,7 @@
 //-------------------
 
 #include "RecoTracker/MkFitCore/interface/Config.h"
+#include "RecoTracker/MkFitCore/standalone/ConfigStandalone.h"
 #include "RecoTracker/MkFitCore/interface/TrackerInfo.h"
 #include "RecoTracker/MkFitCore/interface/IterationConfig.h"
 #include "RecoTracker/MkFitCore/interface/HitStructures.h"
@@ -661,6 +662,7 @@ namespace {
 
   void Create_CMS_2017(TrackerInfo &ti, IterationsInfo &ii, bool verbose) {
     PropagationConfig pconf;
+    pconf.backward_fit_to_pca = Config::includePCA;
     pconf.finding_requires_propagation_to_hit_pos = true;
     pconf.finding_inter_layer_pflags = PropagationFlags(PF_use_param_b_field | PF_apply_material);
     pconf.finding_intra_layer_pflags = PropagationFlags(PF_none);
