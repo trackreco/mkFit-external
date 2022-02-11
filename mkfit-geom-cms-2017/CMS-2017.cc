@@ -672,7 +672,6 @@ namespace {
     pconf.pca_prop_pflags = PropagationFlags(PF_none);
     pconf.set_as_default();
 
-    ti.set_eta_regions(0.9, 1.7, 2.45);
     ti.create_layers(18, 27, 27);
 
     ii.resize(10);
