@@ -7,6 +7,7 @@
 #include "RecoTracker/MkFitCore/interface/TrackerInfo.h"
 #include "RecoTracker/MkFitCore/interface/IterationConfig.h"
 #include "RecoTracker/MkFitCore/interface/HitStructures.h"
+#include "RecoTracker/MkFitCore/interface/TrackStructures.h"
 
 #include "CMS-2017-HitSelectionWindows.h"
 
@@ -392,7 +393,8 @@ namespace {
       }
 
       part.m_region[i] = reg;
-      part.m_sort_score[i] = 7.0f * (reg - 2) + eta;
+      if (part.m_phi_eta_foo)
+        part.m_phi_eta_foo(eoh[hot.layer].refHit(hot.index).phi(), eta);
     }
   }
 
@@ -459,7 +461,6 @@ namespace {
 
       HitOnTrack hot = S.getLastHitOnTrack();
       float eta = eoh[hot.layer].refHit(hot.index).eta();
-      // float  eta = S.momEta();
 
       // Region to be defined by propagation / intersection tests
       TrackerInfo::EtaRegion reg;
@@ -502,7 +503,8 @@ namespace {
       }
 
       part.m_region[i] = reg;
-      part.m_sort_score[i] = 7.0f * (reg - 2) + eta;
+      if (part.m_phi_eta_foo)
+        part.m_phi_eta_foo(eoh[hot.layer].refHit(hot.index).phi(), eta);
     }
   }
 
@@ -656,7 +658,8 @@ namespace {
       }
 
       part.m_region[i] = reg;
-      part.m_sort_score[i] = 7.0f * (reg - 2) + eta;
+      if (part.m_phi_eta_foo)
+        part.m_phi_eta_foo(eoh[hot.layer].refHit(hot.index).phi(), eta);
     }
   }
 
