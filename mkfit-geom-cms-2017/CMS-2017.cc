@@ -661,6 +661,14 @@ namespace {
   }
 
   void Create_CMS_2017(TrackerInfo &ti, IterationsInfo &ii, bool verbose) {
+    // TrackerInfo needs to be loaded from a bin-file.
+    if (ti.n_layers() != 72) {
+      fprintf(stderr, "Create_CMS_2017() FATAL TrackerInfo shold have been initialized from a binary file\n"
+                       "with the same name as the geometry library and a '.bin' suffix.\n");
+      throw std::runtime_error("Create_CMS_2017 TrackerIngo not initialized");
+    }
+    // ti.print_tracker(2); // 1 - print layers, 2 - print layers and modules
+
     PropagationConfig pconf;
     pconf.backward_fit_to_pca = Config::includePCA;
     pconf.finding_requires_propagation_to_hit_pos = true;
@@ -671,8 +679,6 @@ namespace {
     pconf.seed_fit_pflags = PropagationFlags(PF_none);
     pconf.pca_prop_pflags = PropagationFlags(PF_none);
     pconf.set_as_default();
-
-    ti.create_layers(18, 27, 27);
 
     ii.resize(10);
     ii[0].set_iteration_index_and_track_algorithm(0, (int)TrackBase::TrackAlgorithm::initialStep);
@@ -801,4 +807,4 @@ namespace {
   }
 }  // namespace
 
-void *TrackerInfoCrator_ptr = (void *)Create_CMS_2017;
+void *TrackerInfoCreator_ptr = (void *)Create_CMS_2017;
