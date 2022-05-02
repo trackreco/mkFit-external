@@ -207,6 +207,7 @@ namespace {
       ip.chi2CutOverlap = 3.5;
       ip.pTCutOverlap = 1;
       ip.minPtCut = 0.0;
+      ip.maxClusterSize = 8;
     } else if (it == 1)  // for triplet steps, nlayers_per_seed=3
     {
       ip.nlayers_per_seed = 3;
@@ -217,6 +218,7 @@ namespace {
       ip.chi2CutOverlap = 3.5;
       ip.pTCutOverlap = 1;
       ip.minPtCut = 0.0;
+      ip.maxClusterSize = 8;
     } else if (it == 2) {
       ip.nlayers_per_seed = 4;
       ip.maxCandsPerSeed = 5;
@@ -226,6 +228,7 @@ namespace {
       ip.chi2CutOverlap = 3.5;
       ip.pTCutOverlap = 1;
       ip.minPtCut = 0.0;
+      ip.maxClusterSize = 8;
     } else if (it == 3)  // for triplet steps, nlayers_per_seed=3
     {
       ip.nlayers_per_seed = 3;
@@ -236,6 +239,7 @@ namespace {
       ip.chi2CutOverlap = 3.5;
       ip.pTCutOverlap = 1;
       ip.minPtCut = 0.0;
+      ip.maxClusterSize = 8;
     } else if (it == 4) {
       ip.nlayers_per_seed = 4;
       ip.maxCandsPerSeed = 5;
@@ -245,6 +249,7 @@ namespace {
       ip.chi2CutOverlap = 3.5;
       ip.pTCutOverlap = 1;
       ip.minPtCut = 0.0;
+      ip.maxClusterSize = 8;
     } else if (it == 5)  // for triplet steps, nlayers_per_seed=3
     {
       ip.nlayers_per_seed = 3;
@@ -255,6 +260,7 @@ namespace {
       ip.chi2CutOverlap = 3.5;
       ip.pTCutOverlap = 1;
       ip.minPtCut = 0.0;
+      ip.maxClusterSize = 8;
     } else if (it == 6)  // for triplet steps, nlayers_per_seed=3; for mixeTripletSetp, also maxCandsPerSeed=2
     {
       ip.nlayers_per_seed = 3;
@@ -265,6 +271,7 @@ namespace {
       ip.chi2CutOverlap = 3.5;
       ip.pTCutOverlap = 1;
       ip.minPtCut = 0.0;
+      ip.maxClusterSize = 8;
     } else if (it == 7)  // for PixelLess step, maxCandsPerSeed=2 and maxHolesPerCand=maxConsecHoles=0
     {
       ip.nlayers_per_seed = 3;
@@ -275,6 +282,7 @@ namespace {
       ip.chi2CutOverlap = 3.5;
       ip.pTCutOverlap = 1;
       ip.minPtCut = 0.0;
+      ip.maxClusterSize = 8;
     } else if (it == 8)  // for TobTec step, maxCandsPerSeed=2 and maxHolesPerCand=maxConsecHoles=0
     {
       ip.nlayers_per_seed = 3;
@@ -285,6 +293,7 @@ namespace {
       ip.chi2CutOverlap = 3.5;
       ip.pTCutOverlap = 1;
       ip.minPtCut = 0.0;
+      ip.maxClusterSize = 8;
     } else if (it == 9)  // addign also pixel pair step - algo -> 6
     {
       ip.nlayers_per_seed = 2;
@@ -295,6 +304,7 @@ namespace {
       ip.chi2CutOverlap = 3.5;
       ip.pTCutOverlap = 1;
       ip.minPtCut = 0.0;
+      ip.maxClusterSize = 8;
     }
   }
 
