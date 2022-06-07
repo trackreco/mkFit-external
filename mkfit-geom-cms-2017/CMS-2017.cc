@@ -334,7 +334,8 @@ namespace {
   [[maybe_unused]] void partitionSeeds0(const TrackerInfo &trk_info,
                                         const TrackVec &in_seeds,
                                         const EventOfHits &eoh,
-                                        IterationSeedPartition &part) {
+                                        IterationSeedPartition &part,
+                                        const float bScale) {
     // Seeds are placed into eta regions and sorted on region + eta.
 
     const int size = in_seeds.size();
@@ -372,20 +373,20 @@ namespace {
       // There are a lot of tracks that go through that crack.
 
       // XXXX trying a fix for low pT tracks that are in barrel after half circle
-      float maxR = S.maxReachRadius();
+      float maxR = S.maxReachRadius(bScale);
       float z_at_maxr;
 
-      bool can_reach_outer_brl = S.canReachRadius(outer_brl.rout());
+      bool can_reach_outer_brl = S.canReachRadius(outer_brl.rout(), bScale);
       float z_at_outer_brl;
       bool misses_first_tec;
       if (can_reach_outer_brl) {
-        z_at_outer_brl = S.zAtR(outer_brl.rout());
+        z_at_outer_brl = S.zAtR(outer_brl.rout(), bScale);
         if (z_dir_pos)
           misses_first_tec = z_at_outer_brl < tec_first.zmin();
         else
           misses_first_tec = z_at_outer_brl > tec_first.zmax();
       } else {
-        z_at_maxr = S.zAtR(maxR);
+        z_at_maxr = S.zAtR(maxR, bScale);
         if (z_dir_pos)
           misses_first_tec = z_at_maxr < tec_first.zmin();
         else
@@ -400,8 +401,8 @@ namespace {
         // This should be a list of layers
         // CMS, first tib, tob: 4, 10
 
-        if ((S.canReachRadius(tib1.rin()) && tib1.is_within_z_limits(S.zAtR(tib1.rin()))) ||
-            (S.canReachRadius(tob1.rin()) && tob1.is_within_z_limits(S.zAtR(tob1.rin())))) {
+        if ((S.canReachRadius(tib1.rin(), bScale) && tib1.is_within_z_limits(S.zAtR(tib1.rin(), bScale))) ||
+            (S.canReachRadius(tob1.rin(), bScale) && tob1.is_within_z_limits(S.zAtR(tob1.rin(), bScale)))) {
           // transition region ... we are still hitting barrel layers
 
           reg = z_dir_pos ? TrackerInfo::Reg_Transition_Pos : TrackerInfo::Reg_Transition_Neg;
@@ -425,7 +426,8 @@ namespace {
   [[maybe_unused]] void partitionSeeds1(const TrackerInfo &trk_info,
                                         const TrackVec &in_seeds,
                                         const EventOfHits &eoh,
-                                        IterationSeedPartition &part) {
+                                        IterationSeedPartition &part,
+                                        const float bScale) {
     // Seeds are placed into eta regions and sorted on region + eta.
 
     const LayerInfo &tib1 = trk_info.layer(4);
@@ -456,23 +458,23 @@ namespace {
 
     const int size = in_seeds.size();
 
-    auto barrel_pos_check = [](const Track &S, float maxR, float rin, float zmax) -> bool {
-      bool inside = maxR > rin && S.zAtR(rin) < zmax;
+    auto barrel_pos_check = [&bScale](const Track &S, float maxR, float rin, float zmax) -> bool {
+      bool inside = maxR > rin && S.zAtR(rin, bScale) < zmax;
       return inside;
     };
 
-    auto barrel_neg_check = [](const Track &S, float maxR, float rin, float zmin) -> bool {
-      bool inside = maxR > rin && S.zAtR(rin) > zmin;
+    auto barrel_neg_check = [&bScale](const Track &S, float maxR, float rin, float zmin) -> bool {
+      bool inside = maxR > rin && S.zAtR(rin, bScale) > zmin;
       return inside;
     };
 
-    auto endcap_pos_check = [](const Track &S, float maxR, float rout, float rin, float zmin) -> bool {
-      bool inside = maxR > rout ? S.zAtR(rout) > zmin : (maxR > rin && S.zAtR(maxR) > zmin);
+    auto endcap_pos_check = [&bScale](const Track &S, float maxR, float rout, float rin, float zmin) -> bool {
+      bool inside = maxR > rout ? S.zAtR(rout, bScale) > zmin : (maxR > rin && S.zAtR(maxR, bScale) > zmin);
       return inside;
     };
 
-    auto endcap_neg_check = [](const Track &S, float maxR, float rout, float rin, float zmax) -> bool {
-      bool inside = maxR > rout ? S.zAtR(rout) < zmax : (maxR > rin && S.zAtR(maxR) < zmax);
+    auto endcap_neg_check = [&bScale](const Track &S, float maxR, float rout, float rin, float zmax) -> bool {
+      bool inside = maxR > rout ? S.zAtR(rout, bScale) < zmax : (maxR > rin && S.zAtR(maxR, bScale) < zmax);
       return inside;
     };
 
@@ -486,7 +488,7 @@ namespace {
       TrackerInfo::EtaRegion reg;
 
       const bool z_dir_pos = S.pz() > 0;
-      const float maxR = S.maxReachRadius();
+      const float maxR = S.maxReachRadius(bScale);
 
       if (z_dir_pos) {
         bool in_tib = barrel_pos_check(S, maxR, tib1.rin(), tib1.zmax());
@@ -535,7 +537,8 @@ namespace {
   [[maybe_unused]] void partitionSeeds1debug(const TrackerInfo &trk_info,
                                              const TrackVec &in_seeds,
                                              const EventOfHits &eoh,
-                                             IterationSeedPartition &part) {
+                                             IterationSeedPartition &part,
+                                             const float bScale) {
     // Seeds are placed into eta regions and sorted on region + eta.
 
     const LayerInfo &tib1 = trk_info.layer(4);
@@ -566,12 +569,12 @@ namespace {
 
     const int size = in_seeds.size();
 
-    auto barrel_pos_check = [](const Track &S, float maxR, float rin, float zmax, const char *det) -> bool {
-      bool inside = maxR > rin && S.zAtR(rin) < zmax;
+    auto barrel_pos_check = [&bScale](const Track &S, float maxR, float rin, float zmax, const char *det) -> bool {
+      bool inside = maxR > rin && S.zAtR(rin, bScale) < zmax;
 
       printf("  in_%s=%d  maxR=%7.3f, rin=%7.3f -- ", det, inside, maxR, rin);
       if (maxR > rin) {
-        printf("maxR > rin:   S.zAtR(rin) < zmax  -- %.3f <? %.3f\n", S.zAtR(rin), zmax);
+        printf("maxR > rin:   S.zAtR(rin) < zmax  -- %.3f <? %.3f\n", S.zAtR(rin, bScale), zmax);
       } else {
         printf("maxR < rin: no pie.\n");
       }
@@ -579,12 +582,12 @@ namespace {
       return inside;
     };
 
-    auto barrel_neg_check = [](const Track &S, float maxR, float rin, float zmin, const char *det) -> bool {
-      bool inside = maxR > rin && S.zAtR(rin) > zmin;
+    auto barrel_neg_check = [&bScale](const Track &S, float maxR, float rin, float zmin, const char *det) -> bool {
+      bool inside = maxR > rin && S.zAtR(rin, bScale) > zmin;
 
       printf("  in_%s=%d  maxR=%7.3f, rin=%7.3f -- ", det, inside, maxR, rin);
       if (maxR > rin) {
-        printf("maxR > rin:   S.zAtR(rin) > zmin  -- %.3f >? %.3f\n", S.zAtR(rin), zmin);
+        printf("maxR > rin:   S.zAtR(rin) > zmin  -- %.3f >? %.3f\n", S.zAtR(rin, bScale), zmin);
       } else {
         printf("maxR < rin: no pie.\n");
       }
@@ -592,14 +595,14 @@ namespace {
       return inside;
     };
 
-    auto endcap_pos_check = [](const Track &S, float maxR, float rout, float rin, float zmin, const char *det) -> bool {
-      bool inside = maxR > rout ? S.zAtR(rout) > zmin : (maxR > rin && S.zAtR(maxR) > zmin);
+    auto endcap_pos_check = [&bScale](const Track &S, float maxR, float rout, float rin, float zmin, const char *det) -> bool {
+      bool inside = maxR > rout ? S.zAtR(rout, bScale) > zmin : (maxR > rin && S.zAtR(maxR, bScale) > zmin);
 
       printf("  in_%s=%d  maxR=%7.3f, rout=%7.3f, rin=%7.3f -- ", det, inside, maxR, rout, rin);
       if (maxR > rout) {
-        printf("maxR > rout:  S.zAtR(rout) > zmin  -- %.3f >? %.3f\n", S.zAtR(rout), zmin);
+        printf("maxR > rout:  S.zAtR(rout) > zmin  -- %.3f >? %.3f\n", S.zAtR(rout, bScale), zmin);
       } else if (maxR > rin) {
-        printf("maxR > rin:   S.zAtR(maxR) > zmin) -- %.3f >? %.3f\n", S.zAtR(maxR), zmin);
+        printf("maxR > rin:   S.zAtR(maxR) > zmin) -- %.3f >? %.3f\n", S.zAtR(maxR, bScale), zmin);
       } else {
         printf("maxR < rin: no pie.\n");
       }
@@ -607,14 +610,14 @@ namespace {
       return inside;
     };
 
-    auto endcap_neg_check = [](const Track &S, float maxR, float rout, float rin, float zmax, const char *det) -> bool {
-      bool inside = maxR > rout ? S.zAtR(rout) < zmax : (maxR > rin && S.zAtR(maxR) < zmax);
+    auto endcap_neg_check = [&bScale](const Track &S, float maxR, float rout, float rin, float zmax, const char *det) -> bool {
+      bool inside = maxR > rout ? S.zAtR(rout, bScale) < zmax : (maxR > rin && S.zAtR(maxR, bScale) < zmax);
 
       printf("  in_%s=%d  maxR=%7.3f, rout=%7.3f, rin=%7.3f -- ", det, inside, maxR, rout, rin);
       if (maxR > rout) {
-        printf("maxR > rout:  S.zAtR(rout) < zmax  -- %.3f <? %.3f\n", S.zAtR(rout), zmax);
+        printf("maxR > rout:  S.zAtR(rout) < zmax  -- %.3f <? %.3f\n", S.zAtR(rout, bScale), zmax);
       } else if (maxR > rin) {
-        printf("maxR > rin:   S.zAtR(maxR) < zmax  -- %.3f <? %.3f\n", S.zAtR(maxR), zmax);
+        printf("maxR > rin:   S.zAtR(maxR) < zmax  -- %.3f <? %.3f\n", S.zAtR(maxR, bScale), zmax);
       } else {
         printf("maxR < rin: no pie.\n");
       }
@@ -633,7 +636,7 @@ namespace {
       TrackerInfo::EtaRegion reg;
 
       const bool z_dir_pos = S.pz() > 0;
-      const float maxR = S.maxReachRadius();
+      const float maxR = S.maxReachRadius(bScale);
 
       printf("partitionSeeds1debug seed index %d, z_dir_pos=%d (pz=%.3f), maxR=%.3f\n", i, z_dir_pos, S.pz(), maxR);
 
