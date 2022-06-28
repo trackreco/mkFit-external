@@ -709,7 +709,7 @@ namespace {
 
     // Fills TrackerInfo/LayerInfo and default windows of ii[0].m_layer_configs
     Create_CMS_2017_AutoGen(ti, ii);
-    ii[0].m_partition_seeds = partitionSeeds1;
+    ii[0].m_seed_partitioner = partitionSeeds1;
 
     SetupCoreSteeringParams_PixelQuad(ii[0]);
 
@@ -725,7 +725,7 @@ namespace {
 
     ii[1].set_num_regions_layers(5, 72);
     ii[1].m_layer_configs = ii[0].m_layer_configs;
-    ii[1].m_partition_seeds = partitionSeeds1;
+    ii[1].m_seed_partitioner = partitionSeeds1;
 
     SetupCoreSteeringParams_Common(ii[1]);
 
