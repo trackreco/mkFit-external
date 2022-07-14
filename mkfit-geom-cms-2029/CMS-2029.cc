@@ -226,30 +226,23 @@ namespace {
                                              IterationSeedPartition &part) {
     // Seeds are placed into eta regions and sorted on region + eta.
 
-    const LayerInfo &tib1 = trk_info.layer(4);
-    //const LayerInfo &tib6 = trk_info.layer(9);
-    const LayerInfo &tob1 = trk_info.layer(10);
-    //const LayerInfo &tob8 = trk_info.layer(17);
-
-    const LayerInfo &tidp1 = trk_info.layer(21);
-    const LayerInfo &tidn1 = trk_info.layer(48);
-
-    const LayerInfo &tecp1 = trk_info.layer(27);
-    const LayerInfo &tecn1 = trk_info.layer(54);
-
-    // Merge first two layers to account for mono/stereo coverage.
+    // Merge mono and stereo limits for relevant layers / parameters.
     // TrackerInfo could hold joint limits for sub-detectors.
     const auto &L = trk_info;
-    const float tidp_rin = std::min(L[21].rin(), L[22].rin());
-    const float tidp_rout = std::max(L[21].rout(), L[22].rout());
-    const float tecp_rin = std::min(L[27].rin(), L[28].rin());
-    const float tecp_rout = std::max(L[27].rout(), L[28].rout());
-    const float tidn_rin = std::min(L[48].rin(), L[49].rin());
-    const float tidn_rout = std::max(L[48].rout(), L[49].rout());
-    const float tecn_rin = std::min(L[54].rin(), L[55].rin());
-    const float tecn_rout = std::max(L[54].rout(), L[55].rout());
+    const float tecp1_rin = std::min(L[28].rin(), L[29].rin());
+    const float tecp1_rout = std::max(L[28].rout(), L[29].rout());
+    const float tecp1_zmin = std::min(L[28].zmin(), L[29].zmin());
 
-    const float tid_z_extra = 0.0f;  //  5.0f;
+    const float tecp2_rin = std::min(L[30].rin(), L[31].rin());
+    const float tecp2_zmax = std::max(L[30].zmax(), L[31].zmax());
+
+    const float tecn1_rin = std::min(L[50].rin(), L[51].rin());
+    const float tecn1_rout = std::max(L[50].rout(), L[51].rout());
+    const float tecn1_zmax = std::max(L[50].zmax(), L[51].zmax());
+
+    const float tecn2_rin = std::min(L[52].rin(), L[53].rin());
+    const float tecn2_zmin = std::min(L[52].zmin(), L[53].zmin());
+
     const float tec_z_extra = 0.0f;  // 10.0f;
 
     const int size = in_seeds.size();
@@ -326,17 +319,15 @@ namespace {
       printf("partitionSeeds1debug seed index %d, z_dir_pos=%d (pz=%.3f), maxR=%.3f\n", i, z_dir_pos, S.pz(), maxR);
 
       if (z_dir_pos) {
-        bool in_tib = barrel_pos_check(S, maxR, tib1.rin(), tib1.zmax(), "TIBp");
-        bool in_tob = barrel_pos_check(S, maxR, tob1.rin(), tob1.zmax(), "TOBp");
+        bool in_tec_as_brl = barrel_pos_check(S, maxR, tecp2_rin, tecp2_zmax, "TECasBarrelp");
 
-        if (!in_tib && !in_tob) {
+        if (!in_tec_as_brl) {
           reg = TrackerInfo::Reg_Endcap_Pos;
           printf("  --> region = %d, endcap pos\n", reg);
         } else {
-          bool in_tid = endcap_pos_check(S, maxR, tidp_rout, tidp_rin, tidp1.zmin() - tid_z_extra, "TIDp");
-          bool in_tec = endcap_pos_check(S, maxR, tecp_rout, tecp_rin, tecp1.zmin() - tec_z_extra, "TECp");
+          bool in_tec = endcap_pos_check(S, maxR, tecp1_rout, tecp1_rin, tecp1_zmin - tec_z_extra, "TECp");
 
-          if (!in_tid && !in_tec) {
+          if (!in_tec) {
             reg = TrackerInfo::Reg_Barrel;
             printf("  --> region = %d, barrel\n", reg);
           } else {
@@ -345,17 +336,15 @@ namespace {
           }
         }
       } else {
-        bool in_tib = barrel_neg_check(S, maxR, tib1.rin(), tib1.zmin(), "TIBn");
-        bool in_tob = barrel_neg_check(S, maxR, tob1.rin(), tob1.zmin(), "TOBn");
+        bool in_tec_as_brl = barrel_neg_check(S, maxR, tecn2_rin, tecn2_zmin, "TECasBarreln");
 
-        if (!in_tib && !in_tob) {
+        if (!in_tec_as_brl) {
           reg = TrackerInfo::Reg_Endcap_Neg;
           printf("  --> region = %d, endcap neg\n", reg);
         } else {
-          bool in_tid = endcap_neg_check(S, maxR, tidn_rout, tidn_rin, tidn1.zmax() + tid_z_extra, "TIDn");
-          bool in_tec = endcap_neg_check(S, maxR, tecn_rout, tecn_rin, tecn1.zmax() + tec_z_extra, "TECn");
+          bool in_tec = endcap_neg_check(S, maxR, tecn1_rout, tecn1_rin, tecn1_zmax + tec_z_extra, "TECn");
 
-          if (!in_tid && !in_tec) {
+          if (!in_tec) {
             reg = TrackerInfo::Reg_Barrel;
             printf("  --> region = %d, barrel\n", reg);
           } else {
