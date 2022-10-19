@@ -150,8 +150,8 @@ namespace {
     SetupCoreSteeringParams(ii[0]);
 
     SetupIterationParams(ii[0].m_params, 0);
-    ii[0].set_dupclean_flag();
     ii[0].set_dupl_params(0.24, 0.002, 0.004, 0.008);
+    ii[0].m_duplicate_cleaner_name = "2017:find_duplicates_sharedhits_pixelseed";
 
     SetupBackwardSearch(ii[0]);
 
