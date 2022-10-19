@@ -365,7 +365,7 @@ namespace {
 
     SetupIterationParams(ii[0].m_params, 0);
     ii[0].set_dupl_params(0.24, 0.002, 0.004, 0.008);
-    ii[0].m_duplicate_cleaner_name = "2017:find_duplicates_sharedhits_pixelseed";
+    ii[0].m_duplicate_cleaner_name = "2017:clean_duplicates_sharedhits_pixelseed";
     fill_hit_selection_windows_params(ii[0]);
     SetupBackwardSearch_PixelCommon(ii[0]);
 
@@ -384,7 +384,7 @@ namespace {
     ii[1].set_iteration_index_and_track_algorithm(1, (int)TrackBase::TrackAlgorithm::highPtTripletStep);
     ii[1].set_seed_cleaning_params(2.0, 0.018, 0.018, 0.018, 0.018, 0.036, 0.10, 0.036, 0.10);
     ii[1].set_dupl_params(0.24, 0.03, 0.05, 0.08);
-    ii[1].m_duplicate_cleaner_name = "2017:find_duplicates_sharedhits_pixelseed";
+    ii[1].m_duplicate_cleaner_name = "2017:clean_duplicates_sharedhits_pixelseed";
     fill_hit_selection_windows_params(ii[1]);
     SetupBackwardSearch_PixelCommon(ii[1]);
 
@@ -393,7 +393,7 @@ namespace {
     ii[2].set_iteration_index_and_track_algorithm(2, (int)TrackBase::TrackAlgorithm::lowPtQuadStep);
     ii[2].set_seed_cleaning_params(0.5, 0.05, 0.05, 0.05, 0.05, 0.10, 0.10, 0.10, 0.10);
     ii[2].set_dupl_params(0.5, 0.01, 0.03, 0.05);
-    ii[2].m_duplicate_cleaner_name = "2017:find_duplicates_sharedhits_pixelseed";
+    ii[2].m_duplicate_cleaner_name = "2017:clean_duplicates_sharedhits_pixelseed";
     fill_hit_selection_windows_params(ii[2]);
     SetupBackwardSearch_PixelCommon(ii[2]);
 
@@ -402,7 +402,7 @@ namespace {
     ii[3].set_iteration_index_and_track_algorithm(3, (int)TrackBase::TrackAlgorithm::lowPtTripletStep);
     ii[3].set_seed_cleaning_params(0.5, 0.05, 0.05, 0.05, 0.05, 0.10, 0.10, 0.10, 0.10);
     ii[3].set_dupl_params(0.33, 0.018, 0.05, 0.018);
-    ii[3].m_duplicate_cleaner_name = "2017:find_duplicates_sharedhits_pixelseed";
+    ii[3].m_duplicate_cleaner_name = "2017:clean_duplicates_sharedhits_pixelseed";
     fill_hit_selection_windows_params(ii[3]);
     SetupBackwardSearch_PixelCommon(ii[3]);
 
@@ -411,7 +411,7 @@ namespace {
     ii[4].set_iteration_index_and_track_algorithm(4, (int)TrackBase::TrackAlgorithm::detachedQuadStep);
     ii[4].set_seed_cleaning_params(2.0, 0.018, 0.018, 0.05, 0.05, 0.10, 0.10, 0.10, 0.10);
     ii[4].set_dupl_params(0.24, 0.018, 0.05, 0.05);
-    ii[4].m_duplicate_cleaner_name = "2017:find_duplicates_sharedhits_pixelseed";
+    ii[4].m_duplicate_cleaner_name = "2017:clean_duplicates_sharedhits_pixelseed";
     fill_hit_selection_windows_params(ii[4]);
     SetupBackwardSearch_PixelCommon(ii[4]);
 
@@ -421,7 +421,7 @@ namespace {
     ii[5].set_seed_cleaning_params(2.0, 0.018, 0.018, 0.05, 0.05, 0.10, 0.10, 0.10, 0.10);
     ii[5].set_dupl_params(0.24, 0.01, 0.01, 0.1);
     ii[5].m_requires_quality_filter = true;
-    ii[5].m_duplicate_cleaner_name = "2017:find_duplicates_sharedhits_pixelseed";
+    ii[5].m_duplicate_cleaner_name = "2017:clean_duplicates_sharedhits_pixelseed";
     fill_hit_selection_windows_params(ii[5]);
     SetupBackwardSearch_PixelCommon(ii[5]);
 
@@ -430,7 +430,7 @@ namespace {
     ii[6].set_iteration_index_and_track_algorithm(6, (int)TrackBase::TrackAlgorithm::mixedTripletStep);
     ii[6].set_seed_cleaning_params(2.0, 0.05, 0.05, 0.135, 0.135, 0.05, 0.05, 0.135, 0.135);
     ii[6].set_dupl_params(0.2, 0.05, 0.05, 0.05);
-    ii[6].m_duplicate_cleaner_name = "2017:find_duplicates_sharedhits_pixelseed";
+    ii[6].m_duplicate_cleaner_name = "2017:clean_duplicates_sharedhits_pixelseed";
     fill_hit_selection_windows_params(ii[6]);
     SetupBackwardSearch_PixelCommon(ii[6]);
 
@@ -442,7 +442,7 @@ namespace {
     ii[7].m_requires_quality_filter = true;
     ii[7].set_qf_params(3, 0.14);
     ii[7].m_seed_cleaner_name = ""; // No seed cleaning.
-    ii[7].m_duplicate_cleaner_name = "2017:find_duplicates_sharedhits";
+    ii[7].m_duplicate_cleaner_name = "2017:clean_duplicates_sharedhits";
     fill_hit_selection_windows_params(ii[7]);
     SetupBackwardSearch_Iter7(ii[7]);
 
@@ -454,7 +454,7 @@ namespace {
     ii[8].m_requires_quality_filter = true;
     ii[8].set_qf_params(4, 0.25);
     ii[8].m_seed_cleaner_name = ""; // No seed cleaning.
-    ii[8].m_duplicate_cleaner_name = "2017:find_duplicates_sharedhits";
+    ii[8].m_duplicate_cleaner_name = "2017:clean_duplicates_sharedhits";
     fill_hit_selection_windows_params(ii[8]);
     SetupBackwardSearch_Iter8(ii[8]);
 
@@ -464,7 +464,7 @@ namespace {
     ii[9].set_seed_cleaning_params(2.0, 0.135, 0.135, 0.135, 0.135, 0.135, 0.135, 0.135, 0.135);
     ii[9].set_dupl_params(0.5, 0.03, 0.05, 0.05);
     ii[9].m_requires_quality_filter = true;
-    ii[9].m_duplicate_cleaner_name = "2017:find_duplicates_sharedhits_pixelseed";
+    ii[9].m_duplicate_cleaner_name = "2017:clean_duplicates_sharedhits_pixelseed";
     fill_hit_selection_windows_params(ii[9]);
     SetupBackwardSearch_PixelCommon(ii[9]);
 
