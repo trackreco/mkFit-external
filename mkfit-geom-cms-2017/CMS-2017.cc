@@ -464,7 +464,7 @@ namespace {
     SetupIterationParams(ii[9].m_params, 9);
     ii[9].set_iteration_index_and_track_algorithm(9, (int)TrackBase::TrackAlgorithm::pixelPairStep);
     ii[9].set_seed_cleaning_params(2.0, 0.135, 0.135, 0.135, 0.135, 0.135, 0.135, 0.135, 0.135);
-    ii[7].m_params.minHitsQF = 3;
+    ii[9].m_params.minHitsQF = 3;
     ii[9].m_pre_bkfit_filter_name = "2017:qfilter_n_hits_pixseed";
     ii[9].m_post_bkfit_filter_name = ""; // no post-filter
     ii[9].m_duplicate_cleaner_name = "2017:clean_duplicates_sharedhits_pixelseed";
