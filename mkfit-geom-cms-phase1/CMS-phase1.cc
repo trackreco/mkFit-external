@@ -1,5 +1,5 @@
 //-------------------
-// CMS 2017 geometry
+// CMS phase1 geometry
 //-------------------
 
 #include "RecoTracker/MkFitCore/interface/Config.h"
@@ -9,14 +9,14 @@
 #include "RecoTracker/MkFitCore/interface/HitStructures.h"
 #include "RecoTracker/MkFitCore/interface/TrackStructures.h"
 
-#include "CMS-2017-HitSelectionWindows.h"
+#include "CMS-phase1-HitSelectionWindows.h"
 
 #include <functional>
 
 using namespace mkfit;
 
 namespace {
-#include "CMS-2017.acc"
+#include "CMS-phase1.acc"
 
   void SetupCoreSteeringParams_PixelQuad(IterationConfig &ic) {
     ic.m_region_order[0] = TrackerInfo::Reg_Transition_Pos;
@@ -327,12 +327,12 @@ namespace {
     }
   }
 
-  void Create_CMS_2017(TrackerInfo &ti, IterationsInfo &ii, bool verbose) {
+  void Create_CMS_phase1(TrackerInfo &ti, IterationsInfo &ii, bool verbose) {
     // TrackerInfo needs to be loaded from a bin-file.
     if (ti.n_layers() != 72) {
-      fprintf(stderr, "Create_CMS_2017() FATAL TrackerInfo shold have been initialized from a binary file\n"
+      fprintf(stderr, "Create_CMS_phase1() FATAL TrackerInfo shold have been initialized from a binary file\n"
                        "with the same name as the geometry library and a '.bin' suffix.\n");
-      throw std::runtime_error("Create_CMS_2017 TrackerIngo not initialized");
+      throw std::runtime_error("Create_CMS_phase1 TrackerIngo not initialized");
     }
     // ti.print_tracker(2); // 1 - print layers, 2 - print layers and modules
 
@@ -354,9 +354,9 @@ namespace {
     ii[0].set_num_regions_layers(5, 72);
 
     // Fills TrackerInfo/LayerInfo and default windows of ii[0].m_layer_configs
-    Create_CMS_2017_AutoGen(ti, ii);
-    ii[0].m_seed_cleaner_name = "2017:default";
-    ii[0].m_seed_partitioner_name = "2017:1";
+    Create_CMS_phase1_AutoGen(ti, ii);
+    ii[0].m_seed_cleaner_name = "phase1:default";
+    ii[0].m_seed_partitioner_name = "phase1:1";
     SetupCoreSteeringParams_PixelQuad(ii[0]);
 
     // At this point copy out layer/steering stuff for reuse in later iterations.
@@ -365,14 +365,14 @@ namespace {
 
     SetupIterationParams(ii[0].m_params, 0);
     ii[0].set_dupl_params(0.24, 0.002, 0.004, 0.008);
-    ii[0].m_duplicate_cleaner_name = "2017:clean_duplicates_sharedhits_pixelseed";
+    ii[0].m_duplicate_cleaner_name = "phase1:clean_duplicates_sharedhits_pixelseed";
     fill_hit_selection_windows_params(ii[0]);
     SetupBackwardSearch_PixelCommon(ii[0]);
 
     ii[1].set_num_regions_layers(5, 72);
     ii[1].m_layer_configs = ii[0].m_layer_configs;
-    ii[1].m_seed_cleaner_name = "2017:default";
-    ii[1].m_seed_partitioner_name = "2017:1";
+    ii[1].m_seed_cleaner_name = "phase1:default";
+    ii[1].m_seed_partitioner_name = "phase1:1";
 
     SetupCoreSteeringParams_Common(ii[1]);
 
@@ -384,7 +384,7 @@ namespace {
     ii[1].set_iteration_index_and_track_algorithm(1, (int)TrackBase::TrackAlgorithm::highPtTripletStep);
     ii[1].set_seed_cleaning_params(2.0, 0.018, 0.018, 0.018, 0.018, 0.036, 0.10, 0.036, 0.10);
     ii[1].set_dupl_params(0.24, 0.03, 0.05, 0.08);
-    ii[1].m_duplicate_cleaner_name = "2017:clean_duplicates_sharedhits_pixelseed";
+    ii[1].m_duplicate_cleaner_name = "phase1:clean_duplicates_sharedhits_pixelseed";
     fill_hit_selection_windows_params(ii[1]);
     SetupBackwardSearch_PixelCommon(ii[1]);
 
@@ -393,7 +393,7 @@ namespace {
     ii[2].set_iteration_index_and_track_algorithm(2, (int)TrackBase::TrackAlgorithm::lowPtQuadStep);
     ii[2].set_seed_cleaning_params(0.5, 0.05, 0.05, 0.05, 0.05, 0.10, 0.10, 0.10, 0.10);
     ii[2].set_dupl_params(0.5, 0.01, 0.03, 0.05);
-    ii[2].m_duplicate_cleaner_name = "2017:clean_duplicates_sharedhits_pixelseed";
+    ii[2].m_duplicate_cleaner_name = "phase1:clean_duplicates_sharedhits_pixelseed";
     fill_hit_selection_windows_params(ii[2]);
     SetupBackwardSearch_PixelCommon(ii[2]);
 
@@ -402,7 +402,7 @@ namespace {
     ii[3].set_iteration_index_and_track_algorithm(3, (int)TrackBase::TrackAlgorithm::lowPtTripletStep);
     ii[3].set_seed_cleaning_params(0.5, 0.05, 0.05, 0.05, 0.05, 0.10, 0.10, 0.10, 0.10);
     ii[3].set_dupl_params(0.33, 0.018, 0.05, 0.018);
-    ii[3].m_duplicate_cleaner_name = "2017:clean_duplicates_sharedhits_pixelseed";
+    ii[3].m_duplicate_cleaner_name = "phase1:clean_duplicates_sharedhits_pixelseed";
     fill_hit_selection_windows_params(ii[3]);
     SetupBackwardSearch_PixelCommon(ii[3]);
 
@@ -411,7 +411,7 @@ namespace {
     ii[4].set_iteration_index_and_track_algorithm(4, (int)TrackBase::TrackAlgorithm::detachedQuadStep);
     ii[4].set_seed_cleaning_params(2.0, 0.018, 0.018, 0.05, 0.05, 0.10, 0.10, 0.10, 0.10);
     ii[4].set_dupl_params(0.24, 0.018, 0.05, 0.05);
-    ii[4].m_duplicate_cleaner_name = "2017:clean_duplicates_sharedhits_pixelseed";
+    ii[4].m_duplicate_cleaner_name = "phase1:clean_duplicates_sharedhits_pixelseed";
     fill_hit_selection_windows_params(ii[4]);
     SetupBackwardSearch_PixelCommon(ii[4]);
 
@@ -420,9 +420,9 @@ namespace {
     ii[5].set_iteration_index_and_track_algorithm(5, (int)TrackBase::TrackAlgorithm::detachedTripletStep);
     ii[5].set_seed_cleaning_params(2.0, 0.018, 0.018, 0.05, 0.05, 0.10, 0.10, 0.10, 0.10);
     ii[5].m_pre_bkfit_filter_name = ""; // no pre-filter
-    ii[5].m_post_bkfit_filter_name = "2017:qfilter_n_layers";
+    ii[5].m_post_bkfit_filter_name = "phase1:qfilter_n_layers";
     ii[5].set_dupl_params(0.24, 0.01, 0.01, 0.1);
-    ii[5].m_duplicate_cleaner_name = "2017:clean_duplicates_sharedhits_pixelseed";
+    ii[5].m_duplicate_cleaner_name = "phase1:clean_duplicates_sharedhits_pixelseed";
     fill_hit_selection_windows_params(ii[5]);
     SetupBackwardSearch_PixelCommon(ii[5]);
 
@@ -431,7 +431,7 @@ namespace {
     ii[6].set_iteration_index_and_track_algorithm(6, (int)TrackBase::TrackAlgorithm::mixedTripletStep);
     ii[6].set_seed_cleaning_params(2.0, 0.05, 0.05, 0.135, 0.135, 0.05, 0.05, 0.135, 0.135);
     ii[6].set_dupl_params(0.2, 0.05, 0.05, 0.05);
-    ii[6].m_duplicate_cleaner_name = "2017:clean_duplicates_sharedhits_pixelseed";
+    ii[6].m_duplicate_cleaner_name = "phase1:clean_duplicates_sharedhits_pixelseed";
     fill_hit_selection_windows_params(ii[6]);
     SetupBackwardSearch_PixelCommon(ii[6]);
 
@@ -441,9 +441,10 @@ namespace {
     ii[7].set_seed_cleaning_params(2.0, 0.135, 0.135, 0.135, 0.135, 0.135, 0.135, 0.135, 0.135);
     ii[7].m_seed_cleaner_name = ""; // No seed cleaning.
     ii[7].m_requires_seed_hit_sorting = true;
-    ii[7].m_pre_bkfit_filter_name = "2017:qfilter_pixelLessFwd";
-    ii[7].m_post_bkfit_filter_name = "2017:qfilter_pixelLessBkwd";
-    ii[7].m_duplicate_cleaner_name = "2017:clean_duplicates_sharedhits";
+    ii[7].m_pre_bkfit_filter_name = "phase1:qfilter_pixelLessFwd";
+    ii[7].m_post_bkfit_filter_name = "phase1:qfilter_pixelLessBkwd";
+    ii[7].dc_fracSharedHits = 0.14;
+    ii[7].m_duplicate_cleaner_name = "phase1:clean_duplicates_sharedhits";
     fill_hit_selection_windows_params(ii[7]);
     SetupBackwardSearch_Iter7(ii[7]);
 
@@ -454,9 +455,10 @@ namespace {
     ii[8].m_seed_cleaner_name = ""; // No seed cleaning.
     ii[8].m_requires_seed_hit_sorting = true;
     ii[8].m_params.minHitsQF = 4;
-    ii[8].m_pre_bkfit_filter_name = "2017:qfilter_n_hits";
+    ii[8].m_pre_bkfit_filter_name = "phase1:qfilter_n_hits";
     ii[8].m_post_bkfit_filter_name = ""; // no post-filter
-    ii[8].m_duplicate_cleaner_name = "2017:clean_duplicates_sharedhits";
+    ii[8].dc_fracSharedHits = 0.25;
+    ii[8].m_duplicate_cleaner_name = "phase1:clean_duplicates_sharedhits";
     fill_hit_selection_windows_params(ii[8]);
     SetupBackwardSearch_Iter8(ii[8]);
 
@@ -465,10 +467,10 @@ namespace {
     ii[9].set_iteration_index_and_track_algorithm(9, (int)TrackBase::TrackAlgorithm::pixelPairStep);
     ii[9].set_seed_cleaning_params(2.0, 0.135, 0.135, 0.135, 0.135, 0.135, 0.135, 0.135, 0.135);
     ii[9].m_params.minHitsQF = 3;
-    ii[9].m_pre_bkfit_filter_name = "2017:qfilter_n_hits_pixseed";
+    ii[9].m_pre_bkfit_filter_name = "phase1:qfilter_n_hits_pixseed";
     ii[9].m_post_bkfit_filter_name = ""; // no post-filter
-    ii[9].m_duplicate_cleaner_name = "2017:clean_duplicates_sharedhits_pixelseed";
     ii[9].set_dupl_params(0.5, 0.03, 0.05, 0.05);
+    ii[9].m_duplicate_cleaner_name = "phase1:clean_duplicates_sharedhits_pixelseed";
     fill_hit_selection_windows_params(ii[9]);
     SetupBackwardSearch_PixelCommon(ii[9]);
 
@@ -476,7 +478,7 @@ namespace {
       printf("==========================================================================================\n");
     }
 
-    printf("CMS-2017 -- Create_TrackerInfo finished\n");
+    printf("CMS-phase1 -- Create_TrackerInfo finished\n");
 
     if (verbose) {
       printf("==========================================================================================\n");
@@ -487,4 +489,4 @@ namespace {
   }
 }  // namespace
 
-void *TrackerInfoCreator_ptr = (void *)Create_CMS_2017;
+void *TrackerInfoCreator_ptr = (void *)Create_CMS_phase1;

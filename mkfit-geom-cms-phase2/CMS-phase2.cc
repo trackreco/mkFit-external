@@ -1,5 +1,5 @@
 //-------------------
-// CMS 2029 geometry
+// CMS phase2 geometry
 //-------------------
 
 #include "RecoTracker/MkFitCore/interface/Config.h"
@@ -9,14 +9,14 @@
 #include "RecoTracker/MkFitCore/interface/HitStructures.h"
 #include "RecoTracker/MkFitCore/interface/TrackStructures.h"
 
-// missing #include "CMS-2029-HitSelectionWindows.h"
+// missing #include "CMS-phase2-HitSelectionWindows.h"
 
 #include <functional>
 
 using namespace mkfit;
 
 namespace {
-// missing #include "CMS-2029.acc"
+// missing #include "CMS-phase2.acc"
 
   void SetupCoreSteeringParams(IterationConfig &ic) {
     ic.m_region_order[0] = TrackerInfo::Reg_Transition_Pos;
@@ -69,7 +69,7 @@ namespace {
 
   void setup_default_windows(TrackerInfo &ti, IterationConfig &ic) {
     // XXXX To be improved. Also, linear coefs for window functions are NOT set.
-    // Loop over layers, setup something based on q-bins / pixel vs not pixel and 2017 settings.
+    // Loop over layers, setup something based on q-bins / pixel vs not pixel and phase1 settings.
     for (int l = 0; l < ti.n_layers(); ++l) {
       LayerInfo &li = ti.layer_nc(l);
       IterationLayerConfig &ilc = ic.layer(l);
@@ -118,12 +118,12 @@ namespace {
 
 
 
-  void Create_CMS_2029(TrackerInfo &ti, IterationsInfo &ii, bool verbose) {
+  void Create_CMS_phase2(TrackerInfo &ti, IterationsInfo &ii, bool verbose) {
     // TrackerInfo needs to be loaded from a bin-file.
     if (ti.n_layers() != 60) {
-      fprintf(stderr, "Create_CMS_2029() FATAL TrackerInfo shold have been initialized from a binary file\n"
+      fprintf(stderr, "Create_CMS_phase2() FATAL TrackerInfo shold have been initialized from a binary file\n"
                        "with the same name as the geometry library and a '.bin' suffix.\n");
-      throw std::runtime_error("Create_CMS_2029 TrackerIngo not initialized");
+      throw std::runtime_error("Create_CMS_phase2 TrackerIngo not initialized");
     }
     // ti.print_tracker(2); // 1 - print layers, 2 - print layers and modules
 
@@ -145,13 +145,13 @@ namespace {
     // Fills TrackerInfo/LayerInfo and default windows of ii[0].m_layer_configs
     setup_default_windows(ti, ii[0]);
 
-    ii[0].m_seed_partitioner_name = "2029:1";
+    ii[0].m_seed_partitioner_name = "phase2:1";
 
     SetupCoreSteeringParams(ii[0]);
 
     SetupIterationParams(ii[0].m_params, 0);
     ii[0].set_dupl_params(0.24, 0.002, 0.004, 0.008);
-    ii[0].m_duplicate_cleaner_name = "2017:clean_duplicates_sharedhits_pixelseed";
+    ii[0].m_duplicate_cleaner_name = "phase1:clean_duplicates_sharedhits_pixelseed";
 
     SetupBackwardSearch(ii[0]);
 
@@ -159,7 +159,7 @@ namespace {
       printf("==========================================================================================\n");
     }
 
-    printf("CMS-2029 -- Create_TrackerInfo finished\n");
+    printf("CMS-phase2 -- Create_TrackerInfo finished\n");
 
     if (verbose) {
       printf("==========================================================================================\n");
@@ -170,4 +170,4 @@ namespace {
   }
 }  // namespace
 
-void *TrackerInfoCreator_ptr = (void *)Create_CMS_2029;
+void *TrackerInfoCreator_ptr = (void *)Create_CMS_phase2;

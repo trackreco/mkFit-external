@@ -1,5 +1,5 @@
 // clang-format off
-void Create_CMS_2017_AutoGen(TrackerInfo &ti, IterationsInfo &ii)
+void Create_CMS_phase1_AutoGen(TrackerInfo &ti, IterationsInfo &ii)
 {
   // Iteration 0 (default)
 
