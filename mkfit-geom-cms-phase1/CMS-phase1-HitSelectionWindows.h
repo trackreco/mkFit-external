@@ -1,5 +1,5 @@
-#ifndef RecoTracker_MkFitCMS_standalone_CMS_2017_HitSelectionWindows_h
-#define RecoTracker_MkFitCMS_standalone_CMS_2017_HitSelectionWindows_h
+#ifndef RecoTracker_MkFitCMS_standalone_CMS_phase1_HitSelectionWindows_h
+#define RecoTracker_MkFitCMS_standalone_CMS_phase1_HitSelectionWindows_h
 
 namespace mkfit {
 

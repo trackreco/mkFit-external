@@ -1,5 +1,5 @@
 //-------------------
-// CMS 2017 geometry
+// CMS phase1 geometry
 //-------------------
 
 #include "RecoTracker/MkFitCore/interface/Config.h"
@@ -9,14 +9,14 @@
 #include "RecoTracker/MkFitCore/interface/HitStructures.h"
 #include "RecoTracker/MkFitCore/interface/TrackStructures.h"
 
-#include "CMS-2017-HitSelectionWindows.h"
+#include "CMS-phase1-HitSelectionWindows.h"
 
 #include <functional>
 
 using namespace mkfit;
 
 namespace {
-#include "CMS-2017.acc"
+#include "CMS-phase1.acc"
 
   void SetupCoreSteeringParams_PixelQuad(IterationConfig &ic) {
     ic.m_region_order[0] = TrackerInfo::Reg_Transition_Pos;
@@ -327,368 +327,12 @@ namespace {
     }
   }
 
-  //=================
-  // partitionSeeds0
-  //=================
-
-  [[maybe_unused]] void partitionSeeds0(const TrackerInfo &trk_info,
-                                        const TrackVec &in_seeds,
-                                        const EventOfHits &eoh,
-                                        IterationSeedPartition &part) {
-    // Seeds are placed into eta regions and sorted on region + eta.
-
-    const int size = in_seeds.size();
-
-    for (int i = 0; i < size; ++i) {
-      const Track &S = in_seeds[i];
-
-      const bool z_dir_pos = S.pz() > 0;
-
-      HitOnTrack hot = S.getLastHitOnTrack();
-      // MIMI ACHTUNG -- here we assume seed hits have already been remapped.
-      // This was true at that time :)
-      float eta = eoh[hot.layer].refHit(hot.index).eta();
-      // float  eta = S.momEta();
-
-      // Region to be defined by propagation / intersection tests
-      TrackerInfo::EtaRegion reg;
-
-      // Hardcoded for cms ... needs some lists of layers (hit/miss) for brl / ecp tests.
-      // MM: Check lambda functions/std::function
-      const LayerInfo &outer_brl = trk_info.outer_barrel_layer();
-
-      const LayerInfo &tib1 = trk_info.layer(4);
-      const LayerInfo &tob1 = trk_info.layer(10);
-
-      const LayerInfo &tecp1 = trk_info.layer(27);
-      const LayerInfo &tecn1 = trk_info.layer(54);
-
-      const LayerInfo &tec_first = z_dir_pos ? tecp1 : tecn1;
-
-      // If a track hits outer barrel ... it is in the barrel (for central, "outgoing" tracks).
-      // This is also true for cyl-cow.
-      // Better check is: hits outer TIB, misses inner TEC (but is +-z dependant).
-      // XXXX Calculate z ... then check is inside or less that first EC z.
-      // There are a lot of tracks that go through that crack.
-
-      // XXXX trying a fix for low pT tracks that are in barrel after half circle
-      float maxR = S.maxReachRadius();
-      float z_at_maxr;
-
-      bool can_reach_outer_brl = S.canReachRadius(outer_brl.rout());
-      float z_at_outer_brl;
-      bool misses_first_tec;
-      if (can_reach_outer_brl) {
-        z_at_outer_brl = S.zAtR(outer_brl.rout());
-        if (z_dir_pos)
-          misses_first_tec = z_at_outer_brl < tec_first.zmin();
-        else
-          misses_first_tec = z_at_outer_brl > tec_first.zmax();
-      } else {
-        z_at_maxr = S.zAtR(maxR);
-        if (z_dir_pos)
-          misses_first_tec = z_at_maxr < tec_first.zmin();
-        else
-          misses_first_tec = z_at_maxr > tec_first.zmax();
-      }
-
-      if (/*can_reach_outer_brl &&*/ misses_first_tec)
-      // outer_brl.is_within_z_limits(S.zAtR(outer_brl.r_mean())))
-      {
-        reg = TrackerInfo::Reg_Barrel;
-      } else {
-        // This should be a list of layers
-        // CMS, first tib, tob: 4, 10
-
-        if ((S.canReachRadius(tib1.rin()) && tib1.is_within_z_limits(S.zAtR(tib1.rin()))) ||
-            (S.canReachRadius(tob1.rin()) && tob1.is_within_z_limits(S.zAtR(tob1.rin())))) {
-          // transition region ... we are still hitting barrel layers
-
-          reg = z_dir_pos ? TrackerInfo::Reg_Transition_Pos : TrackerInfo::Reg_Transition_Neg;
-        } else {
-          // endcap ... no barrel layers will be hit anymore.
-
-          reg = z_dir_pos ? TrackerInfo::Reg_Endcap_Pos : TrackerInfo::Reg_Endcap_Neg;
-        }
-      }
-
-      part.m_region[i] = reg;
-      if (part.m_phi_eta_foo)
-        part.m_phi_eta_foo(eoh[hot.layer].refHit(hot.index).phi(), eta);
-    }
-  }
-
-  //=================
-  // partitionSeeds1
-  //=================
-
-  [[maybe_unused]] void partitionSeeds1(const TrackerInfo &trk_info,
-                                        const TrackVec &in_seeds,
-                                        const EventOfHits &eoh,
-                                        IterationSeedPartition &part) {
-    // Seeds are placed into eta regions and sorted on region + eta.
-
-    const LayerInfo &tib1 = trk_info.layer(4);
-    //const LayerInfo &tib6 = trk_info.layer(9);
-    const LayerInfo &tob1 = trk_info.layer(10);
-    //const LayerInfo &tob8 = trk_info.layer(17);
-
-    const LayerInfo &tidp1 = trk_info.layer(21);
-    const LayerInfo &tidn1 = trk_info.layer(48);
-
-    const LayerInfo &tecp1 = trk_info.layer(27);
-    const LayerInfo &tecn1 = trk_info.layer(54);
-
-    // Merge first two layers to account for mono/stereo coverage.
-    // TrackerInfo could hold joint limits for sub-detectors.
-    const auto &L = trk_info;
-    const float tidp_rin = std::min(L[21].rin(), L[22].rin());
-    const float tidp_rout = std::max(L[21].rout(), L[22].rout());
-    const float tecp_rin = std::min(L[27].rin(), L[28].rin());
-    const float tecp_rout = std::max(L[27].rout(), L[28].rout());
-    const float tidn_rin = std::min(L[48].rin(), L[49].rin());
-    const float tidn_rout = std::max(L[48].rout(), L[49].rout());
-    const float tecn_rin = std::min(L[54].rin(), L[55].rin());
-    const float tecn_rout = std::max(L[54].rout(), L[55].rout());
-
-    const float tid_z_extra = 0.0f;  //  5.0f;
-    const float tec_z_extra = 0.0f;  // 10.0f;
-
-    const int size = in_seeds.size();
-
-    auto barrel_pos_check = [](const Track &S, float maxR, float rin, float zmax) -> bool {
-      bool inside = maxR > rin && S.zAtR(rin) < zmax;
-      return inside;
-    };
-
-    auto barrel_neg_check = [](const Track &S, float maxR, float rin, float zmin) -> bool {
-      bool inside = maxR > rin && S.zAtR(rin) > zmin;
-      return inside;
-    };
-
-    auto endcap_pos_check = [](const Track &S, float maxR, float rout, float rin, float zmin) -> bool {
-      bool inside = maxR > rout ? S.zAtR(rout) > zmin : (maxR > rin && S.zAtR(maxR) > zmin);
-      return inside;
-    };
-
-    auto endcap_neg_check = [](const Track &S, float maxR, float rout, float rin, float zmax) -> bool {
-      bool inside = maxR > rout ? S.zAtR(rout) < zmax : (maxR > rin && S.zAtR(maxR) < zmax);
-      return inside;
-    };
-
-    for (int i = 0; i < size; ++i) {
-      const Track &S = in_seeds[i];
-
-      HitOnTrack hot = S.getLastHitOnTrack();
-      float eta = eoh[hot.layer].refHit(hot.index).eta();
-
-      // Region to be defined by propagation / intersection tests
-      TrackerInfo::EtaRegion reg;
-
-      const bool z_dir_pos = S.pz() > 0;
-      const float maxR = S.maxReachRadius();
-
-      if (z_dir_pos) {
-        bool in_tib = barrel_pos_check(S, maxR, tib1.rin(), tib1.zmax());
-        bool in_tob = barrel_pos_check(S, maxR, tob1.rin(), tob1.zmax());
-
-        if (!in_tib && !in_tob) {
-          reg = TrackerInfo::Reg_Endcap_Pos;
-        } else {
-          bool in_tid = endcap_pos_check(S, maxR, tidp_rout, tidp_rin, tidp1.zmin() - tid_z_extra);
-          bool in_tec = endcap_pos_check(S, maxR, tecp_rout, tecp_rin, tecp1.zmin() - tec_z_extra);
-
-          if (!in_tid && !in_tec) {
-            reg = TrackerInfo::Reg_Barrel;
-          } else {
-            reg = TrackerInfo::Reg_Transition_Pos;
-          }
-        }
-      } else {
-        bool in_tib = barrel_neg_check(S, maxR, tib1.rin(), tib1.zmin());
-        bool in_tob = barrel_neg_check(S, maxR, tob1.rin(), tob1.zmin());
-
-        if (!in_tib && !in_tob) {
-          reg = TrackerInfo::Reg_Endcap_Neg;
-        } else {
-          bool in_tid = endcap_neg_check(S, maxR, tidn_rout, tidn_rin, tidn1.zmax() + tid_z_extra);
-          bool in_tec = endcap_neg_check(S, maxR, tecn_rout, tecn_rin, tecn1.zmax() + tec_z_extra);
-
-          if (!in_tid && !in_tec) {
-            reg = TrackerInfo::Reg_Barrel;
-          } else {
-            reg = TrackerInfo::Reg_Transition_Neg;
-          }
-        }
-      }
-
-      part.m_region[i] = reg;
-      if (part.m_phi_eta_foo)
-        part.m_phi_eta_foo(eoh[hot.layer].refHit(hot.index).phi(), eta);
-    }
-  }
-
-  //======================
-  // partitionSeeds1debug
-  //======================
-
-  [[maybe_unused]] void partitionSeeds1debug(const TrackerInfo &trk_info,
-                                             const TrackVec &in_seeds,
-                                             const EventOfHits &eoh,
-                                             IterationSeedPartition &part) {
-    // Seeds are placed into eta regions and sorted on region + eta.
-
-    const LayerInfo &tib1 = trk_info.layer(4);
-    //const LayerInfo &tib6 = trk_info.layer(9);
-    const LayerInfo &tob1 = trk_info.layer(10);
-    //const LayerInfo &tob8 = trk_info.layer(17);
-
-    const LayerInfo &tidp1 = trk_info.layer(21);
-    const LayerInfo &tidn1 = trk_info.layer(48);
-
-    const LayerInfo &tecp1 = trk_info.layer(27);
-    const LayerInfo &tecn1 = trk_info.layer(54);
-
-    // Merge first two layers to account for mono/stereo coverage.
-    // TrackerInfo could hold joint limits for sub-detectors.
-    const auto &L = trk_info;
-    const float tidp_rin = std::min(L[21].rin(), L[22].rin());
-    const float tidp_rout = std::max(L[21].rout(), L[22].rout());
-    const float tecp_rin = std::min(L[27].rin(), L[28].rin());
-    const float tecp_rout = std::max(L[27].rout(), L[28].rout());
-    const float tidn_rin = std::min(L[48].rin(), L[49].rin());
-    const float tidn_rout = std::max(L[48].rout(), L[49].rout());
-    const float tecn_rin = std::min(L[54].rin(), L[55].rin());
-    const float tecn_rout = std::max(L[54].rout(), L[55].rout());
-
-    const float tid_z_extra = 0.0f;  //  5.0f;
-    const float tec_z_extra = 0.0f;  // 10.0f;
-
-    const int size = in_seeds.size();
-
-    auto barrel_pos_check = [](const Track &S, float maxR, float rin, float zmax, const char *det) -> bool {
-      bool inside = maxR > rin && S.zAtR(rin) < zmax;
-
-      printf("  in_%s=%d  maxR=%7.3f, rin=%7.3f -- ", det, inside, maxR, rin);
-      if (maxR > rin) {
-        printf("maxR > rin:   S.zAtR(rin) < zmax  -- %.3f <? %.3f\n", S.zAtR(rin), zmax);
-      } else {
-        printf("maxR < rin: no pie.\n");
-      }
-
-      return inside;
-    };
-
-    auto barrel_neg_check = [](const Track &S, float maxR, float rin, float zmin, const char *det) -> bool {
-      bool inside = maxR > rin && S.zAtR(rin) > zmin;
-
-      printf("  in_%s=%d  maxR=%7.3f, rin=%7.3f -- ", det, inside, maxR, rin);
-      if (maxR > rin) {
-        printf("maxR > rin:   S.zAtR(rin) > zmin  -- %.3f >? %.3f\n", S.zAtR(rin), zmin);
-      } else {
-        printf("maxR < rin: no pie.\n");
-      }
-
-      return inside;
-    };
-
-    auto endcap_pos_check = [](const Track &S, float maxR, float rout, float rin, float zmin, const char *det) -> bool {
-      bool inside = maxR > rout ? S.zAtR(rout) > zmin : (maxR > rin && S.zAtR(maxR) > zmin);
-
-      printf("  in_%s=%d  maxR=%7.3f, rout=%7.3f, rin=%7.3f -- ", det, inside, maxR, rout, rin);
-      if (maxR > rout) {
-        printf("maxR > rout:  S.zAtR(rout) > zmin  -- %.3f >? %.3f\n", S.zAtR(rout), zmin);
-      } else if (maxR > rin) {
-        printf("maxR > rin:   S.zAtR(maxR) > zmin) -- %.3f >? %.3f\n", S.zAtR(maxR), zmin);
-      } else {
-        printf("maxR < rin: no pie.\n");
-      }
-
-      return inside;
-    };
-
-    auto endcap_neg_check = [](const Track &S, float maxR, float rout, float rin, float zmax, const char *det) -> bool {
-      bool inside = maxR > rout ? S.zAtR(rout) < zmax : (maxR > rin && S.zAtR(maxR) < zmax);
-
-      printf("  in_%s=%d  maxR=%7.3f, rout=%7.3f, rin=%7.3f -- ", det, inside, maxR, rout, rin);
-      if (maxR > rout) {
-        printf("maxR > rout:  S.zAtR(rout) < zmax  -- %.3f <? %.3f\n", S.zAtR(rout), zmax);
-      } else if (maxR > rin) {
-        printf("maxR > rin:   S.zAtR(maxR) < zmax  -- %.3f <? %.3f\n", S.zAtR(maxR), zmax);
-      } else {
-        printf("maxR < rin: no pie.\n");
-      }
-
-      return inside;
-    };
-
-    for (int i = 0; i < size; ++i) {
-      const Track &S = in_seeds[i];
-
-      HitOnTrack hot = S.getLastHitOnTrack();
-      float eta = eoh[hot.layer].refHit(hot.index).eta();
-      // float  eta = S.momEta();
-
-      // Region to be defined by propagation / intersection tests
-      TrackerInfo::EtaRegion reg;
-
-      const bool z_dir_pos = S.pz() > 0;
-      const float maxR = S.maxReachRadius();
-
-      printf("partitionSeeds1debug seed index %d, z_dir_pos=%d (pz=%.3f), maxR=%.3f\n", i, z_dir_pos, S.pz(), maxR);
-
-      if (z_dir_pos) {
-        bool in_tib = barrel_pos_check(S, maxR, tib1.rin(), tib1.zmax(), "TIBp");
-        bool in_tob = barrel_pos_check(S, maxR, tob1.rin(), tob1.zmax(), "TOBp");
-
-        if (!in_tib && !in_tob) {
-          reg = TrackerInfo::Reg_Endcap_Pos;
-          printf("  --> region = %d, endcap pos\n", reg);
-        } else {
-          bool in_tid = endcap_pos_check(S, maxR, tidp_rout, tidp_rin, tidp1.zmin() - tid_z_extra, "TIDp");
-          bool in_tec = endcap_pos_check(S, maxR, tecp_rout, tecp_rin, tecp1.zmin() - tec_z_extra, "TECp");
-
-          if (!in_tid && !in_tec) {
-            reg = TrackerInfo::Reg_Barrel;
-            printf("  --> region = %d, barrel\n", reg);
-          } else {
-            reg = TrackerInfo::Reg_Transition_Pos;
-            printf("  --> region = %d, transition pos\n", reg);
-          }
-        }
-      } else {
-        bool in_tib = barrel_neg_check(S, maxR, tib1.rin(), tib1.zmin(), "TIBn");
-        bool in_tob = barrel_neg_check(S, maxR, tob1.rin(), tob1.zmin(), "TOBn");
-
-        if (!in_tib && !in_tob) {
-          reg = TrackerInfo::Reg_Endcap_Neg;
-          printf("  --> region = %d, endcap neg\n", reg);
-        } else {
-          bool in_tid = endcap_neg_check(S, maxR, tidn_rout, tidn_rin, tidn1.zmax() + tid_z_extra, "TIDn");
-          bool in_tec = endcap_neg_check(S, maxR, tecn_rout, tecn_rin, tecn1.zmax() + tec_z_extra, "TECn");
-
-          if (!in_tid && !in_tec) {
-            reg = TrackerInfo::Reg_Barrel;
-            printf("  --> region = %d, barrel\n", reg);
-          } else {
-            reg = TrackerInfo::Reg_Transition_Neg;
-            printf("  --> region = %d, transition neg\n", reg);
-          }
-        }
-      }
-
-      part.m_region[i] = reg;
-      if (part.m_phi_eta_foo)
-        part.m_phi_eta_foo(eoh[hot.layer].refHit(hot.index).phi(), eta);
-    }
-  }
-
-  void Create_CMS_2017(TrackerInfo &ti, IterationsInfo &ii, bool verbose) {
+  void Create_CMS_phase1(TrackerInfo &ti, IterationsInfo &ii, bool verbose) {
     // TrackerInfo needs to be loaded from a bin-file.
     if (ti.n_layers() != 72) {
-      fprintf(stderr, "Create_CMS_2017() FATAL TrackerInfo shold have been initialized from a binary file\n"
+      fprintf(stderr, "Create_CMS_phase1() FATAL TrackerInfo shold have been initialized from a binary file\n"
                        "with the same name as the geometry library and a '.bin' suffix.\n");
-      throw std::runtime_error("Create_CMS_2017 TrackerIngo not initialized");
+      throw std::runtime_error("Create_CMS_phase1 TrackerIngo not initialized");
     }
     // ti.print_tracker(2); // 1 - print layers, 2 - print layers and modules
 
@@ -703,14 +347,16 @@ namespace {
     pconf.pca_prop_pflags = PropagationFlags(PF_none);
     pconf.set_as_default();
 
-    ii.resize(10);
+    const int N_iter = 10;
+
+    ii.resize(N_iter);
     ii[0].set_iteration_index_and_track_algorithm(0, (int)TrackBase::TrackAlgorithm::initialStep);
     ii[0].set_num_regions_layers(5, 72);
 
     // Fills TrackerInfo/LayerInfo and default windows of ii[0].m_layer_configs
-    Create_CMS_2017_AutoGen(ti, ii);
-    ii[0].m_partition_seeds = partitionSeeds1;
-
+    Create_CMS_phase1_AutoGen(ti, ii);
+    ii[0].m_seed_cleaner_name = "phase1:default";
+    ii[0].m_seed_partitioner_name = "phase1:1";
     SetupCoreSteeringParams_PixelQuad(ii[0]);
 
     // At this point copy out layer/steering stuff for reuse in later iterations.
@@ -718,14 +364,15 @@ namespace {
     def_itconf_pixelquad.cloneLayerSteerCore(ii[0]);
 
     SetupIterationParams(ii[0].m_params, 0);
-    ii[0].set_dupclean_flag();
     ii[0].set_dupl_params(0.24, 0.002, 0.004, 0.008);
+    ii[0].m_duplicate_cleaner_name = "phase1:clean_duplicates_sharedhits_pixelseed";
     fill_hit_selection_windows_params(ii[0]);
     SetupBackwardSearch_PixelCommon(ii[0]);
 
     ii[1].set_num_regions_layers(5, 72);
     ii[1].m_layer_configs = ii[0].m_layer_configs;
-    ii[1].m_partition_seeds = partitionSeeds1;
+    ii[1].m_seed_cleaner_name = "phase1:default";
+    ii[1].m_seed_partitioner_name = "phase1:1";
 
     SetupCoreSteeringParams_Common(ii[1]);
 
@@ -736,8 +383,8 @@ namespace {
     SetupIterationParams(ii[1].m_params, 1);
     ii[1].set_iteration_index_and_track_algorithm(1, (int)TrackBase::TrackAlgorithm::highPtTripletStep);
     ii[1].set_seed_cleaning_params(2.0, 0.018, 0.018, 0.018, 0.018, 0.036, 0.10, 0.036, 0.10);
-    ii[1].set_dupclean_flag();
     ii[1].set_dupl_params(0.24, 0.03, 0.05, 0.08);
+    ii[1].m_duplicate_cleaner_name = "phase1:clean_duplicates_sharedhits_pixelseed";
     fill_hit_selection_windows_params(ii[1]);
     SetupBackwardSearch_PixelCommon(ii[1]);
 
@@ -745,8 +392,8 @@ namespace {
     SetupIterationParams(ii[2].m_params, 2);
     ii[2].set_iteration_index_and_track_algorithm(2, (int)TrackBase::TrackAlgorithm::lowPtQuadStep);
     ii[2].set_seed_cleaning_params(0.5, 0.05, 0.05, 0.05, 0.05, 0.10, 0.10, 0.10, 0.10);
-    ii[2].set_dupclean_flag();
     ii[2].set_dupl_params(0.5, 0.01, 0.03, 0.05);
+    ii[2].m_duplicate_cleaner_name = "phase1:clean_duplicates_sharedhits_pixelseed";
     fill_hit_selection_windows_params(ii[2]);
     SetupBackwardSearch_PixelCommon(ii[2]);
 
@@ -754,8 +401,8 @@ namespace {
     SetupIterationParams(ii[3].m_params, 3);
     ii[3].set_iteration_index_and_track_algorithm(3, (int)TrackBase::TrackAlgorithm::lowPtTripletStep);
     ii[3].set_seed_cleaning_params(0.5, 0.05, 0.05, 0.05, 0.05, 0.10, 0.10, 0.10, 0.10);
-    ii[3].set_dupclean_flag();
     ii[3].set_dupl_params(0.33, 0.018, 0.05, 0.018);
+    ii[3].m_duplicate_cleaner_name = "phase1:clean_duplicates_sharedhits_pixelseed";
     fill_hit_selection_windows_params(ii[3]);
     SetupBackwardSearch_PixelCommon(ii[3]);
 
@@ -763,8 +410,8 @@ namespace {
     SetupIterationParams(ii[4].m_params, 4);
     ii[4].set_iteration_index_and_track_algorithm(4, (int)TrackBase::TrackAlgorithm::detachedQuadStep);
     ii[4].set_seed_cleaning_params(2.0, 0.018, 0.018, 0.05, 0.05, 0.10, 0.10, 0.10, 0.10);
-    ii[4].set_dupclean_flag();
     ii[4].set_dupl_params(0.24, 0.018, 0.05, 0.05);
+    ii[4].m_duplicate_cleaner_name = "phase1:clean_duplicates_sharedhits_pixelseed";
     fill_hit_selection_windows_params(ii[4]);
     SetupBackwardSearch_PixelCommon(ii[4]);
 
@@ -772,9 +419,10 @@ namespace {
     SetupIterationParams(ii[5].m_params, 5);
     ii[5].set_iteration_index_and_track_algorithm(5, (int)TrackBase::TrackAlgorithm::detachedTripletStep);
     ii[5].set_seed_cleaning_params(2.0, 0.018, 0.018, 0.05, 0.05, 0.10, 0.10, 0.10, 0.10);
-    ii[5].set_dupclean_flag();
+    ii[5].m_pre_bkfit_filter_name = ""; // no pre-filter
+    ii[5].m_post_bkfit_filter_name = "phase1:qfilter_n_layers";
     ii[5].set_dupl_params(0.24, 0.01, 0.01, 0.1);
-    ii[5].m_requires_quality_filter = true;
+    ii[5].m_duplicate_cleaner_name = "phase1:clean_duplicates_sharedhits_pixelseed";
     fill_hit_selection_windows_params(ii[5]);
     SetupBackwardSearch_PixelCommon(ii[5]);
 
@@ -782,8 +430,8 @@ namespace {
     SetupIterationParams(ii[6].m_params, 6);
     ii[6].set_iteration_index_and_track_algorithm(6, (int)TrackBase::TrackAlgorithm::mixedTripletStep);
     ii[6].set_seed_cleaning_params(2.0, 0.05, 0.05, 0.135, 0.135, 0.05, 0.05, 0.135, 0.135);
-    ii[6].set_dupclean_flag();
     ii[6].set_dupl_params(0.2, 0.05, 0.05, 0.05);
+    ii[6].m_duplicate_cleaner_name = "phase1:clean_duplicates_sharedhits_pixelseed";
     fill_hit_selection_windows_params(ii[6]);
     SetupBackwardSearch_PixelCommon(ii[6]);
 
@@ -791,8 +439,12 @@ namespace {
     SetupIterationParams(ii[7].m_params, 7);
     ii[7].set_iteration_index_and_track_algorithm(7, (int)TrackBase::TrackAlgorithm::pixelLessStep);
     ii[7].set_seed_cleaning_params(2.0, 0.135, 0.135, 0.135, 0.135, 0.135, 0.135, 0.135, 0.135);
-    ii[7].set_qf_flags();
-    ii[7].set_qf_params(3, 0.14);
+    ii[7].m_seed_cleaner_name = ""; // No seed cleaning.
+    ii[7].m_requires_seed_hit_sorting = true;
+    ii[7].m_pre_bkfit_filter_name = "phase1:qfilter_pixelLessFwd";
+    ii[7].m_post_bkfit_filter_name = "phase1:qfilter_pixelLessBkwd";
+    ii[7].dc_fracSharedHits = 0.14;
+    ii[7].m_duplicate_cleaner_name = "phase1:clean_duplicates_sharedhits";
     fill_hit_selection_windows_params(ii[7]);
     SetupBackwardSearch_Iter7(ii[7]);
 
@@ -800,8 +452,13 @@ namespace {
     SetupIterationParams(ii[8].m_params, 8);
     ii[8].set_iteration_index_and_track_algorithm(8, (int)TrackBase::TrackAlgorithm::tobTecStep);
     ii[8].set_seed_cleaning_params(2.0, 0.135, 0.135, 0.135, 0.135, 0.135, 0.135, 0.135, 0.135);
-    ii[8].set_qf_flags();
-    ii[8].set_qf_params(4, 0.25);
+    ii[8].m_seed_cleaner_name = ""; // No seed cleaning.
+    ii[8].m_requires_seed_hit_sorting = true;
+    ii[8].m_params.minHitsQF = 4;
+    ii[8].m_pre_bkfit_filter_name = "phase1:qfilter_n_hits";
+    ii[8].m_post_bkfit_filter_name = ""; // no post-filter
+    ii[8].dc_fracSharedHits = 0.25;
+    ii[8].m_duplicate_cleaner_name = "phase1:clean_duplicates_sharedhits";
     fill_hit_selection_windows_params(ii[8]);
     SetupBackwardSearch_Iter8(ii[8]);
 
@@ -809,9 +466,11 @@ namespace {
     SetupIterationParams(ii[9].m_params, 9);
     ii[9].set_iteration_index_and_track_algorithm(9, (int)TrackBase::TrackAlgorithm::pixelPairStep);
     ii[9].set_seed_cleaning_params(2.0, 0.135, 0.135, 0.135, 0.135, 0.135, 0.135, 0.135, 0.135);
-    ii[9].set_dupclean_flag();
+    ii[9].m_params.minHitsQF = 3;
+    ii[9].m_pre_bkfit_filter_name = "phase1:qfilter_n_hits_pixseed";
+    ii[9].m_post_bkfit_filter_name = ""; // no post-filter
     ii[9].set_dupl_params(0.5, 0.03, 0.05, 0.05);
-    ii[9].m_requires_quality_filter = true;
+    ii[9].m_duplicate_cleaner_name = "phase1:clean_duplicates_sharedhits_pixelseed";
     fill_hit_selection_windows_params(ii[9]);
     SetupBackwardSearch_PixelCommon(ii[9]);
 
@@ -819,15 +478,15 @@ namespace {
       printf("==========================================================================================\n");
     }
 
-    printf("CMS-2017 -- Create_TrackerInfo finished\n");
+    printf("CMS-phase1 -- Create_TrackerInfo finished\n");
 
     if (verbose) {
       printf("==========================================================================================\n");
-      for (int ii = 0; ii < ti.n_layers(); ++ii)
-        ti.layer(ii).print_layer();
+      for (int li = 0; li < ti.n_layers(); ++li)
+        ti.layer(li).print_layer();
       printf("==========================================================================================\n");
     }
   }
 }  // namespace
 
-void *TrackerInfoCreator_ptr = (void *)Create_CMS_2017;
+void *TrackerInfoCreator_ptr = (void *)Create_CMS_phase1;
