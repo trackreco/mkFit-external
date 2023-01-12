@@ -31,6 +31,7 @@ namespace {
       sp.append_plan(1);
       sp.append_plan(0);
       sp.append_plan(2);
+      // sp.fill_plan(0, 2);
       sp.fill_plan(45, 47);
       sp.fill_plan(48, 53);  // TID,  6 disks (3 mono + 3 stereo)
       sp.fill_plan(54, 71);  // TEC, 18 disks (9 mono + 9 stereo)
@@ -42,6 +43,7 @@ namespace {
       sp.append_plan(1);
       sp.append_plan(0);
       sp.fill_plan(2, 3);
+      //sp.fill_plan(0, 3);
       sp.fill_plan(45, 47);
       sp.fill_plan(4, 9);    // TIB,  6 layers (4 mono + 2 stereo)
       sp.fill_plan(48, 53);  // TID,  6 disks  (3 mono + 3 stereo)
@@ -63,6 +65,7 @@ namespace {
       sp.append_plan(1);
       sp.append_plan(0);
       sp.fill_plan(2, 3);
+      // sp.fill_plan(0, 3);
       sp.fill_plan(18, 20);  //                                     [ 4,  6]
       sp.fill_plan(4, 9);    // TIB,  6 layers (4 mono + 2 stereo)  [ 7, 12]
       sp.fill_plan(21, 26);  // TID,  6 disks  (3 mono + 3 stereo)  [13, 18]
@@ -76,6 +79,7 @@ namespace {
       sp.append_plan(1);
       sp.append_plan(0);
       sp.append_plan(2);
+      // sp.fill_plan(0, 2);
       sp.fill_plan(18, 20);  //                                     [ 3,  5]
       sp.fill_plan(21, 26);  // TID,  6 disks  (3 mono + 3 stereo)  [ 6, 11]
       sp.fill_plan(27, 44);  // TEC, 18 disks  (9 mono + 9 stereo)  [12, 29]
@@ -341,7 +345,8 @@ namespace {
     pconf.finding_requires_propagation_to_hit_pos = true;
     pconf.finding_inter_layer_pflags = PropagationFlags(PF_use_param_b_field | PF_apply_material);
     pconf.finding_intra_layer_pflags = PropagationFlags(PF_none);
-    pconf.backward_fit_pflags = PropagationFlags(PF_use_param_b_field | PF_apply_material);
+    // PF_copy_input_state_on_fail is only set for barrel in MkFinder::bkFitFitTracks() itself.
+    pconf.backward_fit_pflags = PropagationFlags(PF_use_param_b_field | PF_apply_material); // | PF_copy_input_state_on_fail);
     pconf.forward_fit_pflags = PropagationFlags(PF_use_param_b_field | PF_apply_material);
     pconf.seed_fit_pflags = PropagationFlags(PF_none);
     pconf.pca_prop_pflags = PropagationFlags(PF_none);
@@ -357,6 +362,7 @@ namespace {
     Create_CMS_phase1_AutoGen(ti, ii);
     ii[0].m_seed_cleaner_name = "phase1:default";
     ii[0].m_seed_partitioner_name = "phase1:1";
+    ii[0].m_default_track_scorer_name = "phase1:default";
     SetupCoreSteeringParams_PixelQuad(ii[0]);
 
     // At this point copy out layer/steering stuff for reuse in later iterations.
@@ -373,6 +379,7 @@ namespace {
     ii[1].m_layer_configs = ii[0].m_layer_configs;
     ii[1].m_seed_cleaner_name = "phase1:default";
     ii[1].m_seed_partitioner_name = "phase1:1";
+    ii[1].m_default_track_scorer_name = "phase1:default";
 
     SetupCoreSteeringParams_Common(ii[1]);
 
