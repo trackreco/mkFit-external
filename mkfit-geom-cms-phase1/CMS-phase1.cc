@@ -9,8 +9,6 @@
 #include "RecoTracker/MkFitCore/interface/HitStructures.h"
 #include "RecoTracker/MkFitCore/interface/TrackStructures.h"
 
-#include "CMS-phase1-HitSelectionWindows.h"
-
 #include <functional>
 
 using namespace mkfit;
@@ -313,21 +311,35 @@ namespace {
     }
   }
 
-  void fill_hit_selection_windows_params(IterationConfig &ic) {
-    HitSelectionWindows hsw;
-    for (int l = 0; l < (int)ic.m_layer_configs.size(); ++l) {
-      // dphi cut
-      ic.m_layer_configs[l].c_dp_0 = hsw.m_dp_params[ic.m_iteration_index][l][0];
-      ic.m_layer_configs[l].c_dp_1 = hsw.m_dp_params[ic.m_iteration_index][l][1];
-      ic.m_layer_configs[l].c_dp_2 = hsw.m_dp_params[ic.m_iteration_index][l][2];
-      // dq cut
-      ic.m_layer_configs[l].c_dq_0 = hsw.m_dq_params[ic.m_iteration_index][l][0];
-      ic.m_layer_configs[l].c_dq_1 = hsw.m_dq_params[ic.m_iteration_index][l][1];
-      ic.m_layer_configs[l].c_dq_2 = hsw.m_dq_params[ic.m_iteration_index][l][2];
-      // chi2 cut (for future optimization)
-      ic.m_layer_configs[l].c_c2_0 = hsw.m_c2_params[ic.m_iteration_index][l][0];
-      ic.m_layer_configs[l].c_c2_1 = hsw.m_c2_params[ic.m_iteration_index][l][1];
-      ic.m_layer_configs[l].c_c2_2 = hsw.m_c2_params[ic.m_iteration_index][l][2];
+  void fill_hit_selection_windows_params(IterationsInfo &ii) {
+    // Read meta and data vectors.
+#include "CMS-phase1-HitSelectionWindows.h"
+
+    // Build algo to iteration index map.
+    std::map<int, int> algo2idx;
+    for (int i = 0; i < (int) ii.size(); ++i)
+      algo2idx.insert({ii[i].m_track_algorithm, i});
+
+    int data_pos = 0;
+
+    for (int l = 0; l < (int) meta.size(); l += 3) {
+      int algo = meta[l];
+      auto li = algo2idx.find(algo);
+      if (li == algo2idx.end())
+        throw std::runtime_error("unknown algorithm");
+      auto &iinfo = ii[li->second];
+
+      int layer = meta[l+1];
+      if (layer < 0 || layer >= (int) iinfo.m_layer_configs.size())
+        throw std::runtime_error("layer out of range");
+      auto  &linfo = iinfo.m_layer_configs[layer];
+
+      int fwd = meta[l+2];
+      auto &v = fwd ? linfo.m_winpars_fwd : linfo.m_winpars_bkw;
+      
+      v.reserve(12);
+      for (int i = 0; i < 12; ++i)
+        v.push_back(data[data_pos++]);
     }
   }
 
@@ -372,7 +384,6 @@ namespace {
     SetupIterationParams(ii[0].m_params, 0);
     ii[0].set_dupl_params(0.24, 0.002, 0.004, 0.008);
     ii[0].m_duplicate_cleaner_name = "phase1:clean_duplicates_sharedhits_pixelseed";
-    fill_hit_selection_windows_params(ii[0]);
     SetupBackwardSearch_PixelCommon(ii[0]);
 
     ii[1].set_num_regions_layers(5, 72);
@@ -392,7 +403,6 @@ namespace {
     ii[1].set_seed_cleaning_params(2.0, 0.018, 0.018, 0.018, 0.018, 0.036, 0.10, 0.036, 0.10);
     ii[1].set_dupl_params(0.24, 0.03, 0.05, 0.08);
     ii[1].m_duplicate_cleaner_name = "phase1:clean_duplicates_sharedhits_pixelseed";
-    fill_hit_selection_windows_params(ii[1]);
     SetupBackwardSearch_PixelCommon(ii[1]);
 
     ii[2].cloneLayerSteerCore(def_itconf_pixelquad);
@@ -401,7 +411,6 @@ namespace {
     ii[2].set_seed_cleaning_params(0.5, 0.05, 0.05, 0.05, 0.05, 0.10, 0.10, 0.10, 0.10);
     ii[2].set_dupl_params(0.5, 0.01, 0.03, 0.05);
     ii[2].m_duplicate_cleaner_name = "phase1:clean_duplicates_sharedhits_pixelseed";
-    fill_hit_selection_windows_params(ii[2]);
     SetupBackwardSearch_PixelCommon(ii[2]);
 
     ii[3].cloneLayerSteerCore(def_itconf_common);
@@ -410,7 +419,6 @@ namespace {
     ii[3].set_seed_cleaning_params(0.5, 0.05, 0.05, 0.05, 0.05, 0.10, 0.10, 0.10, 0.10);
     ii[3].set_dupl_params(0.33, 0.018, 0.05, 0.018);
     ii[3].m_duplicate_cleaner_name = "phase1:clean_duplicates_sharedhits_pixelseed";
-    fill_hit_selection_windows_params(ii[3]);
     SetupBackwardSearch_PixelCommon(ii[3]);
 
     ii[4].cloneLayerSteerCore(def_itconf_pixelquad);
@@ -419,7 +427,6 @@ namespace {
     ii[4].set_seed_cleaning_params(2.0, 0.018, 0.018, 0.05, 0.05, 0.10, 0.10, 0.10, 0.10);
     ii[4].set_dupl_params(0.24, 0.018, 0.05, 0.05);
     ii[4].m_duplicate_cleaner_name = "phase1:clean_duplicates_sharedhits_pixelseed";
-    fill_hit_selection_windows_params(ii[4]);
     SetupBackwardSearch_PixelCommon(ii[4]);
 
     ii[5].cloneLayerSteerCore(def_itconf_common);
@@ -430,7 +437,6 @@ namespace {
     ii[5].m_post_bkfit_filter_name = "phase1:qfilter_n_layers";
     ii[5].set_dupl_params(0.24, 0.01, 0.01, 0.1);
     ii[5].m_duplicate_cleaner_name = "phase1:clean_duplicates_sharedhits_pixelseed";
-    fill_hit_selection_windows_params(ii[5]);
     SetupBackwardSearch_PixelCommon(ii[5]);
 
     ii[6].cloneLayerSteerCore(def_itconf_common);
@@ -439,7 +445,6 @@ namespace {
     ii[6].set_seed_cleaning_params(2.0, 0.05, 0.05, 0.135, 0.135, 0.05, 0.05, 0.135, 0.135);
     ii[6].set_dupl_params(0.2, 0.05, 0.05, 0.05);
     ii[6].m_duplicate_cleaner_name = "phase1:clean_duplicates_sharedhits_pixelseed";
-    fill_hit_selection_windows_params(ii[6]);
     SetupBackwardSearch_PixelCommon(ii[6]);
 
     ii[7].cloneLayerSteerCore(def_itconf_common);
@@ -452,7 +457,6 @@ namespace {
     ii[7].m_post_bkfit_filter_name = "phase1:qfilter_pixelLessBkwd";
     ii[7].dc_fracSharedHits = 0.14;
     ii[7].m_duplicate_cleaner_name = "phase1:clean_duplicates_sharedhits";
-    fill_hit_selection_windows_params(ii[7]);
     SetupBackwardSearch_Iter7(ii[7]);
 
     ii[8].cloneLayerSteerCore(def_itconf_common);
@@ -466,7 +470,6 @@ namespace {
     ii[8].m_post_bkfit_filter_name = ""; // no post-filter
     ii[8].dc_fracSharedHits = 0.25;
     ii[8].m_duplicate_cleaner_name = "phase1:clean_duplicates_sharedhits";
-    fill_hit_selection_windows_params(ii[8]);
     SetupBackwardSearch_Iter8(ii[8]);
 
     ii[9].cloneLayerSteerCore(def_itconf_common);
@@ -478,8 +481,9 @@ namespace {
     ii[9].m_post_bkfit_filter_name = ""; // no post-filter
     ii[9].set_dupl_params(0.5, 0.03, 0.05, 0.05);
     ii[9].m_duplicate_cleaner_name = "phase1:clean_duplicates_sharedhits_pixelseed";
-    fill_hit_selection_windows_params(ii[9]);
     SetupBackwardSearch_PixelCommon(ii[9]);
+
+    fill_hit_selection_windows_params(ii);
 
     if (verbose) {
       printf("==========================================================================================\n");
