@@ -127,7 +127,7 @@ namespace {
     }
     // ti.print_tracker(2); // 1 - print layers, 2 - print layers and modules
 
-    PropagationConfig pconf;
+    PropagationConfig &pconf = ti.prop_config_nc();
     pconf.backward_fit_to_pca = Config::includePCA;
     pconf.finding_requires_propagation_to_hit_pos = true;
     pconf.finding_inter_layer_pflags = PropagationFlags(PF_use_param_b_field | PF_apply_material);
@@ -136,7 +136,7 @@ namespace {
     pconf.forward_fit_pflags = PropagationFlags(PF_use_param_b_field | PF_apply_material);
     pconf.seed_fit_pflags = PropagationFlags(PF_none);
     pconf.pca_prop_pflags = PropagationFlags(PF_none);
-    pconf.set_as_default();
+    pconf.apply_tracker_info(&ti);
 
     ii.resize(1);
     ii[0].set_iteration_index_and_track_algorithm(0, (int)TrackBase::TrackAlgorithm::initialStep);
