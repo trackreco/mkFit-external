@@ -11,6 +11,15 @@
 
 #include <functional>
 
+namespace mkfit::internal {
+  extern std::vector<DeadVec> deadvectors;
+
+  void init_deadvectors() {
+    deadvectors.resize(Config::TrkInfo.n_layers());
+#include "RecoTracker/MkFitCMS/standalone/deadmodules.h"
+}
+}
+
 using namespace mkfit;
 
 namespace {
@@ -285,7 +294,7 @@ namespace {
       ip.chi2CutOverlap = 3.5;
       ip.pTCutOverlap = 0.0;
       ip.recheckOverlap = true;
-      ip.useHitSelectionV2: true;
+      ip.useHitSelectionV2 = true;
       ip.minPtCut = 0.0;
       ip.maxClusterSize = 8;
     } else if (it == 8)  // for TobTec step, maxCandsPerSeed=2 and maxHolesPerCand=maxConsecHoles=0
@@ -486,6 +495,8 @@ namespace {
     SetupBackwardSearch_PixelCommon(ii[9]);
 
     fill_hit_selection_windows_params(ii);
+
+    mkfit::internal::init_deadvectors();
 
     if (verbose) {
       printf("==========================================================================================\n");
