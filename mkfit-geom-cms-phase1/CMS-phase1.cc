@@ -285,7 +285,7 @@ namespace {
       ip.chi2CutOverlap = 3.5;
       ip.pTCutOverlap = 0.0;
       ip.recheckOverlap = true;
-      ip.useHitSelectionV2: true;
+      ip.useHitSelectionV2 = true;
       ip.minPtCut = 0.0;
       ip.maxClusterSize = 8;
     } else if (it == 8)  // for TobTec step, maxCandsPerSeed=2 and maxHolesPerCand=maxConsecHoles=0
