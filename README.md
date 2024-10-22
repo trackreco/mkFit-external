@@ -53,7 +53,7 @@ ln -s ${SA_PATH}/xeon_scripts .
 val_scripts/validation-cmssw-benchmarks-multiiter.sh forPR --mtv-like-val TTbar_phase2
 web/collectBenchmarks-multi.sh <dir-name> forPR
 ```
-Up to date amples for running standalone are listed below (tracking ntuples and step1/step2 files can be found in the same folder):
+Up to date samples for running standalone are listed below (tracking ntuples and step1/step2 files can be found in the same folder):
 
 ```      
 /ceph/cms/store/user/legianni/generate-phase2/10mu-newgeom/ntuple_pt0p1to1_*.bin  
