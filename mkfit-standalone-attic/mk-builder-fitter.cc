@@ -221,12 +221,12 @@ void MkBuilder::fit_seeds()
 
   dcall(print_seeds(seedtracks));
 
-  tbb::parallel_for_each(m_regions.begin(), m_regions.end(),
+  TBB_PARALLEL_FOR_EACH(m_regions.begin(), m_regions.end(),
   [&](int reg)
   {
     RegionOfSeedIndices rosi(m_seedEtaSeparators, reg);
 
-    tbb::parallel_for(rosi.tbb_blk_rng_vec(),
+    TBB_PARALLEL_FOR(rosi.tbb_blk_rng_vec(),
       [&](const tbb::blocked_range<int>& blk_rng)
     {
       // printf("TBB seeding krappe -- range = %d to %d - extent = %d ==> %d to %d - extent %d\n",
