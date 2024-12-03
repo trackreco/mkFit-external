@@ -111,6 +111,7 @@ namespace {
       ip.chi2Cut_min = 15.0;
       ip.chi2CutOverlap = 3.5;
       ip.pTCutOverlap = 0.0;
+      ip.useHitSelectionV2 = true;
       ip.minPtCut = 0.0;
       ip.maxClusterSize = 8;
     }
@@ -131,19 +132,28 @@ namespace {
     pconf.backward_fit_to_pca = Config::includePCA;
     pconf.finding_requires_propagation_to_hit_pos = true;
     pconf.finding_inter_layer_pflags = PropagationFlags(PF_use_param_b_field | PF_apply_material);
-    pconf.finding_intra_layer_pflags = PropagationFlags(PF_none);
+    if (Config::usePropToPlane)
+      pconf.finding_intra_layer_pflags = PropagationFlags(PF_use_param_b_field | PF_apply_material);
+    else
+      pconf.finding_intra_layer_pflags = PropagationFlags(PF_none);
     pconf.backward_fit_pflags = PropagationFlags(PF_use_param_b_field | PF_apply_material);
     pconf.forward_fit_pflags = PropagationFlags(PF_use_param_b_field | PF_apply_material);
     pconf.seed_fit_pflags = PropagationFlags(PF_none);
     pconf.pca_prop_pflags = PropagationFlags(PF_none);
     pconf.apply_tracker_info(&ti);
 
-    ii.resize(1);
+    const bool enable_all_iters_for_seed_cleaning_tests = false;
+
+    ii.resize(enable_all_iters_for_seed_cleaning_tests ? 10 : 1);
+
     ii[0].set_iteration_index_and_track_algorithm(0, (int)TrackBase::TrackAlgorithm::initialStep);
     ii[0].set_num_regions_layers(5, 60); // 16 + 22 + 22
 
     // Fills TrackerInfo/LayerInfo and default windows of ii[0].m_layer_configs
     setup_default_windows(ti, ii[0]);
+
+    ii[0].m_seed_cleaner_name = "phase1:default";
+    ii[0].m_default_track_scorer_name = "phase1:default";
 
     ii[0].m_seed_partitioner_name = "phase2:1";
 
@@ -154,6 +164,45 @@ namespace {
     ii[0].m_duplicate_cleaner_name = "phase1:clean_duplicates_sharedhits_pixelseed";
 
     SetupBackwardSearch(ii[0]);
+
+    // Clone Phase1 seed cleaning
+    if (enable_all_iters_for_seed_cleaning_tests) {
+      ii[1].set_iteration_index_and_track_algorithm(1, (int)TrackBase::TrackAlgorithm::highPtTripletStep);
+      ii[1].set_seed_cleaning_params(2.0, 0.018, 0.018, 0.018, 0.018, 0.036, 0.10, 0.036, 0.10);
+      ii[1].m_seed_cleaner_name = "phase1:default";
+
+      ii[2].set_iteration_index_and_track_algorithm(2, (int)TrackBase::TrackAlgorithm::lowPtQuadStep);
+      ii[2].set_seed_cleaning_params(0.5, 0.05, 0.05, 0.05, 0.05, 0.10, 0.10, 0.10, 0.10);
+      ii[2].m_seed_cleaner_name = "phase1:default";
+
+      ii[3].set_iteration_index_and_track_algorithm(3, (int)TrackBase::TrackAlgorithm::lowPtTripletStep);
+      ii[3].set_seed_cleaning_params(0.5, 0.05, 0.05, 0.05, 0.05, 0.10, 0.10, 0.10, 0.10);
+      ii[3].m_seed_cleaner_name = "phase1:default";
+
+      ii[4].set_iteration_index_and_track_algorithm(4, (int)TrackBase::TrackAlgorithm::detachedQuadStep);
+      ii[4].set_seed_cleaning_params(2.0, 0.018, 0.018, 0.05, 0.05, 0.10, 0.10, 0.10, 0.10);
+      ii[4].m_seed_cleaner_name = "phase1:default";
+
+      ii[5].set_iteration_index_and_track_algorithm(5, (int)TrackBase::TrackAlgorithm::detachedTripletStep);
+      ii[5].set_seed_cleaning_params(2.0, 0.018, 0.018, 0.05, 0.05, 0.10, 0.10, 0.10, 0.10);
+      ii[5].m_seed_cleaner_name = "phase1:default";
+
+      ii[6].set_iteration_index_and_track_algorithm(6, (int)TrackBase::TrackAlgorithm::mixedTripletStep);
+      ii[6].set_seed_cleaning_params(2.0, 0.05, 0.05, 0.135, 0.135, 0.05, 0.05, 0.135, 0.135);
+      ii[6].m_seed_cleaner_name = "phase1:default";
+
+      ii[7].set_iteration_index_and_track_algorithm(7, (int)TrackBase::TrackAlgorithm::pixelLessStep);
+      ii[7].set_seed_cleaning_params(2.0, 0.135, 0.135, 0.135, 0.135, 0.135, 0.135, 0.135, 0.135);
+      ii[7].m_seed_cleaner_name = ""; // No seed cleaning.
+
+      ii[8].set_iteration_index_and_track_algorithm(8, (int)TrackBase::TrackAlgorithm::tobTecStep);
+      ii[8].set_seed_cleaning_params(2.0, 0.135, 0.135, 0.135, 0.135, 0.135, 0.135, 0.135, 0.135);
+      ii[8].m_seed_cleaner_name = ""; // No seed cleaning.
+
+      ii[9].set_iteration_index_and_track_algorithm(9, (int)TrackBase::TrackAlgorithm::pixelPairStep);
+      ii[9].set_seed_cleaning_params(2.0, 0.135, 0.135, 0.135, 0.135, 0.135, 0.135, 0.135, 0.135);
+      ii[9].m_seed_cleaner_name = "phase1:default";
+    }
 
     if (verbose) {
       printf("==========================================================================================\n");

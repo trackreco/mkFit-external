@@ -11,6 +11,13 @@
 
 #include <functional>
 
+namespace mkfit::internal {
+  void init_deadvectors() {
+    deadvectors.resize(Config::TrkInfo.n_layers());
+#include "RecoTracker/MkFitCMS/standalone/deadmodules.h"
+  }
+}
+
 using namespace mkfit;
 
 namespace {
@@ -358,7 +365,10 @@ namespace {
     pconf.backward_fit_to_pca = Config::includePCA;
     pconf.finding_requires_propagation_to_hit_pos = true;
     pconf.finding_inter_layer_pflags = PropagationFlags(PF_use_param_b_field | PF_apply_material);
-    pconf.finding_intra_layer_pflags = PropagationFlags(PF_none);
+    if (Config::usePropToPlane)
+      pconf.finding_intra_layer_pflags = PropagationFlags(PF_use_param_b_field | PF_apply_material);
+    else
+      pconf.finding_intra_layer_pflags = PropagationFlags(PF_none);
     // PF_copy_input_state_on_fail is only set for barrel in MkFinder::bkFitFitTracks() itself.
     pconf.backward_fit_pflags = PropagationFlags(PF_use_param_b_field | PF_apply_material); // | PF_copy_input_state_on_fail);
     pconf.forward_fit_pflags = PropagationFlags(PF_use_param_b_field | PF_apply_material);
@@ -486,6 +496,8 @@ namespace {
     SetupBackwardSearch_PixelCommon(ii[9]);
 
     fill_hit_selection_windows_params(ii);
+
+    mkfit::internal::init_deadvectors();
 
     if (verbose) {
       printf("==========================================================================================\n");
