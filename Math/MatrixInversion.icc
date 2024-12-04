@@ -10,7 +10,8 @@
 
 
 #include "Math/SVector.h"
-#include "Math/Math.h"
+// Removed by MT for ROOT-less builds. Not needed - can add it from math/mathcore.
+// #include "Math/Math.h"
 #include <limits>
 
 

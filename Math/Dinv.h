@@ -43,7 +43,8 @@
 // #include "Math/QRDecomposition.h"
 // #endif
 
-#include "TError.h"
+// Removed by MT for ROOT-less builds
+// #include "TError.h"
 
 namespace ROOT {
 
@@ -81,7 +82,8 @@ public:
      typename MatrixRep::value_type det(0.0);
 
      if (DfactMatrix(rhs,det,work) != 0) {
-        Error("Inverter::Dinv","Dfact_matrix failed!!");
+        // Error("Inverter::Dinv","Dfact_matrix failed!!");
+        fprintf(stderr, "Inverter::Dinv Dfact_matrix failed!!\n");
         return false;
      }
 
