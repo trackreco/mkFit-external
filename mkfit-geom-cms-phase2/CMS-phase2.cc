@@ -34,28 +34,30 @@ namespace {
     }
     {
       SteeringParams &sp = ic.m_steering_params[TrackerInfo::Reg_Transition_Neg];
-      sp.reserve_plan(4 + 8 + 6 + 10);  // BPix + FPix- + TOB- +TEC-
+      sp.reserve_plan(4 + 8 + 12 + 10); // BPix + FPix- + TOB- +TEC-
       sp.fill_plan( 0,  3);
-      sp.fill_plan(38, 45);  // FPix-, first 8 layers
-      sp.fill_plan( 4, 15);  // TOB, 6 double layers
-      sp.fill_plan(50, 59);  // TEC, 5 double disks
+      sp.fill_plan(38, 45);            // FPix-, first 8 layers
+      sp.fill_plan_swap_pairs( 4, 9);  // TOB, inner 3 double layers, PS
+      sp.fill_plan( 10, 15);           // TOB, outer 3 double layers, 2S
+      sp.fill_plan_swap_pairs(50, 59); // TEC, 5 double disks, radially half PS, half 2S
       sp.set_iterator_limits(2, 0);
     }
     {
       SteeringParams &sp = ic.m_steering_params[TrackerInfo::Reg_Barrel];
-      sp.reserve_plan(4 + 6 + 6);  // BPix + TOB-1 + TOB-2
-      sp.fill_plan( 0,  3);          //                  [ 0,  3]
-      sp.fill_plan( 4,  9);          // TOB-1, 6 layers  [ 4,  9]
-      sp.fill_plan(10, 15);        // TOB-2, 8 layers  [10, 17]
+      sp.reserve_plan(4 + 6 + 6);      // BPix + TOB-1 + TOB-2
+      sp.fill_plan( 0,  3);            //                  [ 0,  3]
+      sp.fill_plan_swap_pairs( 4,  9); // TOB-1, 6 layers  [ 4,  9] PS
+      sp.fill_plan(10, 15);            // TOB-2, 6 layers  [10, 15] 2S
       sp.set_iterator_limits(2, 0);
     }
     {
       SteeringParams &sp = ic.m_steering_params[TrackerInfo::Reg_Transition_Pos];
-      sp.reserve_plan(4 + 3 + 6 + 6 + 8 + 18);  // BPix + FPix+ + TIB + TID+ + TOB + TEC+
+      sp.reserve_plan(4 + 8 + 12 + 10);  // BPix + FPix+ + TOB+ + TEC+
       sp.fill_plan( 0,  3);
-      sp.fill_plan(16, 23);  // FPix-, first 8 layers
-      sp.fill_plan( 4, 15);  // TOB, 6 double layers
-      sp.fill_plan(28, 37);  // TEC, 5 double disks
+      sp.fill_plan(16, 23);            // FPix-, first 8 layers
+      sp.fill_plan_swap_pairs( 4, 9);  // TOB, inner 3 double layers, PS
+      sp.fill_plan( 10, 15);           // TOB, outer 3 double layers, 2S
+      sp.fill_plan_swap_pairs(28, 37); // TEC, 5 double disks, radially half PS, half 2S
       sp.set_iterator_limits(2, 0);
     }
     {
