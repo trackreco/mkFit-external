@@ -25,46 +25,86 @@ namespace {
     ic.m_region_order[3] = TrackerInfo::Reg_Endcap_Neg;
     ic.m_region_order[4] = TrackerInfo::Reg_Barrel;
 
+    // NOTE: v2p2 can potentially handle double layers, other build methods can not.
+    // This means runtime switching between build methods when double layers are active
+    // does not work.
+    const bool PS_as_single_entry = false;
+    // The "swap" (as also used in function names) is needed as S layers are before P in layer ordering.
+    // It remains to be seen if putting P-s first is really better than going in correct / distance order.
+
     {
       SteeringParams &sp = ic.m_steering_params[TrackerInfo::Reg_Endcap_Neg];
       sp.reserve_plan(2 + 12);  // BPix + FPix-; BPix3 & 4 are out of acceptance
+
       sp.fill_plan(0, 1);
       sp.fill_plan(38, 49);     // FPix- all 12
+
       sp.set_iterator_limits(2, 0);
     }
     {
       SteeringParams &sp = ic.m_steering_params[TrackerInfo::Reg_Transition_Neg];
-      sp.reserve_plan(4 + 8 + 12 + 10); // BPix + FPix- + TOB- +TEC-
+      sp.reserve_plan(4 + 8 + 12 + 10);     // BPix + FPix- + TOB- +TEC-
+
       sp.fill_plan( 0,  3);
-      sp.fill_plan(38, 45);            // FPix-, first 8 layers
-      sp.fill_plan_swap_pairs( 4, 9);  // TOB, inner 3 double layers, PS
-      sp.fill_plan( 10, 15);           // TOB, outer 3 double layers, 2S
-      sp.fill_plan_swap_pairs(50, 59); // TEC, 5 double disks, radially half PS, half 2S
+      sp.fill_plan(38, 45);    // FPix-, first 8 layers
+
+      if (PS_as_single_entry)
+        sp.fill_plan_pairs_with_swap_as_singles( 4, 9);  // TOB, inner 3 double layers, PS
+      else
+        sp.fill_plan_pairs_with_swap( 4, 9);  // TOB, inner 3 double layers, PS
+
+      sp.fill_plan( 10, 15);    // TOB, outer 3 double layers, 2S
+
+      if (PS_as_single_entry)
+        sp.fill_plan_pairs_with_swap_as_singles(50, 59); // TEC, 5 double disks, radially half PS, half 2S
+      else
+        sp.fill_plan_pairs_with_swap(50, 59); // TEC, 5 double disks, radially half PS, half 2S
+
       sp.set_iterator_limits(2, 0);
     }
     {
       SteeringParams &sp = ic.m_steering_params[TrackerInfo::Reg_Barrel];
-      sp.reserve_plan(4 + 6 + 6);      // BPix + TOB-1 + TOB-2
-      sp.fill_plan( 0,  3);            //                  [ 0,  3]
-      sp.fill_plan_swap_pairs( 4,  9); // TOB-1, 6 layers  [ 4,  9] PS
-      sp.fill_plan(10, 15);            // TOB-2, 6 layers  [10, 15] 2S
+      sp.reserve_plan(4 + 6 + 6);  // BPix + TOB-1 + TOB-2
+
+      sp.fill_plan( 0,  3);       //      [ 0,  3]
+
+      if (PS_as_single_entry)
+        sp.fill_plan_pairs_with_swap_as_singles( 4,  9); // TOB-1, 6 layers  [ 4,  9] PS
+      else
+        sp.fill_plan_pairs_with_swap( 4,  9); // TOB-1, 6 layers  [ 4,  9] PS
+
+      sp.fill_plan(10, 15);    // TOB-2, 6 layers  [10, 15] 2S
+
       sp.set_iterator_limits(2, 0);
     }
     {
       SteeringParams &sp = ic.m_steering_params[TrackerInfo::Reg_Transition_Pos];
       sp.reserve_plan(4 + 8 + 12 + 10);  // BPix + FPix+ + TOB+ + TEC+
+
       sp.fill_plan( 0,  3);
-      sp.fill_plan(16, 23);            // FPix-, first 8 layers
-      sp.fill_plan_swap_pairs( 4, 9);  // TOB, inner 3 double layers, PS
-      sp.fill_plan( 10, 15);           // TOB, outer 3 double layers, 2S
-      sp.fill_plan_swap_pairs(28, 37); // TEC, 5 double disks, radially half PS, half 2S
+      sp.fill_plan(16, 23);   // FPix-, first 8 layers
+
+      if (PS_as_single_entry)
+        sp.fill_plan_pairs_with_swap_as_singles( 4, 9);  // TOB, inner 3 double layers, PS
+      else
+        sp.fill_plan_pairs_with_swap( 4, 9);  // TOB, inner 3 double layers, PS
+
+      sp.fill_plan( 10, 15);    // TOB, outer 3 double layers, 2S
+
+      if (PS_as_single_entry)
+        sp.fill_plan_pairs_with_swap_as_singles(28, 37); // TEC, 5 double disks, radially half PS, half 2S
+      else
+        sp.fill_plan_pairs_with_swap(28, 37); // TEC, 5 double disks, radially half PS, half 2S
+
       sp.set_iterator_limits(2, 0);
     }
     {
       SteeringParams &sp = ic.m_steering_params[TrackerInfo::Reg_Endcap_Pos];
       sp.reserve_plan(2 + 12);  // BPix + FPix+; BPix3 & 4 are out of acceptance
+
       sp.fill_plan( 0,  1);
       sp.fill_plan(16, 27);     // FPix- all 12
+
       sp.set_iterator_limits(2, 0);
     }
   }
@@ -124,11 +164,11 @@ namespace {
   void Create_CMS_phase2(TrackerInfo &ti, IterationsInfo &ii, bool verbose) {
     // TrackerInfo needs to be loaded from a bin-file.
     if (ti.n_layers() != 60) {
-      fprintf(stderr, "Create_CMS_phase2() FATAL TrackerInfo shold have been initialized from a binary file\n"
+      fprintf(stderr, "Create_CMS_phase2() FATAL TrackerInfo should have been initialized from a binary file\n"
                        "with the same name as the geometry library and a '.bin' suffix.\n");
       throw std::runtime_error("Create_CMS_phase2 TrackerIngo not initialized");
     }
-    // ti.print_tracker(2); // 1 - print layers, 2 - print layers and modules
+    ti.print_tracker(1); // 1 - print layers, 2 - print layers and modules
 
     PropagationConfig &pconf = ti.prop_config_nc();
     pconf.backward_fit_to_pca = Config::includePCA;
@@ -144,7 +184,7 @@ namespace {
     pconf.pca_prop_pflags = PropagationFlags(PF_none);
     pconf.apply_tracker_info(&ti);
 
-    const bool enable_all_iters_for_seed_cleaning_tests = false;
+    const bool enable_all_iters_for_seed_cleaning_tests = true;
 
     ii.resize(enable_all_iters_for_seed_cleaning_tests ? 10 : 1);
 
