@@ -25,12 +25,13 @@ namespace {
     ic.m_region_order[3] = TrackerInfo::Reg_Endcap_Neg;
     ic.m_region_order[4] = TrackerInfo::Reg_Barrel;
 
-    // NOTE: v2p2 can potentially handle double layers, other build methods can not.
+    // NOTE: v2p2 can potentially handle double OT layers, other build methods can not.
     // This means runtime switching between build methods when double layers are active
     // does not work.
-    const bool PS_as_single_entry = false;
-    // The "swap" (as also used in function names) is needed as S layers are before P in layer ordering.
-    // It remains to be seen if putting P-s first is really better than going in correct / distance order.
+    // The "swap" is needed as S layers are before P in layer ordering, probably
+    // to be changed.
+    const bool OT_as_single_entry = false;
+    const bool OT_swap_pairs = false;
 
     {
       SteeringParams &sp = ic.m_steering_params[TrackerInfo::Reg_Endcap_Neg];
@@ -48,17 +49,13 @@ namespace {
       sp.fill_plan( 0,  3);
       sp.fill_plan(38, 45);    // FPix-, first 8 layers
 
-      if (PS_as_single_entry)
-        sp.fill_plan_pairs_with_swap_as_singles( 4, 9);  // TOB, inner 3 double layers, PS
-      else
-        sp.fill_plan_pairs_with_swap( 4, 9);  // TOB, inner 3 double layers, PS
+      // TOB, inner 3 double layers, PS
+      sp.fill_plan_pairs( 4, 9, OT_as_single_entry, OT_swap_pairs);
 
       sp.fill_plan( 10, 15);    // TOB, outer 3 double layers, 2S
 
-      if (PS_as_single_entry)
-        sp.fill_plan_pairs_with_swap_as_singles(50, 59); // TEC, 5 double disks, radially half PS, half 2S
-      else
-        sp.fill_plan_pairs_with_swap(50, 59); // TEC, 5 double disks, radially half PS, half 2S
+      // TEC, 5 double disks, radially half PS, half 2S
+      sp.fill_plan_pairs(50, 59, OT_as_single_entry, OT_swap_pairs);
 
       sp.set_iterator_limits(2, 0);
     }
@@ -68,10 +65,8 @@ namespace {
 
       sp.fill_plan( 0,  3);       //      [ 0,  3]
 
-      if (PS_as_single_entry)
-        sp.fill_plan_pairs_with_swap_as_singles( 4,  9); // TOB-1, 6 layers  [ 4,  9] PS
-      else
-        sp.fill_plan_pairs_with_swap( 4,  9); // TOB-1, 6 layers  [ 4,  9] PS
+      // TOB-1, 6 layers  [ 4,  9] PS
+      sp.fill_plan_pairs( 4,  9, OT_as_single_entry, OT_swap_pairs);
 
       sp.fill_plan(10, 15);    // TOB-2, 6 layers  [10, 15] 2S
 
@@ -84,17 +79,13 @@ namespace {
       sp.fill_plan( 0,  3);
       sp.fill_plan(16, 23);   // FPix-, first 8 layers
 
-      if (PS_as_single_entry)
-        sp.fill_plan_pairs_with_swap_as_singles( 4, 9);  // TOB, inner 3 double layers, PS
-      else
-        sp.fill_plan_pairs_with_swap( 4, 9);  // TOB, inner 3 double layers, PS
+      // TOB, inner 3 double layers, PS
+      sp.fill_plan_pairs( 4, 9, OT_as_single_entry, OT_swap_pairs);
 
       sp.fill_plan( 10, 15);    // TOB, outer 3 double layers, 2S
 
-      if (PS_as_single_entry)
-        sp.fill_plan_pairs_with_swap_as_singles(28, 37); // TEC, 5 double disks, radially half PS, half 2S
-      else
-        sp.fill_plan_pairs_with_swap(28, 37); // TEC, 5 double disks, radially half PS, half 2S
+      // TEC, 5 double disks, radially half PS, half 2S
+      sp.fill_plan_pairs(28, 37, OT_as_single_entry, OT_swap_pairs);
 
       sp.set_iterator_limits(2, 0);
     }
@@ -137,11 +128,12 @@ namespace {
     ic.m_backward_fit_min_hits = 99;
     auto &spv = ic.m_steering_params;
     // XXXX Recheck those limits !!!
-    spv[TrackerInfo::Reg_Endcap_Neg].set_iterator_limits(2, 0, 3);
-    spv[TrackerInfo::Reg_Transition_Neg].set_iterator_limits(2, 0, 4);
-    spv[TrackerInfo::Reg_Barrel].set_iterator_limits(2, 0, 2);
-    spv[TrackerInfo::Reg_Transition_Pos].set_iterator_limits(2, 0, 4);
-    spv[TrackerInfo::Reg_Endcap_Pos].set_iterator_limits(2, 0, 3);
+    // The bkw-search start plan index is set for LST T5 seeds, mostly.
+    spv[TrackerInfo::Reg_Endcap_Neg].set_iterator_limits(2, 0, 5);
+    spv[TrackerInfo::Reg_Transition_Neg].set_iterator_limits(2, 0, 4 + 8 + 3);
+    spv[TrackerInfo::Reg_Barrel].set_iterator_limits(2, 0, 4 + 3);
+    spv[TrackerInfo::Reg_Transition_Pos].set_iterator_limits(2, 0, 4 + 8 + 3);
+    spv[TrackerInfo::Reg_Endcap_Pos].set_iterator_limits(2, 0, 5);
   }
 
   void SetupIterationParams(IterationParams &ip, unsigned int it = 0) {
@@ -153,7 +145,7 @@ namespace {
       ip.chi2Cut_min = 15.0;
       ip.chi2CutOverlap = 3.5;
       ip.pTCutOverlap = 0.0;
-      ip.useHitSelectionV2 = true;
+      ip.useHitSelectionV2 = true; // false; // DDDDD true;
       ip.minPtCut = 0.0;
       ip.maxClusterSize = 8;
     }
