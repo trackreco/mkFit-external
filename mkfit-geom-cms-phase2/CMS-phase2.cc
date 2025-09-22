@@ -176,7 +176,7 @@ namespace {
     pconf.pca_prop_pflags = PropagationFlags(PF_none);
     pconf.apply_tracker_info(&ti);
 
-    const bool enable_all_iters_for_seed_cleaning_tests = true;
+    const bool enable_all_iters_for_seed_cleaning_tests = false;
 
     ii.resize(enable_all_iters_for_seed_cleaning_tests ? 10 : 1);
 
