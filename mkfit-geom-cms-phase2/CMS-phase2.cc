@@ -129,11 +129,12 @@ namespace {
     auto &spv = ic.m_steering_params;
     // XXXX Recheck those limits !!!
     // The bkw-search start plan index is set for LST T5 seeds, mostly.
-    spv[TrackerInfo::Reg_Endcap_Neg].set_iterator_limits(2, 0, 5);
-    spv[TrackerInfo::Reg_Transition_Neg].set_iterator_limits(2, 0, 4 + 8 + 3);
+    // Also, this will change for double layers, somehow.
+    spv[TrackerInfo::Reg_Endcap_Neg].set_iterator_limits(2, 0, 7); // was 5
+    spv[TrackerInfo::Reg_Transition_Neg].set_iterator_limits(2, 0, 4 + 8 + 2*6 + 3); // was 4 + 8 + 3
     spv[TrackerInfo::Reg_Barrel].set_iterator_limits(2, 0, 4 + 3);
-    spv[TrackerInfo::Reg_Transition_Pos].set_iterator_limits(2, 0, 4 + 8 + 3);
-    spv[TrackerInfo::Reg_Endcap_Pos].set_iterator_limits(2, 0, 5);
+    spv[TrackerInfo::Reg_Transition_Pos].set_iterator_limits(2, 0, 4 + 8 + 2*6 + 3);
+    spv[TrackerInfo::Reg_Endcap_Pos].set_iterator_limits(2, 0, 7);
   }
 
   void SetupIterationParams(IterationParams &ip, unsigned int it = 0) {
@@ -145,7 +146,7 @@ namespace {
       ip.chi2Cut_min = 15.0;
       ip.chi2CutOverlap = 3.5;
       ip.pTCutOverlap = 0.0;
-      ip.useHitSelectionV2 = true; // false; // DDDDD true;
+      ip.useHitSelectionV2 = true; // relevant for Std and CE, not for V2
       ip.minPtCut = 0.0;
       ip.maxClusterSize = 8;
     }
@@ -162,6 +163,10 @@ namespace {
     }
     ti.print_tracker(1); // 1 - print layers, 2 - print layers and modules
 
+    // In cmssw, this is set in the GeometryESProducer for Phase2.
+    // We also have --use-p2p 0|1 in mkFit.exe
+    Config::usePropToPlane = true;
+
     PropagationConfig &pconf = ti.prop_config_nc();
     pconf.backward_fit_to_pca = Config::includePCA;
     pconf.finding_requires_propagation_to_hit_pos = true;
@@ -177,6 +182,9 @@ namespace {
     pconf.apply_tracker_info(&ti);
 
     const bool enable_all_iters_for_seed_cleaning_tests = false;
+    // NOTE: if setting the above to true, also set
+    //    Config::nItersCMSSW = 10; // or whatever number
+    // or use --num-iters-cmssw num
 
     ii.resize(enable_all_iters_for_seed_cleaning_tests ? 10 : 1);
 
