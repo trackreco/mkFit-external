@@ -28,8 +28,67 @@ namespace {
     // NOTE: v2p2 can potentially handle double OT layers, other build methods can not.
     // This means runtime switching between build methods when double layers are active
     // does not work.
-    // The "swap" is needed as S layers are before P in layer ordering, probably
-    // to be changed.
+    // OBSOLETE COMMENT, kept for the record: "The swap is needed as S layers are
+    // before P in layer ordering, probably to be changed." That WAS changed --
+    // commit 10781bd48eb (2025-09-16) "Swap PS layer indices so P comes before S"
+    // added the `+1 - isStereo` in LayerNumberConverter::convertLayerNumber(), so
+    // P (isStereo=1, macro-pixel, 1.5 mm) now gets the LOWER mkFit layer number
+    // and S (isStereo=0, strip, 24 mm) the higher. OT_swap_pairs = false is
+    // therefore correct now; it no longer needs to compensate for anything.
+    //
+    // *** DOUBLE LAYERS ARE CURRENTLY OFF. *** With as_single_entry = false,
+    // fill_plan_pairs(4,9,...) emits LayerControl(4), LayerControl(5), ... which is
+    // identical to fill_plan(4,9). So LayerControl::m_layer_sec is never set,
+    // has_second_layer() is always false, and every double-layer path in
+    // MkFinderV2p2 (m_rz_limits.m_is_double, BL_s, the m_layer_sec block near
+    // MkFinderV2p2.cc:923) is dead code today.
+    //
+    // Three things to fix BEFORE switching this on -- see RecoTracker/CLAUDE.md,
+    // "Double layers: switched off at the config level":
+    //
+    //  1. TOB 2S (10-15) is never paired, though the geometry says it should be:
+    //     is_stereo alternates 0,1,0,1,0,1 across 10-15 exactly as across 4-9, and
+    //     the comments below call them "outer 3 double layers" -- but they go
+    //     through plain fill_plan(10, 15) while 4-9 go through fill_plan_pairs().
+    //     Enabling these flags pairs TBPS and TEC and silently leaves TOB 2S as
+    //     six singles, in all three regions that reference it.
+    //
+    //  2. SetupBackwardSearch() below hardcodes plan-INDEX arithmetic that assumes
+    //     the unpaired plan. The transition plan is 4+8+6+6+10 = 34 entries
+    //     unpaired but 4+8+3+6+5 = 26 paired, so its index 27 goes out of range --
+    //     and SteeringParams::iterator::is_valid() only tests != -1, making
+    //     m_layer_plan[27] an unchecked OOB read. Fix: capture m_layer_plan.size()
+    //     after each fill_plan* call here, or look the pickup up by layer number.
+    //
+    //  3. Pairing replaces two propagations -- hence two material applications --
+    //     per physical layer with one, so it roughly HALVES the applied multiple
+    //     scattering in TBPS and TEC. Direction of the error, carefully:
+    //     TrackerInfo::material_radl() is a true bin-local weighted average
+    //     (MkFitGeometryESProducer::aggregateMaterialInfo(): rl/weight), not a
+    //     per-layer effective value calibrated against this plan. But
+    //     applyMaterialEffects() samples exactly ONE bin, at the propagation
+    //     destination, with no path-length scaling -- while the 1 cm x 1 cm grid
+    //     means a 3.4-6.6 cm thick OT shell spans 3-7 bins. So one sample already
+    //     under-integrates the traversal, two samples under-integrate less, and
+    //     pairing moves FURTHER from the true integral: less scattering, tighter
+    //     covariance, the direction that already hurts. Expect an efficiency
+    //     regression from this alone, independent of any bug. The real fix is
+    //     path-length scaling / integration, listed in RecoTracker/CLAUDE.md
+    //     under "Revisit where material is applied".
+    //
+    //  Note also: mkFit SPLITS one physical CMS OT layer into two mkFit layers,
+    //  using CMSSW's TrackerTopology::isStereo(detid) as the criterion. So "double
+    //  layer" here means re-uniting what the layer numbering divided, not
+    //  modelling a genuine two-sensor stereo structure -- CMS phase-2 OT pairs are
+    //  parallel, no crossing angle, unlike ATLAS ITk. ("stereo" is CMSSW's word;
+    //  in phase-2 PS modules it happens to tag the P / macro-pixel sensor.)
+    //
+    // On OT_swap_pairs: nearly meaningless for this geometry. From the dump the
+    // pair members are nested, near-coincident shells -- L4 r(22.14, 28.73) and
+    // L5 r(22.39, 28.54), offset 2.5 mm out of a 6.5 cm shell, because TBPS is
+    // tilted. The sub-layers are radially INTERLEAVED, so "which one is first" is
+    // not well defined at layer granularity; the ordering that matters is the
+    // path-length ordering of individual hits, merged across both sub-layers.
     const bool OT_as_single_entry = false;
     const bool OT_swap_pairs = false;
 
@@ -130,9 +189,16 @@ namespace {
     // XXXX Recheck those limits !!!
     // The bkw-search start plan index is set for LST T5 seeds, mostly.
     // Also, this will change for double layers, somehow.
+    //
+    // These are plan INDICES, spelled as arithmetic that encodes the plan's
+    // structure -- so they silently go wrong (out of range, unchecked) the moment
+    // OT_as_single_entry flips and the plan gets shorter. See the note at
+    // SetupCoreSteeringParams(). The robust form is to record the index at build
+    // time (m_layer_plan.size() after each fill_plan* call) or to resolve it from
+    // a layer number, so the value follows the plan instead of restating it.
     spv[TrackerInfo::Reg_Endcap_Neg].set_iterator_limits(2, 0, 7); // was 5
     spv[TrackerInfo::Reg_Transition_Neg].set_iterator_limits(2, 0, 4 + 8 + 2*6 + 3); // was 4 + 8 + 3
-    spv[TrackerInfo::Reg_Barrel].set_iterator_limits(2, 0, 4 + 3);
+    spv[TrackerInfo::Reg_Barrel].set_iterator_limits(2, 0, 4 + 6);
     spv[TrackerInfo::Reg_Transition_Pos].set_iterator_limits(2, 0, 4 + 8 + 2*6 + 3);
     spv[TrackerInfo::Reg_Endcap_Pos].set_iterator_limits(2, 0, 7);
   }
@@ -167,6 +233,15 @@ namespace {
     // We also have --use-p2p 0|1 in mkFit.exe
     Config::usePropToPlane = true;
 
+    // Likewise set in the GeometryESProducer for Phase2 in cmssw
+    // (MkFitGeometryESProducer.cc:563) -- but Config.cc:8 defaults it to FALSE,
+    // so standalone was running without it and phase-2 set neither. With it off,
+    // applyMaterialEffects() adds multiple scattering only to err(4,4) and
+    // err(5,5) and puts NONE into 1/pT -- precisely the element a momentum
+    // resolution or chi2 study depends on. Every standalone covariance number
+    // taken before 2026-09-10 has that baked in. Also reachable as --use-ptms 0|1.
+    Config::usePtMultScat = true;
+
     PropagationConfig &pconf = ti.prop_config_nc();
     pconf.backward_fit_to_pca = Config::includePCA;
     pconf.finding_requires_propagation_to_hit_pos = true;
@@ -195,7 +270,8 @@ namespace {
     setup_default_windows(ti, ii[0]);
 
     ii[0].m_seed_cleaner_name = "phase1:default";
-    ii[0].m_default_track_scorer_name = "phase1:default";
+    // ii[0].m_default_track_scorer_name = "phase1:default";
+    ii[0].m_default_track_scorer_name = "phase2:LstIntoPix";
 
     ii[0].m_seed_partitioner_name = "phase2:1";
 
