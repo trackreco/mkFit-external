@@ -1,0 +1,713 @@
+mkFit configuration complete.
+  vusize=8, num_thr_events=1, num_thr_finder=1
+  sizeof(Track)=160, sizeof(Hit)=44, sizeof(SVector3)=12, sizeof(SMatrixSym33)=24, sizeof(MCHitInfo)=16
+Constructing geometry 'CMS-phase2'
+execTrackerInfoCreatorPlugin processing 'CMS-phase2.so'
+execTrackerInfoCreatorPlugin has found TrackerInfo binary file 'CMS-phase2.bin'
+Opened TrackerInfoGeom file 'CMS-phase2.bin', format version 3, n_layers 60
+Layer  0  r( 2.8683,  3.8285) z( -19.9425,   19.9425) is_brl=1, is_pix=1, is_stereo=0, has_charge=1, q_bin=2.00
+Layer  1  r( 5.9521,  6.9437) z( -20.0725,   20.0725) is_brl=1, is_pix=1, is_stereo=0, has_charge=1, q_bin=2.00
+Layer  2  r(10.3321, 11.3276) z( -20.0725,   20.0725) is_brl=1, is_pix=1, is_stereo=0, has_charge=1, q_bin=2.00
+Layer  3  r(14.4917, 15.4947) z( -20.0725,   20.0725) is_brl=1, is_pix=1, is_stereo=0, has_charge=1, q_bin=2.00
+Layer  4  r(22.3913, 28.5443) z(-119.9101,  119.9101) is_brl=1, is_pix=0, is_stereo=1, has_charge=0, q_bin=6.00
+Layer  5  r(22.1374, 28.7251) z(-120.2931,  120.2931) is_brl=1, is_pix=0, is_stereo=0, has_charge=0, q_bin=6.00
+Layer  6  r(35.0708, 40.4064) z(-119.9814,  119.9814) is_brl=1, is_pix=0, is_stereo=1, has_charge=0, q_bin=6.00
+Layer  7  r(34.9123, 40.6094) z(-120.3553,  120.3553) is_brl=1, is_pix=0, is_stereo=0, has_charge=0, q_bin=6.00
+Layer  8  r(50.1473, 55.4057) z(-119.9623,  119.9623) is_brl=1, is_pix=0, is_stereo=1, has_charge=0, q_bin=6.00
+Layer  9  r(49.9880, 55.5977) z(-120.1915,  120.1915) is_brl=1, is_pix=0, is_stereo=0, has_charge=0, q_bin=6.00
+Layer 10  r(67.1264, 70.5778) z(-117.6760,  117.6760) is_brl=1, is_pix=0, is_stereo=1, has_charge=0, q_bin=6.00
+Layer 11  r(66.9468, 70.7574) z(-117.6760,  117.6760) is_brl=1, is_pix=0, is_stereo=0, has_charge=0, q_bin=6.00
+Layer 12  r(84.3944, 87.8486) z(-117.6760,  117.6760) is_brl=1, is_pix=0, is_stereo=1, has_charge=0, q_bin=6.00
+Layer 13  r(84.2147, 88.0283) z(-117.6760,  117.6760) is_brl=1, is_pix=0, is_stereo=0, has_charge=0, q_bin=6.00
+Layer 14  r(106.6685, 110.1245) z(-117.6760,  117.6760) is_brl=1, is_pix=0, is_stereo=1, has_charge=0, q_bin=6.00
+Layer 15  r(106.4887, 110.3043) z(-117.6760,  117.6760) is_brl=1, is_pix=0, is_stereo=0, has_charge=0, q_bin=6.00
+Layer 16  r( 3.2118, 16.0883) z(  24.3925,   26.2075) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 17  r( 3.2118, 16.0883) z(  31.3875,   33.2025) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 18  r( 3.2118, 16.0883) z(  40.3155,   42.1305) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 19  r( 3.2118, 16.0883) z(  51.7125,   53.5275) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 20  r( 3.2118, 16.0883) z(  66.2605,   68.0755) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 21  r( 3.2118, 16.0883) z(  83.3305,   85.1455) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 22  r( 3.2118, 16.0883) z( 110.0345,  111.8495) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 23  r( 3.2118, 16.0883) z( 138.7925,  140.6075) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 24  r( 6.5137, 25.4513) z( 174.3925,  175.6075) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 25  r( 6.5137, 25.4513) z( 200.3515,  201.5665) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 26  r( 6.5137, 25.4513) z( 230.1615,  231.3765) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 27  r( 6.5137, 25.4513) z( 264.3925,  265.6075) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 28  r(24.1134, 107.4383) z( 128.9305,  133.4295) is_brl=0, is_pix=0, is_stereo=1, has_charge=0, q_bin=5.60
+Layer 29  r(24.1053, 107.4383) z( 128.6350,  133.7250) is_brl=0, is_pix=0, is_stereo=0, has_charge=0, q_bin=5.60
+Layer 30  r(24.1134, 107.4383) z( 152.7505,  157.2495) is_brl=0, is_pix=0, is_stereo=1, has_charge=0, q_bin=5.60
+Layer 31  r(24.1053, 107.4383) z( 152.4550,  157.5450) is_brl=0, is_pix=0, is_stereo=0, has_charge=0, q_bin=5.60
+Layer 32  r(33.4767, 107.4383) z( 183.0905,  187.5895) is_brl=0, is_pix=0, is_stereo=1, has_charge=0, q_bin=5.60
+Layer 33  r(33.4686, 107.4383) z( 182.6905,  187.8850) is_brl=0, is_pix=0, is_stereo=0, has_charge=0, q_bin=5.60
+Layer 34  r(33.4767, 107.4383) z( 219.3695,  223.8685) is_brl=0, is_pix=0, is_stereo=1, has_charge=0, q_bin=5.60
+Layer 35  r(33.4686, 107.4383) z( 218.9695,  224.1640) is_brl=0, is_pix=0, is_stereo=0, has_charge=0, q_bin=5.60
+Layer 36  r(33.4767, 107.4383) z( 262.7505,  267.2495) is_brl=0, is_pix=0, is_stereo=1, has_charge=0, q_bin=5.60
+Layer 37  r(33.4686, 107.4383) z( 262.3505,  267.6495) is_brl=0, is_pix=0, is_stereo=0, has_charge=0, q_bin=5.60
+Layer 38  r( 3.2118, 16.0883) z( -26.2075,  -24.3925) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 39  r( 3.2118, 16.0883) z( -33.2025,  -31.3875) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 40  r( 3.2118, 16.0883) z( -42.1305,  -40.3155) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 41  r( 3.2118, 16.0883) z( -53.5275,  -51.7125) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 42  r( 3.2118, 16.0883) z( -68.0755,  -66.2605) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 43  r( 3.2118, 16.0883) z( -85.1455,  -83.3305) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 44  r( 3.2118, 16.0883) z(-111.8495, -110.0345) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 45  r( 3.2118, 16.0883) z(-140.6075, -138.7925) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 46  r( 6.5137, 25.4513) z(-175.6075, -174.3925) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 47  r( 6.5137, 25.4513) z(-201.5665, -200.3515) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 48  r( 6.5137, 25.4513) z(-231.3765, -230.1615) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 49  r( 6.5137, 25.4513) z(-265.6075, -264.3925) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 50  r(24.1134, 107.4383) z(-133.4295, -128.9305) is_brl=0, is_pix=0, is_stereo=1, has_charge=0, q_bin=5.60
+Layer 51  r(24.1053, 107.4383) z(-133.7250, -128.6350) is_brl=0, is_pix=0, is_stereo=0, has_charge=0, q_bin=5.60
+Layer 52  r(24.1134, 107.4383) z(-157.2495, -152.7505) is_brl=0, is_pix=0, is_stereo=1, has_charge=0, q_bin=5.60
+Layer 53  r(24.1053, 107.4383) z(-157.5450, -152.4550) is_brl=0, is_pix=0, is_stereo=0, has_charge=0, q_bin=5.60
+Layer 54  r(33.4767, 107.4383) z(-187.5895, -183.0905) is_brl=0, is_pix=0, is_stereo=1, has_charge=0, q_bin=5.60
+Layer 55  r(33.4686, 107.4383) z(-187.8850, -182.6905) is_brl=0, is_pix=0, is_stereo=0, has_charge=0, q_bin=5.60
+Layer 56  r(33.4767, 107.4383) z(-223.8685, -219.3695) is_brl=0, is_pix=0, is_stereo=1, has_charge=0, q_bin=5.60
+Layer 57  r(33.4686, 107.4383) z(-224.1640, -218.9695) is_brl=0, is_pix=0, is_stereo=0, has_charge=0, q_bin=5.60
+Layer 58  r(33.4767, 107.4383) z(-267.2495, -262.7505) is_brl=0, is_pix=0, is_stereo=1, has_charge=0, q_bin=5.60
+Layer 59  r(33.4686, 107.4383) z(-267.6495, -262.3505) is_brl=0, is_pix=0, is_stereo=0, has_charge=0, q_bin=5.60
+CMS-phase2 -- Create_TrackerInfo finished
+Opened file '/foo/matevz/mic-dev/TTbar_noPU_100events_HLT_Phase2_singleTrackingIteration_CAExtSeedsUpToThreeOTBarrelLayer_into_LSTSeedsIncludingT5s.bin', format version 7, n_layers 60, n_events 100
+  Extra sections: Seeds CmsswTracks
+Shell event range set to [1, 20], 20 events.
+Read complete, 1162 simtracks on file.
+At event 1
+Shell &s variable is set: (mkfit::Shell &) @0x1c81efa0
+Executing command: gROOT->SetBatch(kTRUE)
+Executing command: gROOT->ProcessLine(".L ../RecoTracker/MkFitCore/standalone/test/prop-kalman-validation.C")
+(long) 0
+Executing command: pkv_solver(0,0)
+
+pkv_set_solver: g_plane_solve_hermite=0  g_getS_stable_root=0  -> getS quadratic, ORIGINAL roots (pre-Step-2)
+Executing command: pkv_task6_reset()
+Executing command: pkv_task6_maxhpl(3)
+Executing command: s.GoToEvent(1)
+Read complete, 1162 simtracks on file.
+At event 1
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(2)
+Read complete, 756 simtracks on file.
+At event 2
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(3)
+Read complete, 1179 simtracks on file.
+At event 3
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(4)
+Read complete, 643 simtracks on file.
+At event 4
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(5)
+Read complete, 786 simtracks on file.
+At event 5
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(6)
+Read complete, 782 simtracks on file.
+At event 6
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(7)
+Read complete, 832 simtracks on file.
+At event 7
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(8)
+Read complete, 497 simtracks on file.
+At event 8
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(9)
+Read complete, 865 simtracks on file.
+At event 9
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(10)
+Read complete, 540 simtracks on file.
+At event 10
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(11)
+Read complete, 663 simtracks on file.
+At event 11
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(12)
+Read complete, 911 simtracks on file.
+At event 12
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(13)
+Read complete, 776 simtracks on file.
+At event 13
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(14)
+Read complete, 965 simtracks on file.
+At event 14
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(15)
+Read complete, 974 simtracks on file.
+At event 15
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(16)
+Read complete, 962 simtracks on file.
+At event 16
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(17)
+Read complete, 837 simtracks on file.
+At event 17
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(18)
+Read complete, 909 simtracks on file.
+At event 18
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(19)
+Read complete, 409 simtracks on file.
+At event 19
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(20)
+Read complete, 461 simtracks on file.
+At event 20
+Executing command: pkv_task6_ev(s.event())
+Executing command: pkv_task6_report()
+
+============================================================================
+TASK 6 -- pT resolution from a forward+backward fit of REAL SIM TRACKS
+============================================================================
+fit: MkFitter::fwdFitFitTracks then bkReFitFitTracks, reproduced with the
+     suite's run_bkfit() kernel (propagateHelixToPlaneMPlex +
+     kalmanOperationPlaneLocal + kalmanCheckChargeFlip).
+material mode: all before update (current code) ; use_param_b_field=1 (as MkBuilder::fit_tracks)
+Config::usePropToPlane=1 usePtMultScat=1 nSStepsInProp2Plane=2 Bfield=3.8112
+quantity: d(1/pT)/(1/pT) = (ipt_fit - ipt_sim)/ipt_sim, sim truth at vertex.
+seed prior at the vertex: sigma_pos 1 cm, sigma_ang 50 mrad, sigma(1/pT) 50%.
+
+  hit-to-its-own-module-plane distance |n.(hit-plPnt)| [cm]: med 2.941e-09 p90 1.685e-06 max 5.364e-06 (n=27890)
+  hit-to-module-centre distance [cm]: med 2.253 p90 4.413 max 5.294
+
+  hits dropped: module id out of range 0, degenerate module normal 0
+
+SELECTION FUNNEL (20 events)
+  sim tracks in file                              15909
+  seed tracks                                      1525
+  seeds with a label >= 0                          1331
+  -> distinct sim labels from seeds                1331
+  -> after n_rec_hits >= 8                         1302
+  -> after APEX truncation                         1296  (lost 6 to <8 hits)
+  -> after OUTLIER removal                         1296  (lost 0 to <8 hits)
+  -> after <=3 hits per layer                      1165  (rejected 131)
+  -> after pT >= 0.5 GeV                           1165
+
+SHAPING (mode 0x6: order=0 apex=1 outlier=1)
+  sim tracks with an unusable production state        0
+  tracks TRUNCATED at the apex                       17  (424 hits removed)
+  tracks with an OUTLIER removed                    676  (4137 hits removed)
+     per-hit chi2 of the removed hits: med 5.727e+04 p90 6.756e+06 max 1e+30 (cut 25)
+  outlier cut: per-hit chi2 > 25, at most 10 removals per track
+  apex truncations by pT bin (fired / tracks): [0.5-1]2/99 [1-2]11/539 [2-4]1/315 [4-8]1/190 [8-16]1/101 [16-1e+03]1/58
+  max hits in any one layer, BEFORE shaping: 1:123 2:474 3:391 4:109 5:80 6:35 7:19 8:14 9:13 10:9 11:3 12:3 13:2 14:3 15:24
+  max hits in any one layer, AFTER  shaping: 1:192 2:619 3:354 4:55 5:25 6:16 7:3 8:10 9:2 10:2 12:2 13:2 15:14
+  ordering: alpha (path length) vs 3D radius -- 3.1 inversions per track (1331 tracks)
+  ordering bucket eps = 0.05 rad (0 = pure turn angle)
+  cos(momPhi-posPhi) over ALL raw hits: p1 0.7233 p10 0.9536 med 0.9978   (apex cut < 0.19867)
+  |hit - ideal-helix circle| [cm]: med 0.04314 p90 0.81 p99 20.15 max 89.68
+  |dz to ideal helix|       [cm]: med 0.4312 p90 6.172 p99 128.8 max 9750
+  LEGACY SUBSET (raw max hits/layer <= 2, i.e. what the old cut kept):
+     fits 597, bad 6 (1.01%), clean 591, median 0.001108, width 0.0124, chi2/ndf bkw med 0.7247
+  tracks with 3+ raw hits in one layer: 705 ; within that layer, turn-angle span med 0.002304 p90 0.03202 max 5.745 rad ; max |dcirc| med 0.1219 p90 1.367 cm
+  turn-angle span of the raw hit list [rad]: med 0.2951 p90 0.9559 max 5.996
+  -> fits run                                      1165
+     of which BAD (any category)                     21  (1.80%)
+        nonfinite end state                          13
+        badstate  end state                           8
+        propfail  (the rest)                          0
+     fwd pass flagged / bkw pass flagged              0         0
+     structural first-backward-step flags             0   (NOT counted as bad)
+     outliers |d(1/pT)/(1/pT)|>0.5 (kept)            53
+     clean fits entering the resolution            1144
+     |d(1/pT)/(1/pT)| > 1 among those                32
+
+OVERALL (clean fits only)
+  median d(1/pT)/(1/pT)     0.001259
+  robust width (p84-p16)/2   0.02647
+  p16 / p84                 -0.01761    0.03534
+  p1  / p99                  -0.3384      4.406
+  median n_hits fitted            17
+  chi2/ndf fwd  med/p90        0.809      26.91
+  chi2/ndf bkw  med/p90        0.793       17.4
+  prior x10 looser: median  0.001196  width   0.02626  (n=1140) -- compare above
+
+  flagged propagations by LAYER (fwd+bkw, both prior settings):
+   
+
+  n entries in the resolution (clean fits)
+    n               0.0-0.5   0.5-1.0   1.0-1.5   1.5-2.0   2.0-2.5   |eta|>2.5
+    pT 0.5-1              14        10         3        11        15        32
+    pT 1-2                63        72        77        77        59       126
+    pT 2-4                55        50        52        42        28        53
+    pT 4-8                42        29        37        21        13        22
+    pT 8-16               18        19        18        18        13         3
+    pT>16                 22         9         4        10         2         5
+
+  MEDIAN d(1/pT)/(1/pT)  (bias)
+    median          0.0-0.5   0.5-1.0   1.0-1.5   1.5-2.0   2.0-2.5   |eta|>2.5
+    pT 0.5-1        -0.00248  0.000184   0.00255   0.00853  -0.00199   -0.0116
+    pT 1-2           0.00164   0.00203   0.00121   0.00564   0.00702    0.0098
+    pT 2-4         -0.000151 -0.000533  0.000422   0.00963   -0.0126   -0.0123
+    pT 4-8          0.000899   0.00114   0.00142   0.00119    0.0068      0.03
+    pT 8-16          0.00409  1.69e-05  0.000719   0.00854  -0.00319       1.4
+    pT>16            0.00279  -0.00339   -0.0065    0.0104   0.00583  0.000623
+
+  ROBUST WIDTH (p84-p16)/2 of d(1/pT)/(1/pT)
+    width           0.0-0.5   0.5-1.0   1.0-1.5   1.5-2.0   2.0-2.5   |eta|>2.5
+    pT 0.5-1          0.0079   0.00628         -    0.0808    0.0196    0.0497
+    pT 1-2            0.0094    0.0188    0.0107    0.0409    0.0386    0.0789
+    pT 2-4            0.0091   0.00676    0.0123     0.143    0.0354    0.0615
+    pT 4-8           0.00637   0.00913    0.0245    0.0537    0.0256    0.0721
+    pT 8-16          0.00724   0.00849    0.0115    0.0566    0.0224         -
+    pT>16             0.0113    0.0093   0.00435     0.328         -    0.0149
+
+  n fits attempted (clean + flagged)
+    n               0.0-0.5   0.5-1.0   1.0-1.5   1.5-2.0   2.0-2.5   |eta|>2.5
+    pT 0.5-1              15        11         3        12        15        33
+    pT 1-2                64        73        77        81        61       129
+    pT 2-4                57        51        52        43        28        54
+    pT 4-8                42        29        37        21        13        22
+    pT 8-16               18        19        19        18        13         3
+    pT>16                 22         9         4        10         2         5
+
+  FRACTION with a propagation FailFlag
+    fail frac       0.0-0.5   0.5-1.0   1.0-1.5   1.5-2.0   2.0-2.5   |eta|>2.5
+    pT 0.5-1           6.67%     9.09%     0.00%     8.33%     0.00%     3.03%
+    pT 1-2             1.56%     1.37%     0.00%     4.94%     3.28%     2.33%
+    pT 2-4             3.51%     1.96%     0.00%     2.33%     0.00%     1.85%
+    pT 4-8             0.00%     0.00%     0.00%     0.00%     0.00%     0.00%
+    pT 8-16            0.00%     0.00%     5.26%     0.00%     0.00%     0.00%
+    pT>16              0.00%     0.00%     0.00%     0.00%     0.00%     0.00%
+
+Executing command: pkv_task6_stash("A_orig_getS")
+
+pkv_task6_stash: snapshot 'A_orig_getS' kept (1144 clean fits, 21 bad, 36252 per-hit chi2)
+Executing command: pkv_solver(0,1)
+
+pkv_set_solver: g_plane_solve_hermite=0  g_getS_stable_root=1  -> getS quadratic, STABLE roots (Step 2)
+Executing command: pkv_task6_reset()
+Executing command: pkv_task6_maxhpl(3)
+Executing command: s.GoToEvent(1)
+Read complete, 1162 simtracks on file.
+At event 1
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(2)
+Read complete, 756 simtracks on file.
+At event 2
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(3)
+Read complete, 1179 simtracks on file.
+At event 3
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(4)
+Read complete, 643 simtracks on file.
+At event 4
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(5)
+Read complete, 786 simtracks on file.
+At event 5
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(6)
+Read complete, 782 simtracks on file.
+At event 6
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(7)
+Read complete, 832 simtracks on file.
+At event 7
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(8)
+Read complete, 497 simtracks on file.
+At event 8
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(9)
+Read complete, 865 simtracks on file.
+At event 9
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(10)
+Read complete, 540 simtracks on file.
+At event 10
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(11)
+Read complete, 663 simtracks on file.
+At event 11
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(12)
+Read complete, 911 simtracks on file.
+At event 12
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(13)
+Read complete, 776 simtracks on file.
+At event 13
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(14)
+Read complete, 965 simtracks on file.
+At event 14
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(15)
+Read complete, 974 simtracks on file.
+At event 15
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(16)
+Read complete, 962 simtracks on file.
+At event 16
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(17)
+Read complete, 837 simtracks on file.
+At event 17
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(18)
+Read complete, 909 simtracks on file.
+At event 18
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(19)
+Read complete, 409 simtracks on file.
+At event 19
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(20)
+Read complete, 461 simtracks on file.
+At event 20
+Executing command: pkv_task6_ev(s.event())
+Executing command: pkv_task6_report()
+
+============================================================================
+TASK 6 -- pT resolution from a forward+backward fit of REAL SIM TRACKS
+============================================================================
+fit: MkFitter::fwdFitFitTracks then bkReFitFitTracks, reproduced with the
+     suite's run_bkfit() kernel (propagateHelixToPlaneMPlex +
+     kalmanOperationPlaneLocal + kalmanCheckChargeFlip).
+material mode: all before update (current code) ; use_param_b_field=1 (as MkBuilder::fit_tracks)
+Config::usePropToPlane=1 usePtMultScat=1 nSStepsInProp2Plane=2 Bfield=3.8112
+quantity: d(1/pT)/(1/pT) = (ipt_fit - ipt_sim)/ipt_sim, sim truth at vertex.
+seed prior at the vertex: sigma_pos 1 cm, sigma_ang 50 mrad, sigma(1/pT) 50%.
+
+  hit-to-its-own-module-plane distance |n.(hit-plPnt)| [cm]: med 2.941e-09 p90 1.685e-06 max 5.364e-06 (n=27890)
+  hit-to-module-centre distance [cm]: med 2.253 p90 4.413 max 5.294
+
+  hits dropped: module id out of range 0, degenerate module normal 0
+
+SELECTION FUNNEL (20 events)
+  sim tracks in file                              15909
+  seed tracks                                      1525
+  seeds with a label >= 0                          1331
+  -> distinct sim labels from seeds                1331
+  -> after n_rec_hits >= 8                         1302
+  -> after APEX truncation                         1296  (lost 6 to <8 hits)
+  -> after OUTLIER removal                         1296  (lost 0 to <8 hits)
+  -> after <=3 hits per layer                      1165  (rejected 131)
+  -> after pT >= 0.5 GeV                           1165
+
+SHAPING (mode 0x6: order=0 apex=1 outlier=1)
+  sim tracks with an unusable production state        0
+  tracks TRUNCATED at the apex                       17  (424 hits removed)
+  tracks with an OUTLIER removed                    673  (4123 hits removed)
+     per-hit chi2 of the removed hits: med 5.754e+04 p90 6.592e+06 max 1e+30 (cut 25)
+  outlier cut: per-hit chi2 > 25, at most 10 removals per track
+  apex truncations by pT bin (fired / tracks): [0.5-1]2/99 [1-2]11/539 [2-4]1/315 [4-8]1/190 [8-16]1/101 [16-1e+03]1/58
+  max hits in any one layer, BEFORE shaping: 1:123 2:474 3:391 4:109 5:80 6:35 7:19 8:14 9:13 10:9 11:3 12:3 13:2 14:3 15:24
+  max hits in any one layer, AFTER  shaping: 1:191 2:620 3:354 4:55 5:26 6:15 7:3 8:9 9:3 10:2 12:2 13:1 15:15
+  ordering: alpha (path length) vs 3D radius -- 3.1 inversions per track (1331 tracks)
+  ordering bucket eps = 0.05 rad (0 = pure turn angle)
+  cos(momPhi-posPhi) over ALL raw hits: p1 0.7233 p10 0.9536 med 0.9978   (apex cut < 0.19867)
+  |hit - ideal-helix circle| [cm]: med 0.04314 p90 0.81 p99 20.15 max 89.68
+  |dz to ideal helix|       [cm]: med 0.4312 p90 6.172 p99 128.8 max 9750
+  LEGACY SUBSET (raw max hits/layer <= 2, i.e. what the old cut kept):
+     fits 597, bad 6 (1.01%), clean 591, median 0.001297, width 0.01237, chi2/ndf bkw med 0.7203
+  tracks with 3+ raw hits in one layer: 705 ; within that layer, turn-angle span med 0.002304 p90 0.03202 max 5.745 rad ; max |dcirc| med 0.1219 p90 1.367 cm
+  turn-angle span of the raw hit list [rad]: med 0.2951 p90 0.9559 max 5.996
+  -> fits run                                      1165
+     of which BAD (any category)                     19  (1.63%)
+        nonfinite end state                          11
+        badstate  end state                           8
+        propfail  (the rest)                          0
+     fwd pass flagged / bkw pass flagged              0         0
+     structural first-backward-step flags             0   (NOT counted as bad)
+     outliers |d(1/pT)/(1/pT)|>0.5 (kept)            53
+     clean fits entering the resolution            1146
+     |d(1/pT)/(1/pT)| > 1 among those                33
+
+OVERALL (clean fits only)
+  median d(1/pT)/(1/pT)     0.001542
+  robust width (p84-p16)/2   0.02656
+  p16 / p84                  -0.0174    0.03572
+  p1  / p99                  -0.3376      5.602
+  median n_hits fitted            17
+  chi2/ndf fwd  med/p90       0.8055      27.88
+  chi2/ndf bkw  med/p90        0.791      18.32
+  prior x10 looser: median  0.001564  width   0.02622  (n=1142) -- compare above
+
+  flagged propagations by LAYER (fwd+bkw, both prior settings):
+   
+
+  n entries in the resolution (clean fits)
+    n               0.0-0.5   0.5-1.0   1.0-1.5   1.5-2.0   2.0-2.5   |eta|>2.5
+    pT 0.5-1              14        10         3        12        15        32
+    pT 1-2                63        72        77        77        59       126
+    pT 2-4                55        51        52        42        28        53
+    pT 4-8                42        29        37        21        13        22
+    pT 8-16               18        19        18        18        13         3
+    pT>16                 22         9         4        10         2         5
+
+  MEDIAN d(1/pT)/(1/pT)  (bias)
+    median          0.0-0.5   0.5-1.0   1.0-1.5   1.5-2.0   2.0-2.5   |eta|>2.5
+    pT 0.5-1        -0.00224   0.00285   0.00255   0.00514  -0.00199   -0.0116
+    pT 1-2           0.00234   0.00248   0.00121   0.00564   0.00705    0.0098
+    pT 2-4          0.000144 -0.000333  0.000409   0.00964   -0.0104   -0.0123
+    pT 4-8            0.0011    0.0013   0.00143   0.00123   0.00673      0.03
+    pT 8-16          0.00396 -8.58e-06  0.000708    0.0085  -0.00357       1.4
+    pT>16            0.00273  -0.00308  -0.00427    0.0103   0.00638  0.000623
+
+  ROBUST WIDTH (p84-p16)/2 of d(1/pT)/(1/pT)
+    width           0.0-0.5   0.5-1.0   1.0-1.5   1.5-2.0   2.0-2.5   |eta|>2.5
+    pT 0.5-1         0.00787   0.00604         -    0.0976    0.0196    0.0497
+    pT 1-2            0.0094    0.0194    0.0107     0.041    0.0386    0.0789
+    pT 2-4           0.00905   0.00741    0.0122     0.143    0.0396    0.0615
+    pT 4-8           0.00637   0.00913    0.0244    0.0537    0.0253    0.0721
+    pT 8-16          0.00722   0.00835    0.0116    0.0557    0.0229         -
+    pT>16             0.0114   0.00948   0.00389     0.302         -    0.0149
+
+  n fits attempted (clean + flagged)
+    n               0.0-0.5   0.5-1.0   1.0-1.5   1.5-2.0   2.0-2.5   |eta|>2.5
+    pT 0.5-1              15        11         3        12        15        33
+    pT 1-2                64        73        77        81        61       129
+    pT 2-4                57        51        52        43        28        54
+    pT 4-8                42        29        37        21        13        22
+    pT 8-16               18        19        19        18        13         3
+    pT>16                 22         9         4        10         2         5
+
+  FRACTION with a propagation FailFlag
+    fail frac       0.0-0.5   0.5-1.0   1.0-1.5   1.5-2.0   2.0-2.5   |eta|>2.5
+    pT 0.5-1           6.67%     9.09%     0.00%     0.00%     0.00%     3.03%
+    pT 1-2             1.56%     1.37%     0.00%     4.94%     3.28%     2.33%
+    pT 2-4             3.51%     0.00%     0.00%     2.33%     0.00%     1.85%
+    pT 4-8             0.00%     0.00%     0.00%     0.00%     0.00%     0.00%
+    pT 8-16            0.00%     0.00%     5.26%     0.00%     0.00%     0.00%
+    pT>16              0.00%     0.00%     0.00%     0.00%     0.00%     0.00%
+
+Executing command: pkv_task6_stash("B_getS_step2")
+
+pkv_task6_stash: snapshot 'B_getS_step2' kept (1146 clean fits, 19 bad, 36280 per-hit chi2)
+Executing command: pkv_solver(1,1)
+
+pkv_set_solver: g_plane_solve_hermite=1  g_getS_stable_root=1  -> Hermite cubic + Newton + sign bracket (Step 3)
+Executing command: pkv_task6_reset()
+Executing command: pkv_task6_maxhpl(3)
+Executing command: s.GoToEvent(1)
+Read complete, 1162 simtracks on file.
+At event 1
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(2)
+Read complete, 756 simtracks on file.
+At event 2
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(3)
+Read complete, 1179 simtracks on file.
+At event 3
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(4)
+Read complete, 643 simtracks on file.
+At event 4
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(5)
+Read complete, 786 simtracks on file.
+At event 5
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(6)
+Read complete, 782 simtracks on file.
+At event 6
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(7)
+Read complete, 832 simtracks on file.
+At event 7
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(8)
+Read complete, 497 simtracks on file.
+At event 8
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(9)
+Read complete, 865 simtracks on file.
+At event 9
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(10)
+Read complete, 540 simtracks on file.
+At event 10
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(11)
+Read complete, 663 simtracks on file.
+At event 11
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(12)
+Read complete, 911 simtracks on file.
+At event 12
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(13)
+Read complete, 776 simtracks on file.
+At event 13
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(14)
+Read complete, 965 simtracks on file.
+At event 14
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(15)
+Read complete, 974 simtracks on file.
+At event 15
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(16)
+Read complete, 962 simtracks on file.
+At event 16
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(17)
+Read complete, 837 simtracks on file.
+At event 17
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(18)
+Read complete, 909 simtracks on file.
+At event 18
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(19)
+Read complete, 409 simtracks on file.
+At event 19
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(20)
+Read complete, 461 simtracks on file.
+At event 20
+Executing command: pkv_task6_ev(s.event())
+Executing command: pkv_task6_report()
+
+============================================================================
+TASK 6 -- pT resolution from a forward+backward fit of REAL SIM TRACKS
+============================================================================
+fit: MkFitter::fwdFitFitTracks then bkReFitFitTracks, reproduced with the
+     suite's run_bkfit() kernel (propagateHelixToPlaneMPlex +
+     kalmanOperationPlaneLocal + kalmanCheckChargeFlip).
+material mode: all before update (current code) ; use_param_b_field=1 (as MkBuilder::fit_tracks)
+Config::usePropToPlane=1 usePtMultScat=1 nSStepsInProp2Plane=2 Bfield=3.8112
+quantity: d(1/pT)/(1/pT) = (ipt_fit - ipt_sim)/ipt_sim, sim truth at vertex.
+seed prior at the vertex: sigma_pos 1 cm, sigma_ang 50 mrad, sigma(1/pT) 50%.
+
+  hit-to-its-own-module-plane distance |n.(hit-plPnt)| [cm]: med 2.941e-09 p90 1.685e-06 max 5.364e-06 (n=27890)
+  hit-to-module-centre distance [cm]: med 2.253 p90 4.413 max 5.294
+
+  hits dropped: module id out of range 0, degenerate module normal 0
+
+SELECTION FUNNEL (20 events)
+  sim tracks in file                              15909
+  seed tracks                                      1525
+  seeds with a label >= 0                          1331
+  -> distinct sim labels from seeds                1331
+  -> after n_rec_hits >= 8                         1302
+  -> after APEX truncation                         1296  (lost 6 to <8 hits)
+  -> after OUTLIER removal                         1296  (lost 0 to <8 hits)
+  -> after <=3 hits per layer                      1164  (rejected 132)
+  -> after pT >= 0.5 GeV                           1164
+
+SHAPING (mode 0x6: order=0 apex=1 outlier=1)
+  sim tracks with an unusable production state        0
+  tracks TRUNCATED at the apex                       17  (424 hits removed)
+  tracks with an OUTLIER removed                    673  (4123 hits removed)
+     per-hit chi2 of the removed hits: med 6.057e+04 p90 4.346e+06 max 1e+30 (cut 25)
+  outlier cut: per-hit chi2 > 25, at most 10 removals per track
+  apex truncations by pT bin (fired / tracks): [0.5-1]2/99 [1-2]11/539 [2-4]1/315 [4-8]1/190 [8-16]1/101 [16-1e+03]1/58
+  max hits in any one layer, BEFORE shaping: 1:123 2:474 3:391 4:109 5:80 6:35 7:19 8:14 9:13 10:9 11:3 12:3 13:2 14:3 15:24
+  max hits in any one layer, AFTER  shaping: 1:190 2:621 3:353 4:57 5:24 6:15 7:4 8:10 9:3 10:2 12:2 13:1 15:14
+  ordering: alpha (path length) vs 3D radius -- 3.1 inversions per track (1331 tracks)
+  ordering bucket eps = 0.05 rad (0 = pure turn angle)
+  cos(momPhi-posPhi) over ALL raw hits: p1 0.7233 p10 0.9536 med 0.9978   (apex cut < 0.19867)
+  |hit - ideal-helix circle| [cm]: med 0.04314 p90 0.81 p99 20.15 max 89.68
+  |dz to ideal helix|       [cm]: med 0.4312 p90 6.172 p99 128.8 max 9750
+  LEGACY SUBSET (raw max hits/layer <= 2, i.e. what the old cut kept):
+     fits 597, bad 8 (1.34%), clean 589, median 0.001132, width 0.01213, chi2/ndf bkw med 0.7189
+  tracks with 3+ raw hits in one layer: 705 ; within that layer, turn-angle span med 0.002304 p90 0.03202 max 5.745 rad ; max |dcirc| med 0.1219 p90 1.367 cm
+  turn-angle span of the raw hit list [rad]: med 0.2951 p90 0.9559 max 5.996
+  -> fits run                                      1164
+     of which BAD (any category)                     27  (2.32%)
+        nonfinite end state                           5
+        badstate  end state                          16
+        propfail  (the rest)                          6
+     fwd pass flagged / bkw pass flagged             10        21
+     structural first-backward-step flags             1   (NOT counted as bad)
+     outliers |d(1/pT)/(1/pT)|>0.5 (kept)            46
+     clean fits entering the resolution            1137
+     |d(1/pT)/(1/pT)| > 1 among those                26
+
+OVERALL (clean fits only)
+  median d(1/pT)/(1/pT)     0.001212
+  robust width (p84-p16)/2   0.02583
+  p16 / p84                 -0.01751    0.03414
+  p1  / p99                  -0.3467       2.81
+  median n_hits fitted            17
+  chi2/ndf fwd  med/p90       0.8043      21.45
+  chi2/ndf bkw  med/p90       0.7878      12.49
+  prior x10 looser: median    0.0012  width   0.02521  (n=1134) -- compare above
+
+  flagged propagations by LAYER (fwd+bkw, both prior settings):
+    L0:3 L1:12 L2:9 L3:3 L4:16 L5:19 L6:10 L7:9 L8:6 L9:5
+    L10:10 L11:10 L12:7 L13:8 L14:2 L15:3 L16:4 L17:6 L18:5 L19:8
+    L20:9 L21:5 L22:5 L23:1 L26:1 L29:1 L30:2 L31:2 L33:1 L38:2
+    L39:4 L40:2 L41:2 L50:2 L51:3 L52:1 L53:1 L55:1
+
+  n entries in the resolution (clean fits)
+    n               0.0-0.5   0.5-1.0   1.0-1.5   1.5-2.0   2.0-2.5   |eta|>2.5
+    pT 0.5-1              14        10         3        11        15        32
+    pT 1-2                61        70        77        77        59       126
+    pT 2-4                55        50        52        42        28        53
+    pT 4-8                42        28        36        21        13        22
+    pT 8-16               18        19        18        18        13         3
+    pT>16                 21         9         4        10         2         5
+
+  MEDIAN d(1/pT)/(1/pT)  (bias)
+    median          0.0-0.5   0.5-1.0   1.0-1.5   1.5-2.0   2.0-2.5   |eta|>2.5
+    pT 0.5-1        -0.00248  0.000187   0.00255   0.00853  -0.00199   -0.0116
+    pT 1-2           0.00156   0.00163   0.00121   0.00564   0.00705    0.0098
+    pT 2-4         -0.000155 -0.000548  0.000408   0.00964   -0.0104   -0.0122
+    pT 4-8          0.000919   0.00107  0.000849   0.00123   0.00678      0.03
+    pT 8-16           0.0039 -5.06e-05  0.000711    0.0085  -0.00355       1.4
+    pT>16            0.00194  -0.00308  -0.00428    0.0103   0.00638  0.000535
+
+  ROBUST WIDTH (p84-p16)/2 of d(1/pT)/(1/pT)
+    width           0.0-0.5   0.5-1.0   1.0-1.5   1.5-2.0   2.0-2.5   |eta|>2.5
+    pT 0.5-1         0.00787   0.00634         -     0.081    0.0196    0.0497
+    pT 1-2           0.00931    0.0142    0.0107    0.0409    0.0386    0.0789
+    pT 2-4           0.00909   0.00676    0.0123     0.143    0.0396    0.0567
+    pT 4-8           0.00637   0.00915    0.0173    0.0537    0.0254     0.072
+    pT 8-16          0.00726   0.00853    0.0115    0.0557    0.0229         -
+    pT>16            0.00682   0.00948   0.00392     0.302         -    0.0149
+
+  n fits attempted (clean + flagged)
+    n               0.0-0.5   0.5-1.0   1.0-1.5   1.5-2.0   2.0-2.5   |eta|>2.5
+    pT 0.5-1              15        11         3        12        15        33
+    pT 1-2                63        73        77        81        61       129
+    pT 2-4                57        51        52        43        28        54
+    pT 4-8                42        29        37        21        13        22
+    pT 8-16               18        19        19        18        13         3
+    pT>16                 22         9         4        10         2         5
+
+  FRACTION with a propagation FailFlag
+    fail frac       0.0-0.5   0.5-1.0   1.0-1.5   1.5-2.0   2.0-2.5   |eta|>2.5
+    pT 0.5-1           6.67%     9.09%     0.00%     8.33%     0.00%     3.03%
+    pT 1-2             3.17%     4.11%     0.00%     4.94%     3.28%     2.33%
+    pT 2-4             3.51%     1.96%     0.00%     2.33%     0.00%     1.85%
+    pT 4-8             0.00%     3.45%     2.70%     0.00%     0.00%     0.00%
+    pT 8-16            0.00%     0.00%     5.26%     0.00%     0.00%     0.00%
+    pT>16              4.55%     0.00%     0.00%     0.00%     0.00%     0.00%
+
+Executing command: pkv_task6_stash("C_hermite_step3")
+
+pkv_task6_stash: snapshot 'C_hermite_step3' kept (1137 clean fits, 27 bad, 36256 per-hit chi2)
+Executing command: pkv_task6_root("../RecoTracker/MkFitCore/standalone/test/pkv-task6-solver-ab.root")
+
+PAIRED per-track comparison of d(1/pT)/(1/pT), vs snapshot 'A_orig_getS'
+  B_getS_step2       paired  1144 ; bit-identical   236 (20.6%) ; |delta| med 1.58e-05 p90 0.000754 max 86.8 ; median(|d_new|-|d_old|) +0
+                       chi2/ndf bkw PAIRED: better 490 / worse 421 (sign test) ; log10(new/old) med +0 p10 -0.00198 p90 +0.000968
+                       on the PAIRED subset ONLY: width old 0.02647 -> new 0.02641 ; chi2/ndf med 0.793 -> 0.7906 ; p90 17.4 -> 16.19 ; p99 3.116e+04 -> 3.236e+04
+  C_hermite_step3    paired  1137 ; bit-identical    14 (1.2%) ; |delta| med 1.09e-05 p90 0.000211 max 67.1 ; median(|d_new|-|d_old|) -1.48e-07
+                       chi2/ndf bkw PAIRED: better 587 / worse 549 (sign test) ; log10(new/old) med -3.75e-06 p10 -0.0017 p90 +0.000833
+                       on the PAIRED subset ONLY: width old 0.02596 -> new 0.02583 ; chi2/ndf med 0.7903 -> 0.7878 ; p90 12.49 -> 12.49 ; p99 2.573e+04 -> 2.627e+04
+
+pkv_task6_write_root: wrote ../RecoTracker/MkFitCore/standalone/test/pkv-task6-solver-ab.root with 3 snapshot(s): A_orig_getS B_getS_step2 C_hermite_step3
+  view with:  show-anrun ../RecoTracker/MkFitCore/standalone/test/pkv-task6-solver-ab.root   (put the text report in the matching .txt)
+Executing command: pkv_task6_badcases("../RecoTracker/MkFitCore/standalone/test/pkv-task6-solver-ab-badcases.txt", "/foo/matevz/mic-dev/TTbar_noPU_100events_HLT_Phase2_singleTrackingIteration_CAExtSeedsUpToThreeOTBarrelLayer_into_LSTSeedsIncludingT5s.bin")
+
+BAD-CASE LIST written to ../RecoTracker/MkFitCore/standalone/test/pkv-task6-solver-ab-badcases.txt : 73 lines
+    propfail        6
+    nonfinite       5
+    badstate       16
+    outlier        46
+Shell::Run finished
+RntDumper::FinalizeAll() shutting down 0 instances.

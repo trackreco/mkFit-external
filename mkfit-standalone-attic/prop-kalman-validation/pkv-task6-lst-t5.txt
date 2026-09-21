@@ -1,0 +1,268 @@
+mkFit configuration complete.
+  vusize=8, num_thr_events=1, num_thr_finder=1
+  sizeof(Track)=160, sizeof(Hit)=44, sizeof(SVector3)=12, sizeof(SMatrixSym33)=24, sizeof(MCHitInfo)=16
+Constructing geometry 'CMS-phase2'
+execTrackerInfoCreatorPlugin processing 'CMS-phase2.so'
+execTrackerInfoCreatorPlugin has found TrackerInfo binary file 'CMS-phase2.bin'
+Opened TrackerInfoGeom file 'CMS-phase2.bin', format version 3, n_layers 60
+Layer  0  r( 2.8683,  3.8285) z( -19.9425,   19.9425) is_brl=1, is_pix=1, is_stereo=0, has_charge=1, q_bin=2.00
+Layer  1  r( 5.9521,  6.9437) z( -20.0725,   20.0725) is_brl=1, is_pix=1, is_stereo=0, has_charge=1, q_bin=2.00
+Layer  2  r(10.3321, 11.3276) z( -20.0725,   20.0725) is_brl=1, is_pix=1, is_stereo=0, has_charge=1, q_bin=2.00
+Layer  3  r(14.4917, 15.4947) z( -20.0725,   20.0725) is_brl=1, is_pix=1, is_stereo=0, has_charge=1, q_bin=2.00
+Layer  4  r(22.3913, 28.5443) z(-119.9101,  119.9101) is_brl=1, is_pix=0, is_stereo=1, has_charge=0, q_bin=6.00
+Layer  5  r(22.1374, 28.7251) z(-120.2931,  120.2931) is_brl=1, is_pix=0, is_stereo=0, has_charge=0, q_bin=6.00
+Layer  6  r(35.0708, 40.4064) z(-119.9814,  119.9814) is_brl=1, is_pix=0, is_stereo=1, has_charge=0, q_bin=6.00
+Layer  7  r(34.9123, 40.6094) z(-120.3553,  120.3553) is_brl=1, is_pix=0, is_stereo=0, has_charge=0, q_bin=6.00
+Layer  8  r(50.1473, 55.4057) z(-119.9623,  119.9623) is_brl=1, is_pix=0, is_stereo=1, has_charge=0, q_bin=6.00
+Layer  9  r(49.9880, 55.5977) z(-120.1915,  120.1915) is_brl=1, is_pix=0, is_stereo=0, has_charge=0, q_bin=6.00
+Layer 10  r(67.1264, 70.5778) z(-117.6760,  117.6760) is_brl=1, is_pix=0, is_stereo=1, has_charge=0, q_bin=6.00
+Layer 11  r(66.9468, 70.7574) z(-117.6760,  117.6760) is_brl=1, is_pix=0, is_stereo=0, has_charge=0, q_bin=6.00
+Layer 12  r(84.3944, 87.8486) z(-117.6760,  117.6760) is_brl=1, is_pix=0, is_stereo=1, has_charge=0, q_bin=6.00
+Layer 13  r(84.2147, 88.0283) z(-117.6760,  117.6760) is_brl=1, is_pix=0, is_stereo=0, has_charge=0, q_bin=6.00
+Layer 14  r(106.6685, 110.1245) z(-117.6760,  117.6760) is_brl=1, is_pix=0, is_stereo=1, has_charge=0, q_bin=6.00
+Layer 15  r(106.4887, 110.3043) z(-117.6760,  117.6760) is_brl=1, is_pix=0, is_stereo=0, has_charge=0, q_bin=6.00
+Layer 16  r( 3.2118, 16.0883) z(  24.3925,   26.2075) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 17  r( 3.2118, 16.0883) z(  31.3875,   33.2025) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 18  r( 3.2118, 16.0883) z(  40.3155,   42.1305) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 19  r( 3.2118, 16.0883) z(  51.7125,   53.5275) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 20  r( 3.2118, 16.0883) z(  66.2605,   68.0755) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 21  r( 3.2118, 16.0883) z(  83.3305,   85.1455) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 22  r( 3.2118, 16.0883) z( 110.0345,  111.8495) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 23  r( 3.2118, 16.0883) z( 138.7925,  140.6075) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 24  r( 6.5137, 25.4513) z( 174.3925,  175.6075) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 25  r( 6.5137, 25.4513) z( 200.3515,  201.5665) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 26  r( 6.5137, 25.4513) z( 230.1615,  231.3765) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 27  r( 6.5137, 25.4513) z( 264.3925,  265.6075) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 28  r(24.1134, 107.4383) z( 128.9305,  133.4295) is_brl=0, is_pix=0, is_stereo=1, has_charge=0, q_bin=5.60
+Layer 29  r(24.1053, 107.4383) z( 128.6350,  133.7250) is_brl=0, is_pix=0, is_stereo=0, has_charge=0, q_bin=5.60
+Layer 30  r(24.1134, 107.4383) z( 152.7505,  157.2495) is_brl=0, is_pix=0, is_stereo=1, has_charge=0, q_bin=5.60
+Layer 31  r(24.1053, 107.4383) z( 152.4550,  157.5450) is_brl=0, is_pix=0, is_stereo=0, has_charge=0, q_bin=5.60
+Layer 32  r(33.4767, 107.4383) z( 183.0905,  187.5895) is_brl=0, is_pix=0, is_stereo=1, has_charge=0, q_bin=5.60
+Layer 33  r(33.4686, 107.4383) z( 182.6905,  187.8850) is_brl=0, is_pix=0, is_stereo=0, has_charge=0, q_bin=5.60
+Layer 34  r(33.4767, 107.4383) z( 219.3695,  223.8685) is_brl=0, is_pix=0, is_stereo=1, has_charge=0, q_bin=5.60
+Layer 35  r(33.4686, 107.4383) z( 218.9695,  224.1640) is_brl=0, is_pix=0, is_stereo=0, has_charge=0, q_bin=5.60
+Layer 36  r(33.4767, 107.4383) z( 262.7505,  267.2495) is_brl=0, is_pix=0, is_stereo=1, has_charge=0, q_bin=5.60
+Layer 37  r(33.4686, 107.4383) z( 262.3505,  267.6495) is_brl=0, is_pix=0, is_stereo=0, has_charge=0, q_bin=5.60
+Layer 38  r( 3.2118, 16.0883) z( -26.2075,  -24.3925) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 39  r( 3.2118, 16.0883) z( -33.2025,  -31.3875) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 40  r( 3.2118, 16.0883) z( -42.1305,  -40.3155) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 41  r( 3.2118, 16.0883) z( -53.5275,  -51.7125) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 42  r( 3.2118, 16.0883) z( -68.0755,  -66.2605) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 43  r( 3.2118, 16.0883) z( -85.1455,  -83.3305) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 44  r( 3.2118, 16.0883) z(-111.8495, -110.0345) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 45  r( 3.2118, 16.0883) z(-140.6075, -138.7925) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 46  r( 6.5137, 25.4513) z(-175.6075, -174.3925) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 47  r( 6.5137, 25.4513) z(-201.5665, -200.3515) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 48  r( 6.5137, 25.4513) z(-231.3765, -230.1615) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 49  r( 6.5137, 25.4513) z(-265.6075, -264.3925) is_brl=0, is_pix=1, is_stereo=0, has_charge=1, q_bin=1.00
+Layer 50  r(24.1134, 107.4383) z(-133.4295, -128.9305) is_brl=0, is_pix=0, is_stereo=1, has_charge=0, q_bin=5.60
+Layer 51  r(24.1053, 107.4383) z(-133.7250, -128.6350) is_brl=0, is_pix=0, is_stereo=0, has_charge=0, q_bin=5.60
+Layer 52  r(24.1134, 107.4383) z(-157.2495, -152.7505) is_brl=0, is_pix=0, is_stereo=1, has_charge=0, q_bin=5.60
+Layer 53  r(24.1053, 107.4383) z(-157.5450, -152.4550) is_brl=0, is_pix=0, is_stereo=0, has_charge=0, q_bin=5.60
+Layer 54  r(33.4767, 107.4383) z(-187.5895, -183.0905) is_brl=0, is_pix=0, is_stereo=1, has_charge=0, q_bin=5.60
+Layer 55  r(33.4686, 107.4383) z(-187.8850, -182.6905) is_brl=0, is_pix=0, is_stereo=0, has_charge=0, q_bin=5.60
+Layer 56  r(33.4767, 107.4383) z(-223.8685, -219.3695) is_brl=0, is_pix=0, is_stereo=1, has_charge=0, q_bin=5.60
+Layer 57  r(33.4686, 107.4383) z(-224.1640, -218.9695) is_brl=0, is_pix=0, is_stereo=0, has_charge=0, q_bin=5.60
+Layer 58  r(33.4767, 107.4383) z(-267.2495, -262.7505) is_brl=0, is_pix=0, is_stereo=1, has_charge=0, q_bin=5.60
+Layer 59  r(33.4686, 107.4383) z(-267.6495, -262.3505) is_brl=0, is_pix=0, is_stereo=0, has_charge=0, q_bin=5.60
+CMS-phase2 -- Create_TrackerInfo finished
+Opened file '/foo/matevz/mic-dev/TTbar_noPU_100events_HLT_Phase2_singleTrackingIteration_CAExtSeedsUpToThreeOTBarrelLayer_into_LSTSeedsIncludingT5s.bin', format version 7, n_layers 60, n_events 100
+  Extra sections: Seeds CmsswTracks
+Shell event range set to [1, 20], 20 events.
+Read complete, 1162 simtracks on file.
+At event 1
+Shell &s variable is set: (mkfit::Shell &) @0x243f880
+Executing command: gROOT->SetBatch(kTRUE)
+Executing command: gROOT->ProcessLine(".L ../RecoTracker/MkFitCore/standalone/test/prop-kalman-validation.C")
+(long) 0
+Executing command: pkv_task6_reset()
+Executing command: pkv_task6_maxhpl(2)
+Executing command: s.GoToEvent(1)
+Read complete, 1162 simtracks on file.
+At event 1
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(2)
+Read complete, 756 simtracks on file.
+At event 2
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(3)
+Read complete, 1179 simtracks on file.
+At event 3
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(4)
+Read complete, 643 simtracks on file.
+At event 4
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(5)
+Read complete, 786 simtracks on file.
+At event 5
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(6)
+Read complete, 782 simtracks on file.
+At event 6
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(7)
+Read complete, 832 simtracks on file.
+At event 7
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(8)
+Read complete, 497 simtracks on file.
+At event 8
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(9)
+Read complete, 865 simtracks on file.
+At event 9
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(10)
+Read complete, 540 simtracks on file.
+At event 10
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(11)
+Read complete, 663 simtracks on file.
+At event 11
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(12)
+Read complete, 911 simtracks on file.
+At event 12
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(13)
+Read complete, 776 simtracks on file.
+At event 13
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(14)
+Read complete, 965 simtracks on file.
+At event 14
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(15)
+Read complete, 974 simtracks on file.
+At event 15
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(16)
+Read complete, 962 simtracks on file.
+At event 16
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(17)
+Read complete, 837 simtracks on file.
+At event 17
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(18)
+Read complete, 909 simtracks on file.
+At event 18
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(19)
+Read complete, 409 simtracks on file.
+At event 19
+Executing command: pkv_task6_ev(s.event())
+Executing command: s.GoToEvent(20)
+Read complete, 461 simtracks on file.
+At event 20
+Executing command: pkv_task6_ev(s.event())
+Executing command: pkv_task6_report()
+
+============================================================================
+TASK 6 -- pT resolution from a forward+backward fit of REAL SIM TRACKS
+============================================================================
+fit: MkFitter::fwdFitFitTracks then bkReFitFitTracks, reproduced with the
+     suite's run_bkfit() kernel (propagateHelixToPlaneMPlex +
+     kalmanOperationPlaneLocal + kalmanCheckChargeFlip).
+material mode: all before update (current code) ; use_param_b_field=1 (as MkBuilder::fit_tracks)
+Config::usePropToPlane=1 usePtMultScat=1 nSStepsInProp2Plane=2 Bfield=3.8112
+quantity: d(1/pT)/(1/pT) = (ipt_fit - ipt_sim)/ipt_sim, sim truth at vertex.
+seed prior at the vertex: sigma_pos 1 cm, sigma_ang 50 mrad, sigma(1/pT) 50%.
+
+  hit-to-its-own-module-plane distance |n.(hit-plPnt)| [cm]: med 2.941e-09 p90 1.685e-06 max 5.364e-06 (n=27890)
+  hit-to-module-centre distance [cm]: med 2.253 p90 4.413 max 5.294
+
+  hits dropped: module id out of range 0, degenerate module normal 0
+
+SELECTION FUNNEL (20 events)
+  sim tracks in file                              15909
+  seed tracks                                      1525
+  seeds with a label >= 0                          1331
+  -> distinct sim labels from seeds                1331
+  -> after n_rec_hits >= 8                         1302
+  -> after <=2 hits per layer (no loopers)          597  (rejected 705)
+     distribution of max hits in any one layer: 1:123 2:474 3:391 4:109 5:80 6:35 7:19 8:14 9:13 10:9 11:3 12:3 13:2 14:3 15:24
+  -> after pT >= 0.5 GeV                            597
+  -> fits run                                       597
+     of which BAD (any category)                     72  (12.06%)
+        nonfinite end state                           0
+        badstate  end state                           9
+        propfail  (the rest)                         63
+     fwd pass flagged / bkw pass flagged             70        71
+     structural first-backward-step flags           623   (NOT counted as bad)
+     outliers |d(1/pT)/(1/pT)|>0.5 (kept)            11
+     clean fits entering the resolution             525
+     |d(1/pT)/(1/pT)| > 1 among those                 9
+
+OVERALL (clean fits only)
+  median d(1/pT)/(1/pT)    0.0007292
+  robust width (p84-p16)/2   0.01273
+  p16 / p84                -0.009652    0.01582
+  p1  / p99                  -0.2611      2.255
+  median n_hits fitted            17
+  chi2/ndf fwd  med/p90       0.7712      25.08
+  chi2/ndf bkw  med/p90        0.748      22.79
+  prior x10 looser: median 0.0007138  width   0.01238  (n=509) -- compare above
+
+  flagged propagations by LAYER (fwd+bkw, both prior settings):
+    L0:2 L1:11 L2:7 L3:5 L4:11 L5:7 L6:15 L7:10 L8:5 L9:6
+    L10:4 L11:4 L12:8 L13:8 L14:1 L15:3 L16:4 L17:3 L18:1 L19:2
+    L20:4 L21:3 L26:2 L29:3 L30:8 L31:4 L32:2 L33:2 L34:4 L38:2
+    L39:4 L40:4 L41:5 L42:1 L43:2 L48:2 L49:4 L50:6 L51:10 L52:10
+    L53:13 L54:7 L55:4 L56:6 L57:2 L58:2
+
+  n entries in the resolution (clean fits)
+    n               0.0-0.5   0.5-1.0   1.0-1.5   1.5-2.0   2.0-2.5   |eta|>2.5
+    pT 0.5-1              11         5         0         2         4         8
+    pT 1-2                52        44        49        17        11        34
+    pT 2-4                38        31        29        16         4        13
+    pT 4-8                30        22        21         8         1         2
+    pT 8-16               13         7        13         7         4         0
+    pT>16                 13         7         1         5         1         2
+
+  MEDIAN d(1/pT)/(1/pT)  (bias)
+    median          0.0-0.5   0.5-1.0   1.0-1.5   1.5-2.0   2.0-2.5   |eta|>2.5
+    pT 0.5-1        -0.00233   0.00178         -   0.00163    0.0192   -0.0345
+    pT 1-2            0.0013   0.00333 -4.98e-05   0.00828    0.0071  -0.00878
+    pT 2-4          -0.00184   0.00014  -0.00149    0.0111   0.00166    -0.013
+    pT 4-8          0.000914   0.00124   0.00429  -0.00325   0.00988    -0.114
+    pT 8-16          0.00275   0.00538   -0.0012   0.00895  -0.00209         -
+    pT>16          -0.000381  -0.00505  -0.00133    0.0223     0.153   0.00422
+
+  ROBUST WIDTH (p84-p16)/2 of d(1/pT)/(1/pT)
+    width           0.0-0.5   0.5-1.0   1.0-1.5   1.5-2.0   2.0-2.5   |eta|>2.5
+    pT 0.5-1         0.00879   0.00652         -         -     0.059    0.0463
+    pT 1-2           0.00964    0.0142    0.0101    0.0257    0.0305     0.059
+    pT 2-4           0.00889   0.00604   0.00971    0.0234    0.0171    0.0771
+    pT 4-8           0.00443   0.00912    0.0199   0.00742         -         -
+    pT 8-16          0.00476   0.00885     0.012    0.0113     0.833         -
+    pT>16            0.00775   0.00844         -      1.03         -         -
+
+  n fits attempted (clean + flagged)
+    n               0.0-0.5   0.5-1.0   1.0-1.5   1.5-2.0   2.0-2.5   |eta|>2.5
+    pT 0.5-1              12         8         2         2         5         8
+    pT 1-2                54        46        52        21        15        37
+    pT 2-4                41        33        37        19         5        17
+    pT 4-8                34        24        23        10         2         3
+    pT 8-16               13        10        14         9         7         0
+    pT>16                 16         7         1         7         1         2
+
+  FRACTION with a propagation FailFlag
+    fail frac       0.0-0.5   0.5-1.0   1.0-1.5   1.5-2.0   2.0-2.5   |eta|>2.5
+    pT 0.5-1           8.33%    37.50%   100.00%     0.00%    20.00%     0.00%
+    pT 1-2             3.70%     4.35%     5.77%    19.05%    26.67%     8.11%
+    pT 2-4             7.32%     6.06%    21.62%    15.79%    20.00%    23.53%
+    pT 4-8            11.76%     8.33%     8.70%    20.00%    50.00%    33.33%
+    pT 8-16            0.00%    30.00%     7.14%    22.22%    42.86%         -
+    pT>16             18.75%     0.00%     0.00%    28.57%     0.00%     0.00%
+
+Executing command: pkv_task6_badcases("/foo/matevz/mic-dev/current/src/RecoTracker/MkFitCore/standalone/test/pkv-task6-badcases-lst-t5.txt", "/foo/matevz/mic-dev/TTbar_noPU_100events_HLT_Phase2_singleTrackingIteration_CAExtSeedsUpToThreeOTBarrelLayer_into_LSTSeedsIncludingT5s.bin")
+
+BAD-CASE LIST written to /foo/matevz/mic-dev/current/src/RecoTracker/MkFitCore/standalone/test/pkv-task6-badcases-lst-t5.txt : 83 lines
+    propfail       63
+    nonfinite       0
+    badstate        9
+    outlier        11
+Shell::Run finished
+RntDumper::FinalizeAll() shutting down 0 instances.
