@@ -111,7 +111,7 @@ namespace {
       // TOB, inner 3 double layers, PS
       sp.fill_plan_pairs( 4, 9, OT_as_single_entry, OT_swap_pairs);
 
-      sp.fill_plan( 10, 15);    // TOB, outer 3 double layers, 2S
+      sp.fill_plan_pairs(10, 15, OT_as_single_entry, OT_swap_pairs);  // TOB, outer 3 double layers, 2S
 
       // TEC, 5 double disks, radially half PS, half 2S
       sp.fill_plan_pairs(50, 59, OT_as_single_entry, OT_swap_pairs);
@@ -127,7 +127,7 @@ namespace {
       // TOB-1, 6 layers  [ 4,  9] PS
       sp.fill_plan_pairs( 4,  9, OT_as_single_entry, OT_swap_pairs);
 
-      sp.fill_plan(10, 15);    // TOB-2, 6 layers  [10, 15] 2S
+      sp.fill_plan_pairs(10, 15, OT_as_single_entry, OT_swap_pairs);  // TOB-2, 6 layers [10,15] 2S
 
       sp.set_iterator_limits(2, 0);
     }
@@ -141,7 +141,7 @@ namespace {
       // TOB, inner 3 double layers, PS
       sp.fill_plan_pairs( 4, 9, OT_as_single_entry, OT_swap_pairs);
 
-      sp.fill_plan( 10, 15);    // TOB, outer 3 double layers, 2S
+      sp.fill_plan_pairs(10, 15, OT_as_single_entry, OT_swap_pairs);  // TOB, outer 3 double layers, 2S
 
       // TEC, 5 double disks, radially half PS, half 2S
       sp.fill_plan_pairs(28, 37, OT_as_single_entry, OT_swap_pairs);
@@ -187,20 +187,31 @@ namespace {
     ic.m_backward_fit_min_hits = 99;
     auto &spv = ic.m_steering_params;
     // XXXX Recheck those limits !!!
-    // The bkw-search start plan index is set for LST T5 seeds, mostly.
-    // Also, this will change for double layers, somehow.
+    // The bkw-search start layer is set for LST T5 seeds, mostly.
     //
-    // These are plan INDICES, spelled as arithmetic that encodes the plan's
-    // structure -- so they silently go wrong (out of range, unchecked) the moment
-    // OT_as_single_entry flips and the plan gets shorter. See the note at
-    // SetupCoreSteeringParams(). The robust form is to record the index at build
-    // time (m_layer_plan.size() after each fill_plan* call) or to resolve it from
-    // a layer number, so the value follows the plan instead of restating it.
-    spv[TrackerInfo::Reg_Endcap_Neg].set_iterator_limits(2, 0, 7); // was 5
-    spv[TrackerInfo::Reg_Transition_Neg].set_iterator_limits(2, 0, 4 + 8 + 2*6 + 3); // was 4 + 8 + 3
-    spv[TrackerInfo::Reg_Barrel].set_iterator_limits(2, 0, 4 + 6);
-    spv[TrackerInfo::Reg_Transition_Pos].set_iterator_limits(2, 0, 4 + 8 + 2*6 + 3);
-    spv[TrackerInfo::Reg_Endcap_Pos].set_iterator_limits(2, 0, 7);
+    // These USED TO BE plan INDICES, spelled as arithmetic restating the plan's
+    // structure ("4 + 8 + 2*6 + 3" = 27). That is not merely fragile, it is a
+    // latent out-of-range read: iterator::is_valid() only tests != -1, and the
+    // moment OT_as_single_entry flips, the two transition plans go from 34
+    // entries to 26 and index 27 walks off the end of m_layer_plan.
+    //
+    // Named by LAYER instead, which is a property of the detector and does not
+    // move when the plan is rebuilt. plan_index_of_layer() matches either member
+    // of a paired entry, so these resolve to the SAME plan entry in both configs
+    // (verified: transition 27 -> 22 unpaired -> paired, both being layer 31/53).
+    // The layers are unchanged from the indices they replace, so this commit does
+    // not move the pickup point.
+    spv[TrackerInfo::Reg_Endcap_Neg].set_iterator_limits(2, 0);
+    spv[TrackerInfo::Reg_Transition_Neg].set_iterator_limits(2, 0);
+    spv[TrackerInfo::Reg_Barrel].set_iterator_limits(2, 0);
+    spv[TrackerInfo::Reg_Transition_Pos].set_iterator_limits(2, 0);
+    spv[TrackerInfo::Reg_Endcap_Pos].set_iterator_limits(2, 0);
+
+    spv[TrackerInfo::Reg_Endcap_Neg    ].set_bkw_search_pickup_at_layer(43); // FPix- TFPX6
+    spv[TrackerInfo::Reg_Transition_Neg].set_bkw_search_pickup_at_layer(53); // TEC-  TEDD2
+    spv[TrackerInfo::Reg_Barrel        ].set_bkw_search_pickup_at_layer(10); // TB2S  OTLayer4
+    spv[TrackerInfo::Reg_Transition_Pos].set_bkw_search_pickup_at_layer(31); // TEC+  TEDD2
+    spv[TrackerInfo::Reg_Endcap_Pos    ].set_bkw_search_pickup_at_layer(21); // FPix+ TFPX6
   }
 
   void SetupIterationParams(IterationParams &ip, unsigned int it = 0) {
