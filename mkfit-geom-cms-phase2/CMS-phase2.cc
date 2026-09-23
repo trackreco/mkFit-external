@@ -217,7 +217,20 @@ namespace {
   void SetupIterationParams(IterationParams &ip, unsigned int it = 0) {
     if (it == 0) {
       ip.nlayers_per_seed = 4;
-      ip.maxCandsPerSeed = 6;
+      // 3, not 6, since 2026-09-23: the in-layer combinatorial search
+      // (Config::v2p2InLayerComb, now on by default) takes several hits per layer,
+      // so the beam width no longer has to carry the per-layer alternatives.
+      // Measured on 30 events of ttbar-PU200-D121-C22: with the search on, cap 3
+      // gives 89 % of cap 6's gain for 26 % of the extra build time, and 3 -> 6 is
+      // worth 39 found tracks in 18846. It applies to BOTH parameter sets, since
+      // SetupBackwardSearch() copies m_params into m_backward_params below, and
+      // the beam a candidate actually gets is MkJob::max_max_cands() = the max of
+      // the two -- so setting it here is the only place that takes effect.
+      // CAVEAT for V1/V2: they have no in-layer expansion, so a lower cap costs
+      // them a little. Measured with the search off, 3 / 6 / 10 moves found tracks
+      // 23783 / 23867 / 23888, i.e. -84 at cap 3. Restore it for a cross-check with
+      // val_max_cands(6) from the shell, which sets both parameter sets.
+      ip.maxCandsPerSeed = 3;
       ip.maxHolesPerCand = 4;
       ip.maxConsecHoles = 2;
       ip.chi2Cut_min = 15.0;
