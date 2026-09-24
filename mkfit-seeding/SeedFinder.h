@@ -14,6 +14,7 @@
 #include "SeedLayer.h"
 
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <vector>
@@ -29,11 +30,15 @@ namespace mkfit::seeding {
     float phi_margin = 0.002f; // rad
     int phi_lin = 0;           // 0 off, 1 linear only, 2 linear AND generic band
     float phi_lin_marg = 0.003f;
+    float lbin = 0.25f;        // cm, z bucket of the per-b-hit list (b-major finder only)
   };
 
   struct SeedCounters {
     long doublets = 0, c_touched = 0, triplets = 0, d_touched = 0, quads = 0;
+    double t_stage[7] = {0, 0, 0, 0, 0, 0, 0};  // s, staged finder only
     void add(const SeedCounters &o) {
+      for (int i = 0; i < 7; ++i)
+        t_stage[i] += o.t_stage[i];
       doublets += o.doublets;
       c_touched += o.c_touched;
       triplets += o.triplets;

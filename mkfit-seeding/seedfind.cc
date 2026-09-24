@@ -11,6 +11,8 @@
 //        [--qbin-c CM] [--qbin-d CM]
 
 #include "SeedFinder.h"
+#include "SeedFinderStaged.h"
+#include "SeedFinderBMajor.h"
 
 #include "RecoTracker/MkFitCore/interface/Config.h"
 #include "RecoTracker/MkFitCore/interface/TrackerInfo.h"
@@ -46,13 +48,16 @@ namespace {
   void usage() {
     printf(
         "seedfind --input-file F [--geom G] [--num-events N] [--reps R] [--dump FILE]\n"
-        "         [--phi-lin MODE MARG] [--qbin-c CM] [--qbin-d CM] [--layers A B C D]\n");
+        "         [--phi-lin MODE MARG] [--qbin-c CM] [--qbin-d CM] [--layers A B C D]\n"
+        "         [--staged | --fuse | --bmajor] [--block N]\n");
   }
 }  // namespace
 
 int main(int argc, char *argv[]) {
   std::string input, geom = "CMS-phase2", dump;
   int n_events = 10, reps = 1;
+  bool staged = false, fuse = false, bmajor = false;
+  unsigned int block = 64;
   int la = 0, lb = 1, lc = 2, ld = 3;
   float qbin_c = -1, qbin_d = -1;
   SeedParams P;
@@ -74,12 +79,22 @@ int main(int argc, char *argv[]) {
       n_events = atoi(next());
     else if (a == "--reps")
       reps = std::max(1, atoi(next()));
+    else if (a == "--staged")
+      staged = true;
+    else if (a == "--bmajor")
+      staged = bmajor = true;
+    else if (a == "--fuse")
+      staged = fuse = true;
+    else if (a == "--block")
+      block = std::max(1, atoi(next()));
     else if (a == "--dump")
       dump = next();
     else if (a == "--phi-lin") {
       P.phi_lin = atoi(next());
       P.phi_lin_marg = atof(next());
-    } else if (a == "--qbin-c")
+    } else if (a == "--lbin")
+      P.lbin = atof(next());
+    else if (a == "--qbin-c")
       qbin_c = atof(next());
     else if (a == "--qbin-d")
       qbin_d = atof(next());
@@ -121,6 +136,8 @@ int main(int argc, char *argv[]) {
   std::vector<std::array<unsigned int, 5>> all_quads;
   std::vector<Quad> quads;
   SeedCounters tot;
+  StagedWork work;
+  BMajorWork bwork;
   double t_fill = 0, t_find = 0;
 
   for (int iev = 0; iev < n_events; ++iev) {
@@ -141,7 +158,12 @@ int main(int argc, char *argv[]) {
       quads.clear();
       cnt = SeedCounters();
       const auto s0 = clk::now();
-      find_quads(P, ga, gb, gc, gd, quads, cnt);
+      if (bmajor)
+        find_quads_bmajor(P, ga, gb, gc, gd, quads, cnt, work, bwork, block);
+      else if (staged)
+        find_quads_staged(P, ga, gb, gc, gd, quads, cnt, work, block, fuse);
+      else
+        find_quads(P, ga, gb, gc, gd, quads, cnt);
       best = std::min(best, secs(s0, clk::now()));
     }
     t_find += best;
@@ -151,7 +173,9 @@ int main(int argc, char *argv[]) {
   }
 
   const double ne = n_events;
-  printf("[seedfind] %d events, reps %d (min taken per event)\n", n_events, reps);
+  printf("[seedfind] %d events, reps %d (min taken per event), %s\n", n_events, reps,
+         staged ? ((bmajor ? "b-major, block " : fuse ? "fused, block " : "staged, block ") + std::to_string(block)).c_str()
+                : "scalar");
   printf("   doublets   %12.0f /ev\n", tot.doublets / ne);
   printf("   c touched  %12.0f /ev  (%.3f per doublet)\n", tot.c_touched / ne, (double)tot.c_touched / tot.doublets);
   printf("   triplets   %12.0f /ev\n", tot.triplets / ne);
@@ -160,6 +184,16 @@ int main(int argc, char *argv[]) {
   printf("   QUADS      %12.0f /ev\n", tot.quads / ne);
   printf("   fill       %12.3f ms/ev\n", 1e3 * t_fill / ne);
   printf("   find       %12.3f ms/ev  (%.1f ns per doublet)\n", 1e3 * t_find / ne, 1e9 * t_find / tot.doublets);
+  if (staged) {
+    // the counters are those of the LAST repetition of each event
+    const char *nm[7] = {"1 doublets", "2 windows", bmajor ? "3 c-lists" : "3 c-cands", bmajor ? "4 c-search" : "4 triplets", "5 helix", "6 d-cands", "7 quads"};
+    double ts = 0;
+    for (double t : tot.t_stage)
+      ts += t;
+    for (int i = 0; i < 7; ++i)
+      printf("     stage %-11s %9.3f ms/ev  %5.1f %%\n", nm[i], 1e3 * tot.t_stage[i] / ne,
+             100 * tot.t_stage[i] / ts);
+  }
 
   if (!dump.empty()) {
     std::sort(all_quads.begin(), all_quads.end());

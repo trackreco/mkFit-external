@@ -92,6 +92,20 @@ namespace mkfit::seeding {
       }
     }
 
+    // As for_each_in(), but hands over whole contiguous runs, f(begin, end).
+    template <typename F>
+    void for_each_run(typename AxPhi::I_pair p, typename AxQ::I_pair q, F &&f) const {
+      const unsigned int np = n_phi_bins();
+      for (unsigned int qi = q.begin; qi < q.end; ++qi) {
+        if (p.begin < p.end || p.end == 0) {
+          f(run_begin(qi, p.begin), run_end(qi, p.end == 0 ? np : p.end));
+        } else if (p.begin > p.end) {
+          f(run_begin(qi, p.begin), run_end(qi, np));
+          f(run_begin(qi, 0), run_end(qi, p.end));
+        }
+      }
+    }
+
     // lo, hi may lie outside (-pi, pi]; wrap them first, since the axis floors
     // (r - R_min) * fac straight into an unsigned bin index.
     typename AxPhi::I_pair phi_range(float lo, float hi) const {
@@ -109,6 +123,8 @@ namespace mkfit::seeding {
 
     unsigned int n_phi_bins() const { return ax_phi_.size_of_N(); }
     unsigned int n_q_bins() const { return ax_q_.size_of_N(); }
+    float q_min() const { return ax_q_.m_R_min; }
+    float q_max() const { return ax_q_.m_R_max; }
     unsigned int n() const { return n_; }
 
     const binnor_t &binnor_ref() const { return binnor_; }

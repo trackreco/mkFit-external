@@ -3,6 +3,7 @@
 #   make                  # -> $(BLD)/test-seedgeom/bin/seedfind
 #   make BLD=/path/to/standalone
 #   make ARCH=-march=native   # replace the build's -mavx, for an A/B only
+#   make EXTRA=-g NAME=seedfind-g   # extra flags, e.g. for a profile; separate binary
 #
 # The -D set and codegen flags come from the build's `make echo-aclic`, NOT
 # from a copy here: standalone/Event.h gains members under MKFIT_TRACE, so a
@@ -36,12 +37,14 @@ ifdef ARCH
   OPT := $(filter-out -mavx -mavx2 -march=%,$(OPT)) $(ARCH)
 endif
 
-CXXFLAGS := -std=c++20 $(OPT) $(DEFS) $(ROOT_CF) -I$(SRC) -I$(BLD)/mkFit-external -I$(CURDIR)
+CXXFLAGS := -std=c++20 $(OPT) $(EXTRA) $(DEFS) $(ROOT_CF) -I$(SRC) -I$(BLD)/mkFit-external -I$(CURDIR)
 LDFLAGS  := -L$(BLD) -lMkFitCore -Wl,-rpath,$(BLD) $(ROOT_LIBS) -ltbb
 
 HDRS := $(wildcard $(CURDIR)/*.h)
 
-$(OUT)/seedfind: $(CURDIR)/seedfind.cc $(HDRS) $(BLD)/libMkFitCore.so | $(OUT)
+NAME ?= seedfind
+
+$(OUT)/$(NAME): $(CURDIR)/seedfind.cc $(HDRS) $(BLD)/libMkFitCore.so | $(OUT)
 	@echo "[seedfind] DEFS: $(DEFS)"
 	@echo "[seedfind] OPT : $(OPT)"
 	@echo "[seedfind] ROOT: $(if $(ROOTLIB),$(ROOTLIB),none)"
