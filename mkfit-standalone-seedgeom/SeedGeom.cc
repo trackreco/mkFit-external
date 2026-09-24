@@ -113,6 +113,12 @@ namespace mkfit {
       const double a = std::abs(e);
       return a < 0.4 ? 0 : a < 0.8 ? 1 : a < 1.2 ? 2 : a < 1.6 ? 3 : a < 2.2 ? 4 : 5;
     }
+    // per TRUE quad, for splitting the 4th-layer q width into what the hit's
+    // CENTROID radius does (|cot| * sigma_r) and what multiple scattering does (1/p)
+    std::vector<double> B_q4_dz, B_q4_csr, B_q4_pt, B_q4_sz, B_q4_cot, B_q4_sr, B_q4_sres;
+    // with per-sim-hit truth states: the residual split into its two halves, both
+    // taken at the TRUE crossing's radius.  e_hit = hit - truth, e_pred = prediction - truth.
+    std::vector<double> B_q4_ehit, B_q4_epred, B_q4_tcot, B_q4_tpt, B_q4_ttilt;
     std::vector<double> B_dphi, B_dzd, B_dphi_all, B_dzd_all;                // ... of which at least one true triplet was built
 
     std::vector<double> B_zres;      // z_c - z_pred, TRUE triplets [cm]
@@ -328,6 +334,18 @@ namespace mkfit {
     }
     B_dphi.clear();
     B_dzd.clear();
+    B_q4_dz.clear();
+    B_q4_csr.clear();
+    B_q4_pt.clear();
+    B_q4_sz.clear();
+    B_q4_cot.clear();
+    B_q4_sr.clear();
+    B_q4_sres.clear();
+    B_q4_ehit.clear();
+    B_q4_epred.clear();
+    B_q4_tcot.clear();
+    B_q4_tpt.clear();
+    B_q4_ttilt.clear();
     B_dphi_all.clear();
     B_dzd_all.clear();
     B_zres.clear();
@@ -885,6 +903,39 @@ namespace mkfit {
                       B_n_quad_true++;
                       B_dphi.push_back(dphi_d);
                       B_dzd.push_back(dz_d);
+                      {
+                        // sigma_r of hit d from its covariance, as
+                        // HitStructures.cc hit_r_half_extent_of() without hl_fac
+                        const Hit &h = (*hd)[id];
+                        const double x = h.x(), y = h.y(), r2 = x * x + y * y;
+                        const double vr = (x * x * h.exx() + 2 * x * y * h.exy() + y * y * h.eyy()) / r2;
+                        B_q4_dz.push_back(dz_d);
+                        B_q4_csr.push_back(std::abs(cot_s) * std::sqrt(vr > 0 ? vr : 0.0));
+                        B_q4_pt.push_back(0.003 * kBfield * R);
+                        B_q4_sz.push_back(std::sqrt(h.ezz()));
+                        B_q4_cot.push_back(std::abs(cot_s));
+                        B_q4_sr.push_back(std::sqrt(vr > 0 ? vr : 0.0));
+                        // the hit's own contribution to the residual z - zpred(r_hit), EXACT:
+                        // var(z - cot r) = var_z - 2 cot cov_rz + cot^2 var_r, with the
+                        // SIGNED r-z covariance (a tilted sensor moves r and z together)
+                        const auto &E = h.error();
+                        const double r = std::sqrt(r2);
+                        const double crz = (x * E.At(0, 2) + y * E.At(1, 2)) / r;
+                        const double vres = h.ezz() - 2 * cot_s * crz + cot_s * cot_s * vr;
+                        B_q4_sres.push_back(std::sqrt(vres > 0 ? vres : 0.0));
+                        const int mid = h.mcHitID();
+                        if (mid >= 0 && mid < (int)ev->simHitStates_.size() && ev->simHitStates_[mid].is_valid()) {
+                          const SimHitState &t = ev->simHitStates_[mid];
+                          const double rt = std::hypot(t.x(), t.y());
+                          // both halves evaluated at the truth radius; their difference is dz_d
+                          const double zp_t = zd2 + cot_s * (rt - rrd);
+                          B_q4_epred.push_back(zp_t - t.z());
+                          B_q4_ehit.push_back((h.z() - t.z()) - cot_s * (rrd - rt));
+                          B_q4_tcot.push_back(std::abs(cot_s));
+                          B_q4_tpt.push_back(0.003 * kBfield * R);
+                          B_q4_ttilt.push_back(std::sqrt(vr > 0 ? vr : 0.0) > 0.2 * std::sqrt(h.ezz()) ? 1 : 0);
+                        }
+                      }
                       B_zv_true.push_back(zv);
                       if (auto it = found_true.find(la); it != found_true.end())
                         it->second = true;
@@ -1115,6 +1166,114 @@ namespace mkfit {
                mp, sp, sp > 0 ? mp / sp : 0.0);
         printf("      dz    median %+10.6f cm   sigma %.6f  -> bias %+.3f sigma\n",
                mz, sz, sz > 0 ? mz / sz : 0.0);
+      }
+      // q width vs |cot| sigma_r (centroid-radius term) and vs pT (MS goes as 1/p)
+      if (!B_q4_dz.empty()) {
+        const double ce[] = {0, 0.002, 0.005, 0.01, 0.02, 0.04, 1e9};
+        const double pe[] = {0.9, 1.5, 3.0, 10.0, 1e9};
+        constexpr int nc = 6, np = 4;
+        printf("   4th-layer q residual of TRUE quads, robust sigma [um] (n), by |cot| sigma_r(hit) and pT:\n");
+        printf("   |cot|sig_r [cm]  med[um]");
+        for (int j = 0; j < np; ++j)
+          printf("   pT %4.1f-%-5.1f", pe[j], pe[j + 1] > 1e8 ? 99.0 : pe[j + 1]);
+        printf("       all pT   hit sig_z[um]   pull sigma\n");
+        for (int i = 0; i < nc; ++i) {
+          std::vector<double> csr_in, sz_in, pull;
+          std::vector<double> all;
+          std::vector<std::vector<double>> cell(np);
+          for (size_t k = 0; k < B_q4_dz.size(); ++k) {
+            if (B_q4_csr[k] < ce[i] || B_q4_csr[k] >= ce[i + 1])
+              continue;
+            csr_in.push_back(B_q4_csr[k]);
+            sz_in.push_back(B_q4_sz[k]);
+            // pull against the hit's own sigma_z plus the centroid-radius term alone
+            pull.push_back(B_q4_dz[k] / std::hypot(B_q4_sz[k], B_q4_csr[k]));
+            all.push_back(B_q4_dz[k]);
+            for (int j = 0; j < np; ++j)
+              if (B_q4_pt[k] >= pe[j] && B_q4_pt[k] < pe[j + 1])
+                cell[j].push_back(B_q4_dz[k]);
+          }
+          printf("   %5.3f-%-6.3f   %7.0f", ce[i], ce[i + 1] > 1e8 ? 9.999 : ce[i + 1],
+                 csr_in.empty() ? 0.0 : 1e4 * med(csr_in));
+          for (int j = 0; j < np; ++j)
+            if (cell[j].size() >= 20)
+              printf("   %6.0f (%5zu)", 1e4 * iqr_sigma(cell[j]), cell[j].size());
+            else
+              printf("   %14s", "-");
+          if (all.size() >= 20)
+            printf("   %6.0f (%5zu)   %9.0f   %9.3f\n", 1e4 * iqr_sigma(all), all.size(), 1e4 * med(sz_in),
+                   iqr_sigma(pull));
+          else
+            printf("   %14s\n", "-");
+        }
+      }
+      // The along-sensor error of a tilted module moves r AND z together, so it
+      // enters the residual at the hit's own r as u (cos tau - cot sin tau), NOT in
+      // quadrature: for a module facing the IP the two cancel.  sigma_u, tau from the
+      // hit's own sigma_z and sigma_r (the along-sensor term dominates both for P).
+      if (!B_q4_dz.empty()) {
+        const double ke[] = {0, 0.25, 0.5, 0.75, 1.0, 1.4};
+        printf("   same, by |cot theta| and module tilt (tan tau = sig_r/sig_z of the hit):\n");
+        printf("   pred = median of the hit's own sigma of (z - cot r), exact from its covariance\n");
+        printf("   |cot|        flat: sigma[um] (n)  pred[um]     tilted: sigma[um] (n)  pred[um]  med tau[deg]\n");
+        for (int i = 0; i < 5; ++i) {
+          std::vector<double> d[2], pr[2], tau_t;
+          for (size_t k = 0; k < B_q4_dz.size(); ++k) {
+            if (B_q4_cot[k] < ke[i] || B_q4_cot[k] >= ke[i + 1])
+              continue;
+            const double sz = B_q4_sz[k], sr = B_q4_sr[k], su = std::hypot(sz, sr);
+            const double tau = std::atan2(sr, sz);
+            const int t = (sr > 0.2 * sz) ? 1 : 0;
+            d[t].push_back(B_q4_dz[k]);
+            (void)su;
+            pr[t].push_back(B_q4_sres[k]);
+            if (t)
+              tau_t.push_back(tau * 180 / kPi);
+          }
+          printf("   %4.2f-%-4.2f", ke[i], ke[i + 1]);
+          for (int t = 0; t < 2; ++t)
+            if (d[t].size() >= 20)
+              printf("       %6.0f (%5zu)  %7.0f", 1e4 * iqr_sigma(d[t]), d[t].size(), 1e4 * med(pr[t]));
+            else
+              printf("       %22s", "-");
+          printf("   %8.1f\n", tau_t.empty() ? 0.0 : med(tau_t));
+        }
+      }
+      if (!B_q4_ehit.empty()) {
+        const double ke[] = {0, 0.25, 0.5, 0.75, 1.0, 1.4};
+        const double pe[] = {0.9, 1.5, 3.0, 10.0, 1e9};
+        printf("   TRUTH SPLIT at the true crossing radius (n %zu of %zu true quads have a state), robust sigma [um]:\n",
+               B_q4_ehit.size(), B_q4_dz.size());
+        printf("   |cot|        flat: e_hit  e_pred (n)          tilted: e_hit  e_pred (n)\n");
+        for (int i = 0; i < 5; ++i) {
+          std::vector<double> eh[2], ep[2];
+          for (size_t k = 0; k < B_q4_ehit.size(); ++k)
+            if (B_q4_tcot[k] >= ke[i] && B_q4_tcot[k] < ke[i + 1]) {
+              const int t = (int)B_q4_ttilt[k];
+              eh[t].push_back(B_q4_ehit[k]);
+              ep[t].push_back(B_q4_epred[k]);
+            }
+          printf("   %4.2f-%-4.2f", ke[i], ke[i + 1]);
+          for (int t = 0; t < 2; ++t)
+            if (eh[t].size() >= 20)
+              printf("       %6.0f %6.0f (%5zu)", 1e4 * iqr_sigma(eh[t]), 1e4 * iqr_sigma(ep[t]), eh[t].size());
+            else
+              printf("       %20s", "-");
+          printf("\n");
+        }
+        printf("   by pT (all |cot|):   ");
+        for (int j = 0; j < 4; ++j) {
+          std::vector<double> eh, ep;
+          for (size_t k = 0; k < B_q4_ehit.size(); ++k)
+            if (B_q4_tpt[k] >= pe[j] && B_q4_tpt[k] < pe[j + 1]) {
+              eh.push_back(B_q4_ehit[k]);
+              ep.push_back(B_q4_epred[k]);
+            }
+          if (eh.size() >= 20)
+            printf("  pT %.1f-%.1f: e_hit %4.0f e_pred %4.0f (%zu)", pe[j], pe[j + 1] > 1e8 ? 99. : pe[j + 1],
+                   1e4 * iqr_sigma(eh), 1e4 * iqr_sigma(ep), eh.size());
+        }
+        printf("\n");
       }
       printf("                        ALL touched: dphi sigma %.5f rad   dz sigma %.5f cm\n",
              iqr_sigma(B_dphi_all), iqr_sigma(B_dzd_all));

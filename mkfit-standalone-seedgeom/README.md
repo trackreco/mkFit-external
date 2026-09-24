@@ -494,6 +494,13 @@ track*. sigma_q out there is MS-dominated, and MS is knowledge only a
 propagated covariance carries: a flat window must be sized for the worst pT in
 a steeply falling spectrum.
 
+**CORRECTED in addendum 7 (2026-09-24): the 630 um is NOT multiple scattering.**
+It is flat in pT, and a truth split shows it is the P sensor's own q extent: a
+1.5 mm macro-pixel, which is uniform, so the IQR-based sigma reads 1.28x its
+standard deviation. The prediction's own error is the smaller term (282 um at
+pT 0.9-1.5, falling as 1/p). A propagated covariance therefore cannot recover
+the purity. A per-hit containment window can.
+
 ## Where the handover to propagation belongs: the item count decides
 
 | stage | items /ev | cost/item affordable in ~100 ms |
@@ -618,3 +625,99 @@ order as the width attributed to MS. `LayerOfHits::hit_qbar_half_extent(i)`
 now caches the term. **Bin the TBPS-P q residual by `|cot theta| * qbar
 half-extent` before running the propagation test**, because the propagation
 test assumes the width is MS.
+
+---
+
+# Addendum 7 (2026-09-24): the TBPS-P q width is the sensor, not multiple scattering
+
+Addendum 5 attributed the 630 um q width at the TBPS-P 4th point to multiple
+scattering and made a propagated covariance "the next measurement". This
+addendum tests that attribution, and it fails.
+
+Configuration: layers 1,2,3 + 4 (TBPS-P), 20 events, 4th-layer q window 0.5 cm
+so the distribution is not clipped. Output `tbps-q050.txt` (April HLT sample)
+and `tbps-d121-truth.txt` (D121 ttbar PU200, `--read-sim-hit-states`,
+`--geom CMS-phase2-Run4D121`). The two samples give the same widths to within
+7 %, except one sparse bin (flat modules at |cot| 0.75-1.0, n = 110).
+
+## 1. The width is flat in pT, so it is not multiple scattering
+
+Robust sigma of the residual of true quads [um], April sample, binned by
+`|cot theta| * sigma_r` of the 4th hit:
+
+| \|cot\| sigma_r | pT 0.9-1.5 | 1.5-3 | 3-10 | > 10 |
+|---|---|---|---|---|
+| < 20 um (flat modules) | 536 | 538 | 523 | 529 |
+| 100-200 um | 609 | 594 | 491 | -- |
+| 200-400 um | 772 | 721 | 734 | 798 |
+| > 400 um | 911 | 919 | 804 | -- |
+
+Multiple scattering would shrink the width 5-10x between the first and last
+column. It moves by at most 12 %.
+
+## 2. The truth split: the hit's own error dominates, the prediction's is MS
+
+With a truth state per sim hit, the residual splits at the true crossing
+radius into `e_hit = hit - truth` and `e_pred = prediction - truth`. D121,
+9660 true quads, all with a state:
+
+| \|cot\| | flat: e_hit | e_pred | tilted: e_hit | e_pred |
+|---|---|---|---|---|
+| 0-0.25 | 563 | 161 | -- | -- |
+| 0.25-0.5 | 542 | 180 | 557 | 219 |
+| 0.5-0.75 | 531 | 167 | 586 | 207 |
+| 0.75-1.0 | 506 | 144 | 730 | 270 |
+| 1.0-1.4 | -- | -- | 791 | 353 |
+
+| pT | 0.9-1.5 | 1.5-3 | 3-10 | > 10 |
+|---|---|---|---|---|
+| e_hit | 638 | 645 | 590 | 642 |
+| e_pred | **282** | **153** | **78** | **45** |
+
+`e_pred` falls as 1/p, which is multiple scattering, and it is the smaller term
+at every pT. `e_hit` is flat in pT and carries the width.
+
+## 3. The hit's error agrees with its own covariance, once the estimator is right
+
+The robust sigma used throughout this study is IQR/1.349, correct for a
+Gaussian. A single macro-pixel is UNIFORM over its length. For a uniform
+distribution on [-L, L] the IQR sigma is 0.741 L while the standard deviation
+is 0.577 L, a ratio of **1.284**. For the P macro-pixel (L = 750 um) that is
+556 um against 433 um.
+
+The prediction from the hit's own covariance is exact when it includes the
+signed r-z term: `var(z - cot r) = var_z - 2 cot cov_rz + cot^2 var_r`. On a
+tilted sensor facing the IP, a displacement along the sensor moves r and z
+together, and the terms ADD. A first version that used magnitudes only had them
+cancelling, and was wrong. Scaled by 1.284:
+
+| | covariance predicts x 1.284 | measured e_hit |
+|---|---|---|
+| flat, all \|cot\| | 543 | 506-563 |
+| tilted, \|cot\| 0.25-0.5 | 548 | 557 |
+| tilted, 0.5-0.75 | 630 | 586 |
+| tilted, 0.75-1.0 | 715 | 730 |
+| tilted, 1.0-1.4 | 827 | 791 |
+
+**Agreement is within 7 % everywhere, so the covariance is correct.** The
+excess over the covariance that the first pass of this addendum could not
+explain, about 330 um at central eta, was the estimator.
+
+## Consequences
+
+- **The recorded "next measurement" is withdrawn.** A propagated covariance at
+  the 4th point would carry the MS term, which is the minor one. It cannot
+  bring the 0.286 purity back toward 0.735.
+- **What can is a per-hit containment window**: the hit's own q extent from its
+  covariance, projected with the signed r-z term, plus a 1/p prediction term.
+  The flat 0.15 cm window is twice the half-length of a flat-module
+  macro-pixel. In the tilted rings at |cot| 1.0-1.4 the hit's projected
+  half-extent is about 0.11 cm (sqrt(3) x 644 um), before the prediction term
+  is added. So one number is too loose in one place and too tight in the other.
+- **recotracker-02's `|cot| * qbar_half_extent` term in the pre-cut is a valid
+  upper bound**, by the triangle inequality on the exact expression. It is the
+  cot^2 var_r term without the correlation.
+- **Every IQR sigma in this README is 1.28x high for a uniform distribution.**
+  It is right for the pixel-barrel residuals, which are close to Gaussian. It is
+  not right for macro-pixels or strips. Report a standard deviation, or a
+  half-extent, for those.

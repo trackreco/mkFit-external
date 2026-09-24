@@ -15,14 +15,16 @@ PREFIX=${2:-seedgeom}
 case "$PREFIX" in */*) ;; *) mkdir -p test-seedgeom; PREFIX=test-seedgeom/$PREFIX ;; esac
 shift 2 || true
 
-SAMPLE=/foo/matevz/mic-dev/trackingNtuple_HLT_2026_March.bin
+# overridable: SAMPLE=... GEOM=... XOPTS='--read-sim-hit-states' seedgeom-run.sh ...
+SAMPLE=${SAMPLE:-/foo/matevz/mic-dev/trackingNtuple_HLT_2026_March.bin}
+GEOM=${GEOM:-CMS-phase2}
 # the loader next to THIS script, so the study is compiled from this checkout
 LOADER=$(dirname "$(realpath "$0")")/seedgeom-load.C
 
 unset DISPLAY
 export LD_LIBRARY_PATH=.
 
-CMD=(./mkFit --geom CMS-phase2 --seed-input cmssw --input-file "$SAMPLE"
+CMD=(./mkFit --geom "$GEOM" --seed-input cmssw --input-file "$SAMPLE" $XOPTS
      --num-events "$N" --num-thr 1 --shell
      --shell-command 'gROOT->SetBatch(kTRUE)'
      --shell-command "gROOT->ProcessLine(\".x $LOADER\")")

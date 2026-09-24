@@ -82,8 +82,17 @@ void seedgeom_load() {
   // the RELATIVE names the shell loaded them under ("./libMkFitCore.so", from
   // LD_LIBRARY_PATH=.), so those names have to resolve there too.
   gSystem->mkdir("test-seedgeom/aclic", kTRUE);
-  for (auto l : {"libMkFitCore.so", "libMkFitCMS.so", "libMkFitRootDataFormats.so", "CMS-phase2.so"})
-    gSystem->Symlink(Form("%s/%s", bld.Data(), l), Form("test-seedgeom/aclic/%s", l));
+  // Every .so in the build dir, not a fixed list: the geometry plugin is whatever
+  // --geom named (CMS-phase2-Run4D121.so for the D121 samples), and ACLiC links it too.
+  {
+    void *dir = gSystem->OpenDirectory(bld.Data());
+    while (const char *f = gSystem->GetDirEntry(dir)) {
+      const TString fn(f);
+      if (fn.EndsWith(".so"))
+        gSystem->Symlink(Form("%s/%s", bld.Data(), f), Form("test-seedgeom/aclic/%s", f));
+    }
+    gSystem->FreeDirectory(dir);
+  }
   gSystem->SetBuildDir("test-seedgeom/aclic", kTRUE);
 
   printf("[seedgeom] defs: %s\n", defs.Data());
