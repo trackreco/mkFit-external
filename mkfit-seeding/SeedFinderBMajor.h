@@ -62,7 +62,7 @@ namespace mkfit::seeding {
     }
   }  // namespace detail
 
-  template <typename LA, typename LB, typename LC, typename LD>
+  template <class A = ArithRef, typename LA, typename LB, typename LC, typename LD>
   void find_quads_bmajor(const SeedParams &P,
                          const LA &ga,
                          const LB &gb,
@@ -240,7 +240,7 @@ namespace mkfit::seeding {
       (void)inv_rclo_f;
 
       tprev = clk::now();
-      finish_triplets(P, ga, gb, gc, gd, nt, W, out, cnt, tick);
+      finish_triplets<A>(P, ga, gb, gc, gd, nt, W, out, cnt, tick);
     }
   }
 

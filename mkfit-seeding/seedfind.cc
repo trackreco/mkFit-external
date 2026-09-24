@@ -8,11 +8,17 @@
 //
 //   test-seedgeom/bin/seedfind --input-file <f.bin> [--geom CMS-phase2]
 //        [--num-events N] [--reps R] [--dump quads.txt] [--phi-lin MODE MARG]
-//        [--qbin-c CM] [--qbin-d CM]
+//        [--qbin-c CM] [--qbin-d CM] [--arith ref|fast] [--margins REF.txt]
+//
+// --margins REF: per event, the symmetric difference between this run's quads
+// and the list in REF, each differing quad evaluated in both arithmetics (see
+// SeedMargins.h), plus how far the fast arithmetic moves every cut margin over
+// all reference quads.
 
 #include "SeedFinder.h"
 #include "SeedFinderStaged.h"
 #include "SeedFinderBMajor.h"
+#include "SeedMargins.h"
 
 #include "RecoTracker/MkFitCore/interface/Config.h"
 #include "RecoTracker/MkFitCore/interface/TrackerInfo.h"
@@ -26,6 +32,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <limits>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -49,14 +56,186 @@ namespace {
     printf(
         "seedfind --input-file F [--geom G] [--num-events N] [--reps R] [--dump FILE]\n"
         "         [--phi-lin MODE MARG] [--qbin-c CM] [--qbin-d CM] [--layers A B C D]\n"
-        "         [--staged | --fuse | --bmajor] [--block N]\n");
+        "         [--staged | --fuse | --bmajor] [--block N] [--lbin CM]\n"
+        "         [--arith ref|fast] [--margins REF] [--eps-cm E] [--eps-rad E] [--margins-print N]\n");
   }
+
+  // The difference tool.  See SeedMargins.h.
+  struct MarginStudy {
+    std::map<unsigned int, std::vector<Quad>> ref;  // per event, sorted
+    double eps_cm = 1e-4, eps_rad = 1e-6;
+    int n_print = 50, n_printed = 0;
+    long n_ref = 0, n_new = 0, n_ref_only = 0, n_new_only = 0;
+    long n_edge = 0, n_far = 0, n_noflip = 0, n_selfbad = 0, n_self = 0;
+    long n_ref_near = 0;           // reference quads with some decisive cut within eps: the baseline
+    double worst_edge = 0;         // largest |m_ref| / eps among the edge flips
+    std::vector<double> dm[MC_N];  // |m_ref - m_fast| over reference quads, both valid
+    struct Worst {
+      double dm = -1, pt = 0, cot = 0;
+      unsigned int ev = 0;
+      Quad q{};
+    } worst[MC_N];
+
+    bool load(const std::string &fn) {
+      FILE *f = fopen(fn.c_str(), "r");
+      if (!f)
+        return false;
+      char line[256];
+      while (fgets(line, sizeof line, f)) {
+        if (line[0] == '#')
+          continue;
+        unsigned int e, a, b, c, d;
+        if (sscanf(line, "%u %u %u %u %u", &e, &a, &b, &c, &d) == 5)
+          ref[e].push_back({a, b, c, d});
+      }
+      fclose(f);
+      for (auto &kv : ref)
+        std::sort(kv.second.begin(), kv.second.end());
+      return true;
+    }
+
+    double scaled(int i, double m) const { return std::abs(m) / (margin_cut_info(i).rad ? eps_rad : eps_cm); }
+
+    void print_eval(const char *tag, const QuadEval &r, const QuadEval &f) {
+      printf("      %-5s pT %7.2f cot %+6.3f :", tag, 0.0114 * r.R, r.cot);
+      for (int i = 0; i < MC_N; ++i) {
+        if (!margin_cut_info(i).decisive && r.c[i].pass == f.c[i].pass)
+          continue;
+        const bool flip = r.c[i].valid && f.c[i].valid && r.c[i].pass != f.c[i].pass;
+        const bool near = r.c[i].valid && scaled(i, r.c[i].m) < 10;
+        if (!flip && !near)
+          continue;
+        printf(" %s%s[%s ref %+.3g fast %+.3g]", flip ? "*" : "", margin_cut_info(i).name,
+               margin_cut_info(i).rad ? "rad" : "cm", r.c[i].m, f.c[i].m);
+      }
+      printf("\n");
+    }
+
+    // A: this run's arithmetic.  F: the one compared against the reference in
+    // the precision table (A itself unless A is the reference).
+    template <class A, class F, typename L>
+    void event(unsigned int iev, const SeedParams &P, const L &ga, const L &gb, const L &gc, const L &gd,
+               std::vector<Quad> quads) {
+      std::sort(quads.begin(), quads.end());
+      const std::vector<Quad> &rq = ref[iev];
+      n_ref += rq.size();
+      n_new += quads.size();
+      std::vector<unsigned int> ia(ga.n()), ib(gb.n()), ic(gc.n()), id(gd.n());
+      for (unsigned int k = 0; k < ga.n(); ++k)
+        ia[ga.orig_[k]] = k;
+      for (unsigned int k = 0; k < gb.n(); ++k)
+        ib[gb.orig_[k]] = k;
+      for (unsigned int k = 0; k < gc.n(); ++k)
+        ic[gc.orig_[k]] = k;
+      for (unsigned int k = 0; k < gd.n(); ++k)
+        id[gd.orig_[k]] = k;
+      auto ev2 = [&](const Quad &q, QuadEval &er, QuadEval &ef) {
+        eval_quad<ArithRef>(P, ga, gb, gc, gd, ia[q[0]], ib[q[1]], ic[q[2]], id[q[3]], er);
+        eval_quad<F>(P, ga, gb, gc, gd, ia[q[0]], ib[q[1]], ic[q[2]], id[q[3]], ef);
+      };
+      QuadEval er, ef;
+      // self-check: the evaluator in this run's arithmetic accepts every quad this run found
+      for (const auto &q : quads) {
+        ev2(q, er, ef);
+        ++n_self;
+        if (!(std::is_same_v<A, ArithRef> ? er : ef).pass())
+          ++n_selfbad;
+      }
+      // precision of the fast arithmetic, and the edge baseline, over the reference quads
+      for (const auto &q : rq) {
+        ev2(q, er, ef);
+        bool near = false;
+        for (int i = 0; i < MC_N; ++i) {
+          // 1e30 is the curvature form's "no degeneracy test" sentinel
+          if (er.c[i].valid && ef.c[i].valid && std::abs(er.c[i].m) < 1e29 && std::abs(ef.c[i].m) < 1e29) {
+            const double d = std::abs(er.c[i].m - ef.c[i].m);
+            dm[i].push_back(d);
+            if (d > worst[i].dm)
+              worst[i] = {d, 0.0114 * er.R, er.cot, iev, q};
+          }
+          near |= margin_cut_info(i).decisive && er.c[i].valid && scaled(i, er.c[i].m) <= 1;
+        }
+        n_ref_near += near;
+      }
+      // the symmetric difference
+      std::vector<Quad> only_ref, only_new;
+      std::set_difference(rq.begin(), rq.end(), quads.begin(), quads.end(), std::back_inserter(only_ref));
+      std::set_difference(quads.begin(), quads.end(), rq.begin(), rq.end(), std::back_inserter(only_new));
+      n_ref_only += only_ref.size();
+      n_new_only += only_new.size();
+      for (int side = 0; side < 2; ++side) {
+        for (const auto &q : side == 0 ? only_ref : only_new) {
+          ev2(q, er, ef);
+          // side 0: the reference accepts it and this run does not
+          const QuadEval &acc = side == 0 ? er : (std::is_same_v<A, ArithRef> ? er : ef);
+          const QuadEval &rej = side == 0 ? (std::is_same_v<A, ArithRef> ? er : ef) : er;
+          double closest = 1e30;
+          bool flip = false;
+          for (int i = 0; i < MC_N; ++i) {
+            if (!margin_cut_info(i).decisive || !acc.c[i].valid)
+              continue;
+            if (acc.c[i].pass && !(rej.c[i].valid && rej.c[i].pass)) {
+              flip = true;
+              closest = std::min(closest, scaled(i, er.c[i].valid ? er.c[i].m : ef.c[i].m));
+            }
+          }
+          const char *cls;
+          if (!acc.pass() || rej.pass() || !flip) {
+            ++n_noflip;
+            cls = "NOFLIP";
+          } else if (closest <= 1) {
+            ++n_edge;
+            worst_edge = std::max(worst_edge, closest);
+            cls = "edge";
+          } else {
+            ++n_far;
+            cls = "FAR";
+          }
+          if (n_printed < n_print || cls[0] != 'e') {
+            ++n_printed;
+            printf("   %-6s %s ev %u quad %u %u %u %u  closest flip %.3g eps\n", cls,
+                   side == 0 ? "ref-only" : "new-only", iev, q[0], q[1], q[2], q[3], flip ? closest : -1.0);
+            print_eval("", er, ef);
+          }
+        }
+      }
+    }
+
+    void report() const {
+      printf("[margins] eps %.3g cm, %.3g rad\n", eps_cm, eps_rad);
+      printf("   reference quads %ld, this run %ld; ref-only %ld, new-only %ld\n", n_ref, n_new, n_ref_only,
+             n_new_only);
+      printf("   differing quads: edge %ld (worst %.3g eps), FAR %ld, NOFLIP %ld\n", n_edge, worst_edge, n_far,
+             n_noflip);
+      printf("   self-check: %ld of %ld found quads rejected by this run's own evaluator\n", n_selfbad, n_self);
+      printf("   baseline: %ld of %ld reference quads (%.3f %%) have a decisive cut within eps\n", n_ref_near, n_ref,
+             100.0 * n_ref_near / std::max(1L, n_ref));
+      printf("   |margin_ref - margin_fast| over reference quads, per cut:\n");
+      printf("     %-11s %4s %8s %11s %11s %11s   %s\n", "cut", "unit", "n", "median", "p99", "max",
+             "worst quad: pT, cot, ev, indices");
+      for (int i = 0; i < MC_N; ++i) {
+        std::vector<double> v = dm[i];
+        if (v.empty())
+          continue;
+        std::sort(v.begin(), v.end());
+        const Worst &w = worst[i];
+        printf("     %-11s %4s %8zu %11.3g %11.3g %11.3g", margin_cut_info(i).name, margin_cut_info(i).rad ? "rad" : "cm",
+               v.size(), v[v.size() / 2], v[(v.size() * 99) / 100], v.back());
+        if (v.back() > 0)
+          printf("   %7.2f %+6.3f  %u  %u %u %u %u", w.pt, w.cot, w.ev, w.q[0], w.q[1], w.q[2], w.q[3]);
+        printf("\n");
+      }
+    }
+  };
 }  // namespace
 
 int main(int argc, char *argv[]) {
   std::string input, geom = "CMS-phase2", dump;
   int n_events = 10, reps = 1;
   bool staged = false, fuse = false, bmajor = false;
+  int arith = 0;  // 0 ref, 1 fast, 2 fastk
+  std::string margins_ref;
+  MarginStudy MS;
   unsigned int block = 64;
   int la = 0, lb = 1, lc = 2, ld = 3;
   float qbin_c = -1, qbin_d = -1;
@@ -87,6 +266,26 @@ int main(int argc, char *argv[]) {
       staged = fuse = true;
     else if (a == "--block")
       block = std::max(1, atoi(next()));
+    else if (a == "--arith") {
+      const std::string v = next();
+      if (v == "ref")
+        arith = 0;
+      else if (v == "fast")
+        arith = 1;
+      else if (v == "fastk")
+        arith = 2;
+      else {
+        usage();
+        return 1;
+      }
+    } else if (a == "--margins")
+      margins_ref = next();
+    else if (a == "--eps-cm")
+      MS.eps_cm = atof(next());
+    else if (a == "--eps-rad")
+      MS.eps_rad = atof(next());
+    else if (a == "--margins-print")
+      MS.n_print = atoi(next());
     else if (a == "--dump")
       dump = next();
     else if (a == "--phi-lin") {
@@ -110,6 +309,14 @@ int main(int argc, char *argv[]) {
   }
   if (input.empty()) {
     usage();
+    return 1;
+  }
+  if (arith && !staged) {
+    printf("[seedfind] --arith fast/fastk needs --staged, --fuse or --bmajor\n");
+    return 1;
+  }
+  if (!margins_ref.empty() && !MS.load(margins_ref)) {
+    printf("[seedfind] cannot read %s\n", margins_ref.c_str());
     return 1;
   }
 
@@ -158,22 +365,38 @@ int main(int argc, char *argv[]) {
       quads.clear();
       cnt = SeedCounters();
       const auto s0 = clk::now();
-      if (bmajor)
-        find_quads_bmajor(P, ga, gb, gc, gd, quads, cnt, work, bwork, block);
+      if (bmajor && arith == 1)
+        find_quads_bmajor<ArithFast>(P, ga, gb, gc, gd, quads, cnt, work, bwork, block);
+      else if (bmajor && arith == 2)
+        find_quads_bmajor<ArithFastK>(P, ga, gb, gc, gd, quads, cnt, work, bwork, block);
+      else if (bmajor)
+        find_quads_bmajor<ArithRef>(P, ga, gb, gc, gd, quads, cnt, work, bwork, block);
+      else if (staged && arith == 1)
+        find_quads_staged<ArithFast>(P, ga, gb, gc, gd, quads, cnt, work, block, fuse);
+      else if (staged && arith == 2)
+        find_quads_staged<ArithFastK>(P, ga, gb, gc, gd, quads, cnt, work, block, fuse);
       else if (staged)
-        find_quads_staged(P, ga, gb, gc, gd, quads, cnt, work, block, fuse);
+        find_quads_staged<ArithRef>(P, ga, gb, gc, gd, quads, cnt, work, block, fuse);
       else
         find_quads(P, ga, gb, gc, gd, quads, cnt);
       best = std::min(best, secs(s0, clk::now()));
     }
     t_find += best;
     tot.add(cnt);
+    if (!margins_ref.empty()) {
+      if (arith == 1)
+        MS.event<ArithFast, ArithFast>(iev, P, ga, gb, gc, gd, quads);
+      else if (arith == 2)
+        MS.event<ArithFastK, ArithFastK>(iev, P, ga, gb, gc, gd, quads);
+      else
+        MS.event<ArithRef, ArithFastK>(iev, P, ga, gb, gc, gd, quads);
+    }
     for (const auto &q : quads)
       all_quads.push_back({(unsigned int)iev, q[0], q[1], q[2], q[3]});
   }
 
   const double ne = n_events;
-  printf("[seedfind] %d events, reps %d (min taken per event), %s\n", n_events, reps,
+  printf("[seedfind] %d events, reps %d (min taken per event), arith %s, %s\n", n_events, reps, arith == 2 ? "fastk" : arith == 1 ? "fast" : "ref",
          staged ? ((bmajor ? "b-major, block " : fuse ? "fused, block " : "staged, block ") + std::to_string(block)).c_str()
                 : "scalar");
   printf("   doublets   %12.0f /ev\n", tot.doublets / ne);
@@ -194,6 +417,9 @@ int main(int argc, char *argv[]) {
       printf("     stage %-11s %9.3f ms/ev  %5.1f %%\n", nm[i], 1e3 * tot.t_stage[i] / ne,
              100 * tot.t_stage[i] / ts);
   }
+
+  if (!margins_ref.empty())
+    MS.report();
 
   if (!dump.empty()) {
     std::sort(all_quads.begin(), all_quads.end());

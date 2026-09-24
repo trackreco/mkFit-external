@@ -12,6 +12,8 @@ reproducing that prototype's output exactly, then made fast.
 | `SeedFinder.h` | `find_quads()`, the scalar port. Per-hit cuts copied from the prototype expression for expression; only the fetch is new |
 | `SeedFinderStaged.h` | the same search as a pipeline of flat loops in blocks of a-hits, optionally with candidate generation fused into the triplet test. `finish_triplets()` is the helix and 4th-layer stage all variants share |
 | `SeedFinderBMajor.h` | the b-hit as the outer loop; per b-hit a z-bucketed list of the c-hits that pass the phi and r tests, shared by every doublet through it |
+| `SeedMath.h` | the per-triplet and per-quad arithmetic, templated on a policy: `ArithRef` (double, the prototype's expressions), `ArithFast` (float + vdt, circle-centre form), `ArithFastK` (float + vdt, curvature form). Every cut also returns its signed margin |
+| `SeedMargins.h` | `eval_quad<A>()`: every cut of one quad in arithmetic A, pass flag and margin. It calls the functions `finish_triplets<A>()` runs, so it cannot drift from the finder |
 | `seedfind.cc` | standalone driver: geometry plugin and events as `mkFit.cc` loads them, timers around the fill and the search only |
 | `Makefile` | flags from the build's `make echo-aclic`, re-read on every build; ROOT only if `libMkFitCore.so` links it |
 
@@ -36,7 +38,15 @@ cd $B && LD_LIBRARY_PATH=. test-seedgeom/bin/seedfind \
     --input-file /foo/matevz/mic-dev/trackingNtuple_HLT_2026_March.bin \
     --num-events 5 --reps 3 --qbin-c 2.0 --qbin-d 0.5 --bmajor --lbin 0.25 \
     --dump test-seedgeom/quads/x.txt
+# step A: float arithmetic, and the difference tool against a reference list
+... --arith fastk --margins test-seedgeom/quads/A-ref-50ev.txt
 ```
+
+`--arith ref|fast|fastk` selects the per-triplet arithmetic (b-major, staged
+and fused finders; the scalar port is always `ref`). `--margins REF` runs the
+difference tool, below. `--eps-cm` / `--eps-rad` set its epsilon (default
+1e-4 cm = 1 um and 1e-6 rad), `--margins-print N` how many differing quads it
+lists.
 
 ## Acceptance: the quad list, not the physics numbers
 
@@ -51,6 +61,39 @@ the unit: 835863 and 47282 per event.
 **Write each dump to a new file name.** A rejected command-line option leaves
 the previous dump in place, and comparing it again reads as a pass. That
 happened twice before the driver runs were changed.
+
+## The difference tool: `--margins REF`
+
+Once the arithmetic changes, "the same list" can no longer be the test. The
+test becomes: **every quad that differs is within epsilon of some cut in the
+reference arithmetic.** Per event, the tool takes the symmetric difference
+with REF and evaluates each differing quad in both arithmetics. The cut whose
+pass flag differs is the one that flipped. Each quad is classed by the
+reference margin of the closest flipped cut:
+
+- `edge`: within epsilon. That is rounding.
+- `FAR`: beyond epsilon. That is a bug, or a precision defect.
+- `NOFLIP`: no cut flips, so the evaluator and the finder disagree, or a fetch
+  missed a quad its own cut accepts.
+
+It also prints two things that make the verdict meaningful:
+
+- **the baseline**: how many reference quads have any cut within epsilon at
+  all. It is 67 of 41226 (0.16 %). So a difference that lands at an edge is
+  not a coincidence.
+- **the precision table**: `|margin_ref - margin_new|` per cut over every
+  reference quad, with the worst quad's pT and cot. This measures how far the
+  new arithmetic moves each cut, whether or not any quad flipped. It is the
+  number to read first.
+
+Two self-checks are built in. The evaluator in the run's own arithmetic must
+accept every quad that run found. `--arith ref` must give zero differences.
+Both hold.
+
+`test-seedgeom/quads/A-ref-50ev.txt` is the 50-event reference, made with
+`--arith ref`. Its first 5 events equal the prototype's list exactly, and the
+arithmetic is the prototype's, so it extends the reference rather than
+replacing it.
 
 ## Measurements
 
@@ -70,6 +113,15 @@ layers is 1.2-1.6 ms per event on top.
 | b-major, z buckets 0.25 cm | 53.5 | 64.0 |
 | + x, y precomputed at fill | 51.8 | 61.9 |
 | same, `-march=native` | 50.5 | 60.4 |
+| *step A, re-timed at load ~4:* | | |
+| templated, `--arith ref` | 54.3 | 65.0 |
+| `--arith fast` (float, vdt, circle centre) | 43.6 | 52.2 |
+| **`--arith fastk`** (float, vdt, curvature) | **42.8** | **51.2** |
+
+The step-A rows were run back to back, twice, on a box at load average ~4;
+the two passes agree to 0.3 %. Read them against each other, not against the
+rows above, which were taken on a quieter box. `fastk` against `ref`: helix
+stage 13.0 -> 5.2 ms per event, 4th-layer test 4.4 -> 2.0.
 
 Last row by stage, ms per event: doublets 3.5, per-doublet window 6.1,
 per-b-hit lists 8.6, lookup and z test 16.4, helix 11.3, 4th-layer candidates
@@ -99,6 +151,31 @@ same list" to **"differences only at a cut edge, counted and bounded"**.
 
 ### Step A: float, -Ofast, vdt in the per-triplet stages
 
+**Status 2026-09-24: done for float + vdt. Matriplex is not done.**
+
+- The build was already `-Ofast`, so this step was float + vdt.
+- **The naive port fails, and the difference tool is what showed it.** The
+  circle-centre form in float (`--arith fast`) produces 3 FAR differences in
+  50 events. Two of them are at pT ~2 TeV, where the centre sits ~10^5 cm away
+  and `dC^2 - R^2` cancels. There `d_phi` moves by 1.5 mrad. The third is at
+  pT 19 GeV: `d_phi` flipped 2.5 urad from its edge after the float path
+  moved it by 6 urad. On 5 events the same port gave the identical list, so a
+  5-event null would have passed it.
+- **The curvature form fixes it** (`--arith fastk`). The circle is given by
+  the signed Menger curvature k and by the point and tangent at the third hit.
+  The crossing with |X| = r is the line X.(k P0 + n) = k (r^2 + r0^2)/2 + P0.n,
+  which is the circle equation multiplied through by k. All its terms stay
+  O(r) as k -> 0. The arc length is L asin(h)/h, exact at k = 0.
+- Result on 50 events: **0 differing quads out of 41226.** Largest margin
+  shift per cut: `d_phi` 0.48 urad, `d_z` 83 nm (at |cot| ~3), `reach` and
+  `d_cross` 10 nm. All are under the 1 um / 1 urad epsilon, so any future flip
+  must be an edge flip.
+- The degeneracy cut `c3` of the reference (collinear points, |G| < 1e-12)
+  has no counterpart in the curvature form, since k = 0 is simply a straight
+  line.
+
+Original plan text:
+
 - The helix and 4th-layer stages (`finish_triplets()`) go to float. `circle3`,
   `circle_cross_r` and `arc` in float, `hypot` -> `sqrt`, `asin` and `atan2`
   from vdt (`vdt::fast_asinf`, `vdt::fast_atan2f`), which the build already
@@ -114,6 +191,8 @@ same list" to **"differences only at a cut edge, counted and bounded"**.
   in the isolated build, 4115 quads over 5 events.
 - Then Matriplex with cdt for the per-triplet stages. There is enough
   arithmetic per item there for it to pay (~47 k triplets per event).
+  *After the float port those stages are 7.2 of 42.8 ms per event, so the
+  most this can buy is ~15 %. Step B addresses the ~35 ms in stages 1-4.*
 
 ### Step B: fixed-point integers in the per-pair tests
 

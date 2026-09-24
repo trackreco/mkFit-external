@@ -26,6 +26,7 @@
 // so the quad list must equal it exactly.
 
 #include "SeedFinder.h"
+#include "SeedMath.h"
 
 namespace mkfit::seeding {
 
@@ -52,8 +53,9 @@ namespace mkfit::seeding {
 
   // Stages 5-7, shared by every variant: the helix per triplet and the 4th
   // layer.  The triplets are (W.t_d, W.t_kc)[0, nt), with W.d_ka / W.d_kb
-  // holding the doublets they index.
-  template <typename LA, typename LB, typename LC, typename LD, typename Tick>
+  // holding the doublets they index.  The arithmetic is A's (SeedMath.h), and
+  // it is the same code the margin evaluator runs.
+  template <class A, typename LA, typename LB, typename LC, typename LD, typename Tick>
   void finish_triplets(const SeedParams &P,
                        const LA &ga,
                        const LB &gb,
@@ -64,8 +66,8 @@ namespace mkfit::seeding {
                        std::vector<Quad> &out,
                        SeedCounters &cnt,
                        Tick &&tick) {
-    using namespace detail;
-    const double rdlo = gd.rlo_, rdhi = gd.rhi_;
+    using T = typename A::real;
+    const T rdlo = gd.rlo_, rdhi = gd.rhi_;
     auto phi_bins = [](const auto &L, float c, float w) {
       w = std::min(w, 0.9f * kPi);
       return L.phi_range(c - w, c + w);
@@ -77,41 +79,24 @@ namespace mkfit::seeding {
     for (unsigned int t = 0; t < nt; ++t) {
       const unsigned int d = W.t_d[t], kc = W.t_kc[t];
       const unsigned int ka = W.d_ka[d], kb = W.d_kb[d];
-      const float za = ga.z_[ka];
-      // precomputed at fill with the same float expression, r * cos(phi)
-      const double xa = ga.x_[ka], ya = ga.y_[ka];
-      const double xb = gb.x_[kb], yb = gb.y_[kb];
-      const double xc = gc.x_[kc], yc = gc.y_[kc];
-      double cx = 0, cy = 0, R;
-      if (!circle3(xa, ya, xb, yb, xc, yc, cx, cy, R))
-        R = 1e6;
-      const double s_ab = arc(std::hypot(xb - xa, yb - ya), R);
-      const double s_bc = arc(std::hypot(xc - xb, yc - yb), R);
-      const double s_ac = s_ab + s_bc;
-      const double cot_s = (s_ac > 1e-6) ? (gc.z_[kc] - za) / s_ac : 0.0;
-      double p0x, p0y, p1x, p1y;
-      const bool ok0 = circle_cross_r(cx, cy, R, rdlo, xc, yc, p0x, p0y);
-      const bool ok1 = circle_cross_r(cx, cy, R, rdhi, xc, yc, p1x, p1y);
-      W.t_ok[t] = ok0 || ok1;
-      if (!(ok0 || ok1))
+      TripletHelix<A> h;
+      // x, y precomputed at fill with the same float expression, r * cos(phi)
+      helix_triplet<A>(P.qwin_d, P.phiwin_d, ga.x_[ka], ga.y_[ka], ga.z_[ka], gb.x_[kb], gb.y_[kb], gc.x_[kc],
+                       gc.y_[kc], gc.z_[kc], rdlo, rdhi, h);
+      W.t_ok[t] = h.ok;
+      if (!h.ok)
         continue;
-      const double f0 = ok0 ? std::atan2(p0y, p0x) : std::atan2(p1y, p1x);
-      const double f1 = ok1 ? std::atan2(p1y, p1x) : f0;
-      const double dfh = 0.5 * wrap_pi((float)(f1 - f0));
-      const double zz0 = ok0 ? gc.z_[kc] + cot_s * arc(std::hypot(p0x - xc, p0y - yc), R)
-                             : gc.z_[kc] + cot_s * arc(std::hypot(p1x - xc, p1y - yc), R);
-      const double zz1 = ok1 ? gc.z_[kc] + cot_s * arc(std::hypot(p1x - xc, p1y - yc), R) : zz0;
-      const double zdh = P.qwin_d + kCoverEps;
-      W.t_cx[t] = cx;
-      W.t_cy[t] = cy;
-      W.t_R[t] = R;
-      W.t_cots[t] = cot_s;
-      W.t_xc[t] = xc;
-      W.t_yc[t] = yc;
-      W.t_phid[t] = f0 + dfh;
-      W.t_phidh[t] = P.phiwin_d + std::abs(dfh) + kCoverEps;
-      W.t_zlo[t] = std::min(zz0, zz1) - zdh;
-      W.t_zhi[t] = std::max(zz0, zz1) + zdh;
+      // the curvature form stores (k, ux, uy) where the centre form has (R, cx, cy)
+      W.t_cx[t] = A::curvature_form ? h.ux : h.cx;
+      W.t_cy[t] = A::curvature_form ? h.uy : h.cy;
+      W.t_R[t] = A::curvature_form ? h.k : h.R;
+      W.t_cots[t] = h.cots;
+      W.t_xc[t] = h.xc;
+      W.t_yc[t] = h.yc;
+      W.t_phid[t] = h.phid;
+      W.t_phidh[t] = h.phidh;
+      W.t_zlo[t] = h.zlo;
+      W.t_zhi[t] = h.zhi;
     }
 
     tick(4);
@@ -138,17 +123,20 @@ namespace mkfit::seeding {
     for (unsigned int i = 0; i < ne; ++i) {
       const unsigned int t = W.e_t[i], kd = W.e_kd[i];
       const unsigned int kc = W.t_kc[t];
-      const float rrc = gc.r_[kc], rrd = gd.r_[kd];
-      if (rrd <= rrc + 0.1f)
-        continue;
-      const double cx = W.t_cx[t], cy = W.t_cy[t], R = W.t_R[t], xc = W.t_xc[t], yc = W.t_yc[t];
-      double px2, py2;
-      if (!circle_cross_r(cx, cy, R, rrd, xc, yc, px2, py2))
-        continue;
-      const double dphi_d = wrap_pi((float)(gd.phi_[kd] - std::atan2(py2, px2)));
-      const double zd2 = gc.z_[kc] + W.t_cots[t] * arc(std::hypot(px2 - xc, py2 - yc), R);
-      const double dz_d = gd.z_[kd] - zd2;
-      if (std::abs(dphi_d) > P.phiwin_d || std::abs(dz_d) > P.qwin_d)
+      TripletHelix<A> h;
+      if constexpr (A::curvature_form) {
+        h.ux = (T)W.t_cx[t];
+        h.uy = (T)W.t_cy[t];
+        h.k = (T)W.t_R[t];
+      } else {
+        h.cx = (T)W.t_cx[t];
+        h.cy = (T)W.t_cy[t];
+        h.R = (T)W.t_R[t];
+      }
+      h.cots = (T)W.t_cots[t];
+      h.xc = (T)W.t_xc[t];
+      h.yc = (T)W.t_yc[t];
+      if (!quad_cuts<A>(P.qwin_d, P.phiwin_d, h, gc.z_[kc], gc.r_[kc], gd.r_[kd], gd.phi_[kd], gd.z_[kd], nullptr))
         continue;
       cnt.quads++;
       const unsigned int d = W.t_d[t];
@@ -157,7 +145,7 @@ namespace mkfit::seeding {
     tick(6);
   }
 
-  template <typename LA, typename LB, typename LC, typename LD>
+  template <class A = ArithRef, typename LA, typename LB, typename LC, typename LD>
   void find_quads_staged(const SeedParams &P,
                          const LA &ga,
                          const LB &gb,
@@ -343,7 +331,7 @@ namespace mkfit::seeding {
       cnt.triplets += nt;
 
       tick(3);
-      finish_triplets(P, ga, gb, gc, gd, nt, W, out, cnt, tick);
+      finish_triplets<A>(P, ga, gb, gc, gd, nt, W, out, cnt, tick);
     }
   }
 
