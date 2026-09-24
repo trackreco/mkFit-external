@@ -89,11 +89,86 @@ What the profile said at each step, since that is what drove the order:
 - **`-march=native`:** 3.5 %. Expected while the loops are scalar; AVX2 pays
   once they vectorise.
 
-## Where it goes next
+## Where it goes next: the plan (agreed with the maintainer, 2026-09-24)
 
-Everything above keeps the prototype's arithmetic exactly, doubles, `hypot`,
-`asin` and all. The remaining large items are the helix (240 ns per triplet in
-double precision) and the per-doublet lookup. Both want float arithmetic and
-vectorised maths, and that ends bit-equality with the prototype. The
-acceptance test would then become "differences only at a cut edge", counted
-and bounded.
+**Bit-equality with the prototype ends here, deliberately.** Everything above
+keeps the prototype's arithmetic exactly, doubles, `hypot`, `asin` and all,
+because that made the quad list a complete check of every restructuring. A
+vectorised seeder cannot keep it, so the acceptance test changes from "the
+same list" to **"differences only at a cut edge, counted and bounded"**.
+
+### Step A: float, -Ofast, vdt in the per-triplet stages
+
+- The helix and 4th-layer stages (`finish_triplets()`) go to float. `circle3`,
+  `circle_cross_r` and `arc` in float, `hypot` -> `sqrt`, `asin` and `atan2`
+  from vdt (`vdt::fast_asinf`, `vdt::fast_atan2f`), which the build already
+  carries in `mkFit-external/vdt`. That is 11.3 + 4.2 ms of the 51.8 per event
+  today, at ~240 ns per triplet.
+- **The difference tool first, before any change.** `seedfind --margins REF`:
+  for every quad in the symmetric difference with a reference list, evaluate
+  every cut in BOTH arithmetics and print the value, the tolerance and the
+  distance to it. Acceptance: every differing quad has at least one cut within
+  a stated epsilon of its threshold (say 1 um in z, 1 urad in phi). Report the
+  count as well. A difference far from every cut is a bug, not rounding.
+- The exact list stays the reference: `test-seedgeom/quads/cov-g256x32r1.txt`
+  in the isolated build, 4115 quads over 5 events.
+- Then Matriplex with cdt for the per-triplet stages. There is enough
+  arithmetic per item there for it to pay (~47 k triplets per event).
+
+### Step B: fixed-point integers in the per-pair tests
+
+The per-pair tests run 10^6 times per event and are pure geometry. Nothing in
+them needs an exponent: every quantity is bounded by the detector. What they
+need is resolution, and fixed point gives it directly.
+
+- **phi as `uint32`, 2 pi = 2^32.** The LSB is 1.5 nrad, and a difference wraps
+  by integer overflow, so every `wrap_pi` disappears.
+- **Divide-free consistency tests, as integer determinants.** The layer-c z test
+  `|z_c - z_a - cot (r_c - r_a)| < q_win` with `cot = (z_b - z_a)/(r_b - r_a)`
+  becomes
+  `|(z_c - z_a)(r_b - r_a) - (z_b - z_a)(r_c - r_a)| < q_win (r_b - r_a)`,
+  and the linear phi extrapolation
+  `|(phi_c - phi_b)(r_b - r_a) - (phi_b - phi_a)(r_c - r_b)| < w (r_b - r_a)`.
+  This is the "equality of dz/dphi via dr" the whole study started from, done
+  exactly.
+- **16-bit window-local deltas, 32-bit products.** A 2x2 determinant
+  `a d - b c` is one `pmaddwd` (`_mm256_madd_epi16`) on (a, -b) and (d, c):
+  8 determinants per instruction from 16 int16 lanes.
+- **The bit budget has to be written down per expression.** Absolute z at pixel
+  precision needs ~20 bits, so coordinates are stored as int32 and only DELTAS
+  are narrowed. Numbers for the pixel barrel, to be confirmed on the data:
+  - z test: `|dz| <= 40 cm`. A 10 um LSB gives 40000, which does NOT fit int16;
+    16 um gives 25000, which does, and is 4.6 % of the 350 um tolerance.
+    `dr <= 15 cm` at 10 um is 15000. The product stays under 2^30.
+  - phi test: `|dphi|` within a window is <= ~0.05 rad, so +-0.05 rad in int16
+    is a 1.5 urad LSB. `dr` as above. The product stays under 2^30.
+  - The outer tracker and the discs need their own per-layer-pair scales.
+- **Where it stays float:** the per-triplet curvature and pT cut (degree 4-6 in
+  the coordinates) and everything after the quad. Integers for the geometry,
+  floats from the triplet on, the physics after the handover.
+- Order: 32-bit scalar integers first, to validate the determinants against
+  step A with the difference tool, then 16-bit window-local SIMD.
+
+### Portability: AVX2 now, NEON in mind
+
+- 256-bit integer SIMD needs **AVX2**. The build's `-mavx` gives only 128-bit
+  integer operations. AVX2 dates from 2013 (Haswell), and the target for
+  phase-2 HLT nodes is worth confirming. Measured so far, `-march=native` on
+  this Zen+ box is 3.5 %, as expected while the code is scalar.
+- **NEON (AArch64)** is 128-bit: 8 int16 lanes. The determinant maps onto
+  `vmull_s16` + `vmlsl_s16` (widening multiply and multiply-subtract into
+  int32x4), plus the `_high` forms for the upper half. So the int16-delta /
+  int32-product DESIGN is portable. Only the instruction selection differs.
+- Therefore: keep the algorithm in terms of 16-bit deltas and 32-bit products,
+  and keep the intrinsics behind one thin layer, or first try whether the
+  compiler vectorises plain loops over int16 arrays (with -Ofast and
+  -fopenmp-simd it often does). Test on uaf-4 (a newer x86 box) as well as
+  here, and on an ARM box when one is at hand.
+
+### Later milestones (unchanged)
+
+2. Pure-disc triplets and quads (TFPX): phi is linear in z for D0 = 0, so
+   this is the easy forward case, and a check that predictions are written in
+   the target layer's own (q, qbar).
+3. Mixed barrel/disc combinations in the transition region.
+4. Iterations and a larger D0_max, where starting further out is cheaper.
