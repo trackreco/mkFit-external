@@ -73,6 +73,8 @@ namespace mkfit {
   void sg_set_phi_margin(float dphi_rad);
   void sg_set_nr(int n_radial_subbins);
   void sg_set_phi_lin(int mode, float margin_rad);
+  void sg_set_cover(bool on);
+  void sg_dump_quads(const char *fname);
   void sg_set_grid(int nphi, int nz);
   void sg_set_light(bool on);
   void sg_set_vf(float win_cm, int min_votes, float match_cm);

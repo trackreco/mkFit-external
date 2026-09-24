@@ -9,6 +9,7 @@
 #include "TString.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -40,6 +41,16 @@ namespace mkfit {
     // difference of 1/r, plus g_phi_lin_marg for MS and hit resolution.
     int g_phi_lin = 0;  // 0 off, 1 linear window only, 2 linear AND the generic pT_min/D0 band
     float g_phi_lin_marg = 0.003f;  // rad
+    // COVER mode: every bin range provably contains every hit its per-hit cut can
+    // accept, so the result does not depend on the grid.  Off by default because
+    // it changes the 4th-layer fetch and hence the output: the default fetch is
+    // centred on the prediction at the layer's MEAN radius, the cut at the hit's
+    // own.  The reference for the binnor-based seeder is taken in this mode.
+    bool g_cover = false;
+    constexpr float kCoverEps = 1e-4f;  // cm, float rounding at a bin-range edge
+    // quad dump: (event, ia, ib, ic, id), original hit indices within each layer
+    std::vector<std::array<int, 5>> B_quads;
+    std::string g_dump_file;  // armed by sg_dump(), written by sg_write()
     int g_nphi = 1024, g_nz = 512;  // grid granularity (nphi must be a power of 2)
     bool g_light = false;           // skip the per-triplet diagnostic vectors
     bool g_do_partb = true;
@@ -276,6 +287,7 @@ namespace mkfit {
   void sg_set_phiwin_d(float v) { g_phi_win_d = v; }
   void sg_set_phi_margin(float v) { g_phi_margin = v; }
   void sg_set_nr(int n) { g_nr = n; }
+  void sg_set_cover(bool on) { g_cover = on; }
   void sg_set_phi_lin(int on, float marg) {
     g_phi_lin = on;
     g_phi_lin_marg = marg;
@@ -312,6 +324,7 @@ namespace mkfit {
     B_n_a = B_n_b = B_n_c = 0;
     B_n_pairs = B_n_cells = B_n_ctouch = 0;
     B_t_partb = B_t_search = 0;
+    B_quads.clear();
     B_n_trip_phi = B_n_trip = B_n_trip_true = 0;
     B_n_trip_avail = B_n_trip_found = 0;
     B_n_cells_d = B_n_dtouch = B_n_quad = B_n_quad_true = 0;
@@ -762,7 +775,7 @@ namespace mkfit {
                 // split into n_r shells the SCANNED AREA falls as
                 // 2 qwin dr + |cot| dr^2 / n_r, so the over-scan converges to 1.
                 const double zc_mid = za + cot * (gc.rsub_mid(ir) - rra);
-                const double zhalf = g_qwin + std::abs(cot) * rsub_h;
+                const double zhalf = g_qwin + std::abs(cot) * rsub_h + (g_cover ? kCoverEps : 0.0f);
                 if (zc_mid + zhalf < gc.zmin || zc_mid - zhalf > gc.zmax)
                   continue;
                 const int zlo = gc.zbin(zc_mid - zhalf), zhi = gc.zbin(zc_mid + zhalf);
@@ -825,21 +838,53 @@ namespace mkfit {
                   continue;
                 }
                 double pxd, pyd;
-                if (!circle_cross_r(cx, cy, R, rdm, xc, yc, pxd, pyd))
-                  continue;
-                const double phid = std::atan2(pyd, pxd);
+                double phid, phid_half = g_phi_win_d;
+                if (!g_cover) {
+                  if (!circle_cross_r(cx, cy, R, rdm, xc, yc, pxd, pyd))
+                    continue;
+                  phid = std::atan2(pyd, pxd);
+                } else {
+                  // the per-hit cut is at the hit's OWN radius, anywhere in
+                  // [rdlo, rdhi]: centre on the midpoint of the two edge predictions
+                  double p0x, p0y, p1x, p1y;
+                  const bool ok0 = circle_cross_r(cx, cy, R, rdlo, xc, yc, p0x, p0y);
+                  const bool ok1 = circle_cross_r(cx, cy, R, rdhi, xc, yc, p1x, p1y);
+                  if (!ok0 && !ok1)
+                    continue;
+                  const double f0 = ok0 ? std::atan2(p0y, p0x) : std::atan2(p1y, p1x);
+                  const double f1 = ok1 ? std::atan2(p1y, p1x) : f0;
+                  const double dfh = 0.5 * wrap_pi((float)(f1 - f0));
+                  phid = f0 + dfh;
+                  phid_half = g_phi_win_d + std::abs(dfh) + kCoverEps;
+                }
                 const int ndb =
-                    std::min(gd.nphi, 2 * (int)std::ceil(g_phi_win_d * gd.nphi / kTwoPi) + 1);
+                    std::min(gd.nphi, 2 * (int)std::ceil(phid_half * gd.nphi / kTwoPi) + 1);
                 const int pd0 = gd.phibin((float)phid) - ndb / 2;
                 const double rdsub_h = gd.rsub_half();
                 for (int q = 0; q < ndb; ++q) {
                   const int iphid = (pd0 + q) & gd.nphi_mask;
                   for (int jr = 0; jr < gd.nr; ++jr) {
-                  double pxs, pys;
-                  if (!circle_cross_r(cx, cy, R, gd.rsub_mid(jr), xc, yc, pxs, pys))
-                    continue;
-                  const double zds = gc.z[ic] + cot_s * arc(std::hypot(pxs - xc, pys - yc), R);
-                  const double zdh = g_qwin_d + std::abs(cot_s) * rdsub_h;
+                  double zds, zdh;
+                  if (!g_cover) {
+                    double pxs, pys;
+                    if (!circle_cross_r(cx, cy, R, gd.rsub_mid(jr), xc, yc, pxs, pys))
+                      continue;
+                    zds = gc.z[ic] + cot_s * arc(std::hypot(pxs - xc, pys - yc), R);
+                    zdh = g_qwin_d + std::abs(cot_s) * rdsub_h;
+                  } else {
+                    // z is monotonic in r along the arc: the sub-bin's two edges bound it
+                    const double r0 = gd.rsub_mid(jr) - rdsub_h, r1 = gd.rsub_mid(jr) + rdsub_h;
+                    double q0x, q0y, q1x, q1y;
+                    const bool ok0 = circle_cross_r(cx, cy, R, r0, xc, yc, q0x, q0y);
+                    const bool ok1 = circle_cross_r(cx, cy, R, r1, xc, yc, q1x, q1y);
+                    if (!ok0 && !ok1)
+                      continue;
+                    const double z0 = ok0 ? gc.z[ic] + cot_s * arc(std::hypot(q0x - xc, q0y - yc), R)
+                                          : gc.z[ic] + cot_s * arc(std::hypot(q1x - xc, q1y - yc), R);
+                    const double z1 = ok1 ? gc.z[ic] + cot_s * arc(std::hypot(q1x - xc, q1y - yc), R) : z0;
+                    zds = 0.5 * (z0 + z1);
+                    zdh = g_qwin_d + 0.5 * std::abs(z1 - z0) + kCoverEps;
+                  }
                   if (zds + zdh < gd.zmin || zds - zdh > gd.zmax)
                     continue;
                   const int zdlo = gd.zbin(zds - zdh), zdhi = gd.zbin(zds + zdh);
@@ -864,6 +909,7 @@ namespace mkfit {
                     if (std::abs(dphi_d) > g_phi_win_d || std::abs(dz_d) > g_qwin_d)
                       continue;
                     B_n_quad++;
+                    B_quads.push_back({B_n_events - 1, ia, ib, ic, id});
                     B_ev_zv.push_back(zv);
                     const int ld = mctrk((*hd)[id]);
                     {
@@ -1406,7 +1452,27 @@ namespace mkfit {
     printf("================================================\n");
   }
 
+  void sg_dump_quads(const char *fname) { g_dump_file = fname ? fname : ""; }
+
+  static void write_quads(const char *fname) {
+    auto q = B_quads;
+    std::sort(q.begin(), q.end());
+    FILE *f = fopen(fname, "w");
+    if (!f) {
+      printf("[sg] cannot open %s\n", fname);
+      return;
+    }
+    fprintf(f, "# event ia ib ic id -- original hit indices within layers %d %d %d %d; cover %d\n", g_la, g_lb,
+            g_lc, g_ld, (int)g_cover);
+    for (const auto &e : q)
+      fprintf(f, "%d %d %d %d %d\n", e[0], e[1], e[2], e[3], e[4]);
+    fclose(f);
+    printf("[sg] wrote %zu quads to %s\n", q.size(), fname);
+  }
+
   void sg_write_root(const char *prefix) {
+    if (!g_dump_file.empty())
+      write_quads(g_dump_file.c_str());
     TFile f(Form("%s.root", prefix), "recreate");
     auto fill = [](const char *n, const char *t, int nb, double lo, double hi, const std::vector<double> &v) {
       TH1D *h = new TH1D(n, t, nb, lo, hi);
@@ -1453,6 +1519,8 @@ void sg_phimargin(float v) { mkfit::sg_set_phi_margin(v); }
 void sg_layers(int a, int b, int c) { mkfit::sg_set_layers(a, b, c); }
 void sg_layer4(int d) { mkfit::sg_set_layer4(d); }
 void sg_nr(int n) { mkfit::sg_set_nr(n); }
+void sg_cover(bool b) { mkfit::sg_set_cover(b); }
+void sg_dump(const char *f) { mkfit::sg_dump_quads(f); }
 void sg_philin(int b, float m) { mkfit::sg_set_phi_lin(b, m); }
 void sg_grid(int nphi, int nz) { mkfit::sg_set_grid(nphi, nz); }
 void sg_light(bool b) { mkfit::sg_set_light(b); }
