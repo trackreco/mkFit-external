@@ -43,6 +43,8 @@ namespace mkfit::seeding {
       z_.resize(n_);
       r_.resize(n_);
       invr_.resize(n_);
+      x_.resize(n_);
+      y_.resize(n_);
       orig_.resize(n_);
       rlo_ = 1e9;
       rhi_ = -1e9;
@@ -54,6 +56,10 @@ namespace mkfit::seeding {
         z_[i] = h.z();
         r_[i] = h.r();
         invr_[i] = 1.0f / r_[i];
+        // the finder's own expression, float r times float cos(phi), so a
+        // triplet reads the same value it would compute
+        x_[i] = r_[i] * std::cos(phi_[i]);
+        y_[i] = r_[i] * std::sin(phi_[i]);
         orig_[i] = j;
         // the same double reduction the prototype's rminmax() does
         rlo_ = std::min(rlo_, (double)r_[i]);
@@ -130,7 +136,7 @@ namespace mkfit::seeding {
     const binnor_t &binnor_ref() const { return binnor_; }
 
     // struct-of-arrays, bin order
-    std::vector<float> phi_, z_, r_, invr_;
+    std::vector<float> phi_, z_, r_, invr_, x_, y_;
     std::vector<unsigned int> orig_;
     double rlo_ = 0, rhi_ = 0, rmean_ = 0;
 

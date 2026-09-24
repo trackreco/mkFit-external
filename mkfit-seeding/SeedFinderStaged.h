@@ -77,12 +77,11 @@ namespace mkfit::seeding {
     for (unsigned int t = 0; t < nt; ++t) {
       const unsigned int d = W.t_d[t], kc = W.t_kc[t];
       const unsigned int ka = W.d_ka[d], kb = W.d_kb[d];
-      const float pa = ga.phi_[ka], za = ga.z_[ka], rra = ga.r_[ka];
-      const float pbph = gb.phi_[kb], rrb = gb.r_[kb];
-      const float rrc = gc.r_[kc], pcph = gc.phi_[kc];
-      const double xa = rra * std::cos(pa), ya = rra * std::sin(pa);
-      const double xb = rrb * std::cos(pbph), yb = rrb * std::sin(pbph);
-      const double xc = rrc * std::cos(pcph), yc = rrc * std::sin(pcph);
+      const float za = ga.z_[ka];
+      // precomputed at fill with the same float expression, r * cos(phi)
+      const double xa = ga.x_[ka], ya = ga.y_[ka];
+      const double xb = gb.x_[kb], yb = gb.y_[kb];
+      const double xc = gc.x_[kc], yc = gc.y_[kc];
       double cx = 0, cy = 0, R;
       if (!circle3(xa, ya, xb, yb, xc, yc, cx, cy, R))
         R = 1e6;
