@@ -15,7 +15,9 @@
 
 BLD   ?= $(abspath $(CURDIR)/../..)
 OUT   := $(BLD)/test-seedgeom/bin
-SRC   := $(abspath $(BLD)/..)
+# the source root and the standalone dir, as the build's own Makefile names them
+# (configure writes both); the build dir need not sit inside the source tree
+SRC   ?= $(shell sed -n 's/^export SRCDIR *:= *//p' $(BLD)/Makefile)
 SADIR := $(shell sed -n 's/^export SADIR *:= *//p' $(BLD)/Makefile)
 
 ROOTLIB := $(shell ldd $(BLD)/libMkFitCore.so | sed -n 's|.*libCore.so => \(.*\)/libCore.so.*|\1|p')
