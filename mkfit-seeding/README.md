@@ -301,6 +301,32 @@ Three things that had to be found by measuring:
   optimal, since the units are 128 bits wide. Time on a Zen 2+ or Intel box
   before judging AVX2.
 
+**The same on uaf-4** (AMD EPYC 7662, Zen 2, which has full 256-bit vector
+units), 2026-09-24:
+
+- Setup under `/ceph/users/matevz/seeding-bench/`: `git archive` of the same
+  two commits, GCC 15.3.1 and TBB 2022.3 from CVMFS `el9_amd64_gcc15`.
+- The 50-event `--arith ref` reference list is byte-identical to black's (same
+  md5). `--tile` with `-mavx` and with `-march=native` both reproduce it: 0
+  differing quads of 41226.
+- Timings, min of 5 reps, two passes within 0.5 %, load ~0.5:
+
+| ns / doublet | `-mavx` | `-march=native` (znver2) |
+|---|---|---|
+| b-major fastk | 46.7 | 45.3 |
+| tile brute | 41.4 | 40.9 |
+| **tile** | **25.8** | **24.4** |
+
+  With `-march=native`, tile per event is K1 3.5, K3 4.2, K4 4.7, helix 4.6,
+  4th layer 3.7 ms. With `-mavx`: 4.1 / 4.6 / 4.7 / 4.7 / 3.5.
+
+- **AVX2 is worth 5-6 % on Zen 2.** GCC vectorises K1 and K3 at 32 bytes
+  there, not 16 as on Zen+, and K1 gains 15 %. K4 does not move, since its
+  intrinsics are 256-bit AVX in both builds. The rest of the tile finder is
+  still scalar, so this is the ceiling of auto-vectorisation, not of AVX2.
+- Per core, uaf-4 runs the tile finder 13-17 % faster than black (25.8 against
+  29.5 ns with the same flags).
+
 ### Step B, second half: fixed-point integers (the original plan text)
 
 The per-pair tests run 10^6 times per event and are pure geometry. Nothing in
