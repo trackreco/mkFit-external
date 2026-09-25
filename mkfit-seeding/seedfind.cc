@@ -19,6 +19,7 @@
 #include "SeedFinderStaged.h"
 #include "SeedFinderBMajor.h"
 #include "SeedMargins.h"
+#include "SeedStats.h"
 
 #include "RecoTracker/MkFitCore/interface/Config.h"
 #include "RecoTracker/MkFitCore/interface/TrackerInfo.h"
@@ -57,7 +58,7 @@ namespace {
         "seedfind --input-file F [--geom G] [--num-events N] [--reps R] [--dump FILE]\n"
         "         [--phi-lin MODE MARG] [--qbin-c CM] [--qbin-d CM] [--layers A B C D]\n"
         "         [--staged | --fuse | --bmajor] [--block N] [--lbin CM]\n"
-        "         [--arith ref|fast] [--margins REF] [--eps-cm E] [--eps-rad E] [--margins-print N]\n");
+        "         [--arith ref|fast|fastk] [--stats] [--margins REF] [--eps-cm E] [--eps-rad E] [--margins-print N]\n");
   }
 
   // The difference tool.  See SeedMargins.h.
@@ -236,6 +237,8 @@ int main(int argc, char *argv[]) {
   int arith = 0;  // 0 ref, 1 fast, 2 fastk
   std::string margins_ref;
   MarginStudy MS;
+  bool stats = false;
+  SeedStats SS;
   unsigned int block = 64;
   int la = 0, lb = 1, lc = 2, ld = 3;
   float qbin_c = -1, qbin_d = -1;
@@ -278,7 +281,9 @@ int main(int argc, char *argv[]) {
         usage();
         return 1;
       }
-    } else if (a == "--margins")
+    } else if (a == "--stats")
+      stats = true;
+    else if (a == "--margins")
       margins_ref = next();
     else if (a == "--eps-cm")
       MS.eps_cm = atof(next());
@@ -383,6 +388,8 @@ int main(int argc, char *argv[]) {
     }
     t_find += best;
     tot.add(cnt);
+    if (stats)
+      seed_stats(P, ga, gb, gc, gd, SS);
     if (!margins_ref.empty()) {
       if (arith == 1)
         MS.event<ArithFast, ArithFast>(iev, P, ga, gb, gc, gd, quads);
@@ -420,6 +427,8 @@ int main(int argc, char *argv[]) {
 
   if (!margins_ref.empty())
     MS.report();
+  if (stats)
+    SS.report();
 
   if (!dump.empty()) {
     std::sort(all_quads.begin(), all_quads.end());

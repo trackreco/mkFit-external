@@ -14,6 +14,7 @@ reproducing that prototype's output exactly, then made fast.
 | `SeedFinderBMajor.h` | the b-hit as the outer loop; per b-hit a z-bucketed list of the c-hits that pass the phi and r tests, shared by every doublet through it |
 | `SeedMath.h` | the per-triplet and per-quad arithmetic, templated on a policy: `ArithRef` (double, the prototype's expressions), `ArithFast` (float + vdt, circle-centre form), `ArithFastK` (float + vdt, curvature form). Every cut also returns its signed margin |
 | `SeedMargins.h` | `eval_quad<A>()`: every cut of one quad in arithmetic A, pass flag and margin. It calls the functions `finish_triplets<A>()` runs, so it cannot drift from the finder |
+| `SeedStats.h` | `seedfind --stats`: trip counts and value ranges of the per-pair stages, walking the b-major finder's windows with its cuts (step B0). Its doublet and triplet counts must equal the finder's |
 | `seedfind.cc` | standalone driver: geometry plugin and events as `mkFit.cc` loads them, timers around the fill and the search only |
 | `Makefile` | flags from the build's `make echo-aclic`, re-read on every build; ROOT only if `libMkFitCore.so` links it |
 
@@ -194,7 +195,77 @@ Original plan text:
   *After the float port those stages are 7.2 of 42.8 ms per event, so the
   most this can buy is ~15 %. Step B addresses the ~35 ms in stages 1-4.*
 
-### Step B: fixed-point integers in the per-pair tests
+### Step B0: the numbers step B is designed around (done 2026-09-24)
+
+`seedfind --stats`, 5 events, fastk. Its doublet and triplet counts equal the
+finder's: 835863 and 47282 per event. Per b-hit, 7318 b-hits per event:
+
+| quantity | mean | p50 | p99 | max |
+|---|---|---|---|---|
+| a-hits fetched | 165 | 163 | 232 | 290 |
+| contiguous a runs | 1.01 | 1 | 2 | 2 |
+| doublets (69 % of fetched) | 114 | 114 | 163 | 190 |
+| c-hits fetched | 100 | 99 | 147 | 171 |
+| **contiguous c runs** | **20.9** | 21 | 33 | 40 |
+| c list (67 % of fetched) | 67 | 66 | 97 | 108 |
+| dense tile, doublets x list | 7702 | 7446 | 13460 | 15390 |
+| z-bucket candidates | 203 | 187 | 601 | 860 |
+
+Per doublet: z-bucket candidates 1.78 (p99 11), triplets 0.057.
+
+Five findings:
+
+1. **Stages 1 and 3 are dense loops over contiguous hits against one
+   broadcast b-hit.** That is the ideal SIMD shape. Stage 1 is one run of
+   ~165 hits. Stage 3 is fragmented into 21 runs only because layer c is
+   binned in q, while the list build asks for all of q. A phi-only copy of
+   layer c makes it one run.
+2. **The z test is exactly a slope test relative to b.** Dividing the
+   determinant by dr_a dr_c > 0 gives |s_c - s_a| < q_win / dr_c, with
+   s = dz/dr from the b-hit. The slope form counts 236417 triplets over 5
+   events against 236412, and the 5 extra are edge rounding. Candidates within
+   the list's LARGEST tolerance number **0.058 per doublet, against 1.78 in z
+   buckets**, so the slope pre-filter is 98 % pure. The layer's radial spread,
+   which widens every z window, drops out.
+3. **So the dense tile is the right shape after all.** Its 38x more pair
+   tests than the buckets are each a subtract, abs and compare, 16 per AVX2
+   instruction in int16. The current scalar stage 4 costs ~11 ns per bucket
+   candidate. Tile passes are rare (0.058 per doublet), so the movemask is
+   almost always zero.
+4. **No multiply is needed in the default mode.** Every per-pair test becomes
+   subtract, abs, compare against a per-b constant plus a per-hit term. The
+   phi band is w = [r_b/2R - D0/r_b + marg] + [D0/r_a - r_a/2R], per-b plus
+   per-a, and the same for c. The pmaddwd determinant is needed only for the
+   linear-phi mode.
+5. **The bit budget, from the data.**
+   - Slopes: |s_a| <= 18.5 and |s_c| <= 11.3. int16 over +-16 with saturation
+     is conservative, since a saturated pair can only pass the pre-filter, not
+     fail it. The LSB is 4.9e-4, 7.5 % of the tightest tolerance (0.0065).
+   - Phi: |dphi| <= 0.069 rad fetched. The uint32 difference >> 16 gives
+     int16 with a 96 urad LSB over +-pi and no saturation, ~0.5 % of a typical
+     window.
+   - Both are pre-filter precisions. Survivors get the exact step-A test, so
+     the output list stays identical.
+
+Profile of stages 1-4 as they stand (cachegrind, 1 event): ~265 instructions
+and ~1.4 branch mispredicts per doublet. Stage 4 is 76 of them and 0.68 of
+the mispredicts. The bucket lambdas take another 37, the per-doublet window
+of stage 2 51, and `wrap_pi` ~30. Stage 2 disappears in the slope form except
+for one division per doublet.
+
+**Step B as it stands after B0**, per b-hit:
+
+- **K1**: the a-window, one run, test phi (and r order), then s_a.
+- **K3**: the c-window from a phi-only copy of layer c, test phi (and r
+  order), then s_c and t_c = q_win/dr_c plus the rounding slack.
+- **K4**: the tile |s_a - s_c| <= t_c. Its rare hits get the exact c_z test
+  and go to `finish_triplets<ArithFastK>`.
+
+Order: first in float with 8 lanes, which the current `-mavx` build already
+has for float, to validate the shape with an identical list. Then int16 with
+16 lanes, which needs AVX2. On NEON the one missing piece is movemask
+(emulated with a narrowing shift).
+
 
 The per-pair tests run 10^6 times per event and are pure geometry. Nothing in
 them needs an exponent: every quantity is bounded by the detector. What they
