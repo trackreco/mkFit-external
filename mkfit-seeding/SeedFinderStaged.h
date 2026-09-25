@@ -43,6 +43,9 @@ namespace mkfit::seeding {
     std::vector<unsigned char> t_ok;
     // stage 5, curvature form: the triplet's hits as struct-of-arrays
     std::vector<float> g_xa, g_ya, g_za, g_xb, g_yb, g_xc, g_yc, g_zc;
+    // stage 7, curvature form: each (triplet, d-hit) candidate as struct-of-arrays
+    std::vector<float> q_k, q_ux, q_uy, q_xc, q_yc, q_cs, q_zc, q_rc, q_rd, q_pd, q_zd;
+    std::vector<unsigned char> q_ok;
     // stage 6: (triplet, d-hit) candidates
     std::vector<unsigned int> e_t, e_kd;
 
@@ -166,6 +169,47 @@ namespace mkfit::seeding {
 
     tick(5);
     //---- 7: quads
+    if constexpr (A::curvature_form) {
+      // gather each candidate's triplet and d-hit into struct-of-arrays, the
+      // test in one simd loop, then compact
+      for (auto *v : {&W.q_k, &W.q_ux, &W.q_uy, &W.q_xc, &W.q_yc, &W.q_cs, &W.q_zc, &W.q_rc, &W.q_rd, &W.q_pd, &W.q_zd})
+        StagedWork::fit(*v, ne);
+      StagedWork::fit(W.q_ok, ne);
+      for (unsigned int i = 0; i < ne; ++i) {
+        const unsigned int t = W.e_t[i], kd = W.e_kd[i], kc = W.t_kc[t];
+        W.q_k[i] = W.t_R[t];
+        W.q_ux[i] = W.t_cx[t];
+        W.q_uy[i] = W.t_cy[t];
+        W.q_xc[i] = W.t_xc[t];
+        W.q_yc[i] = W.t_yc[t];
+        W.q_cs[i] = W.t_cots[t];
+        W.q_zc[i] = gc.z_[kc];
+        W.q_rc[i] = gc.r_[kc];
+        W.q_rd[i] = gd.r_[kd];
+        W.q_pd[i] = gd.phi_[kd];
+        W.q_zd[i] = gd.z_[kd];
+      }
+      const float *__restrict qk = W.q_k.data(), *__restrict qux = W.q_ux.data(), *__restrict quy = W.q_uy.data();
+      const float *__restrict qxc = W.q_xc.data(), *__restrict qyc = W.q_yc.data(), *__restrict qcs = W.q_cs.data();
+      const float *__restrict qzc = W.q_zc.data(), *__restrict qrc = W.q_rc.data(), *__restrict qrd = W.q_rd.data();
+      const float *__restrict qpd = W.q_pd.data(), *__restrict qzd = W.q_zd.data();
+      unsigned char *__restrict qok = W.q_ok.data();
+      const float qd = P.qwin_d, pd = P.phiwin_d;
+#pragma omp simd
+      for (unsigned int i = 0; i < ne; ++i) {
+        QuadK<A> o;
+        quad_k<A>(qd, pd, qk[i], qux[i], quy[i], qxc[i], qyc[i], qcs[i], qzc[i], qrc[i], qrd[i], qpd[i], qzd[i], o);
+        qok[i] = o.pass;
+      }
+      for (unsigned int i = 0; i < ne; ++i) {
+        if (!qok[i])
+          continue;
+        const unsigned int t = W.e_t[i], kd = W.e_kd[i];
+        cnt.quads++;
+        const unsigned int d = W.t_d[t];
+        out.push_back({ga.orig_[W.d_ka[d]], gb.orig_[W.d_kb[d]], gc.orig_[W.t_kc[t]], gd.orig_[kd]});
+      }
+    } else
     for (unsigned int i = 0; i < ne; ++i) {
       const unsigned int t = W.e_t[i], kd = W.e_kd[i];
       const unsigned int kc = W.t_kc[t];

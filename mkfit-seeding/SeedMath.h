@@ -381,6 +381,47 @@ namespace mkfit::seeding {
     bool pass() const { return cd_r.pass && d_cross.pass && d_phi.pass && d_z.pass; }
   };
 
+  // The curvature-form 4th-layer test of one (triplet, d-hit) pair, branch
+  // free: the four quantities the cuts are made on.  The finder runs it in a
+  // simd loop; quad_cuts<A>() takes its margins from the same function.
+  template <class A>
+  struct QuadK {
+    using T = typename A::real;
+    T b2, dphi, dz;
+    bool r_ok, x_ok, pass;
+  };
+
+  template <class A>
+  [[gnu::always_inline, gnu::flatten]] inline void quad_k(const float qwin_d,
+                                                          const float phiwin_d,
+                                                          const typename A::real k,
+                                                          const typename A::real ux,
+                                                          const typename A::real uy,
+                                                          const typename A::real xc,
+                                                          const typename A::real yc,
+                                                          const typename A::real cots,
+                                                          const float zc,
+                                                          const float rrc,
+                                                          const float rrd,
+                                                          const float phi_d,
+                                                          const float z_d,
+                                                          QuadK<A> &o) {
+    using namespace amath;
+    using T = typename A::real;
+    const bool r_ok = !(rrd <= rrc + 0.1f);
+    T px2, py2, b2;
+    const bool x_ok = curv_cross_r<A>(k, ux, uy, xc, yc, T(rrd), px2, py2, &b2);
+    const T dphi_d = wrap_pi((float)(phi_d - A::atan2(py2, px2)));
+    const T zd2 = T(zc) + cots * arc_k<A>(A::hypot(px2 - xc, py2 - yc), k);
+    const T dz_d = z_d - zd2;
+    o.b2 = b2;
+    o.dphi = dphi_d;
+    o.dz = dz_d;
+    o.r_ok = r_ok;
+    o.x_ok = x_ok;
+    o.pass = r_ok & x_ok & !(std::abs(dphi_d) > phiwin_d) & !(std::abs(dz_d) > qwin_d);
+  }
+
   // full = false: stop at the first failing cut, as the finder does.
   template <class A>
   inline bool quad_cuts(const float qwin_d,
@@ -394,6 +435,19 @@ namespace mkfit::seeding {
                         QuadCuts *qc) {
     using namespace amath;
     using T = typename A::real;
+    if constexpr (A::curvature_form) {
+      QuadK<A> o;
+      quad_k<A>(qwin_d, phiwin_d, h.k, h.ux, h.uy, h.xc, h.yc, h.cots, zc, rrc, rrd, phi_d, z_d, o);
+      if (qc) {
+        qc->cd_r = {double(rrd - (rrc + 0.1f)), o.r_ok, true};
+        qc->d_cross = {double(o.b2) / (2 * double(rrd)), o.x_ok, true};
+        if (o.x_ok) {
+          qc->d_phi = {double(phiwin_d) - double(std::abs(o.dphi)), !(std::abs(o.dphi) > phiwin_d), true};
+          qc->d_z = {double(qwin_d) - double(std::abs(o.dz)), !(std::abs(o.dz) > qwin_d), true};
+        }
+      }
+      return o.pass;
+    }
     const bool r_ok = !(rrd <= rrc + 0.1f);
     if (qc)
       qc->cd_r = {double(rrd - (rrc + 0.1f)), r_ok, true};
