@@ -34,6 +34,25 @@
 
 namespace mkfit::seeding {
 
+  namespace vdtv {
+    // vdt::fast_asinf with the same polynomial and the same selects, but the
+    // sign restored with copysign instead of through vdt's ieee754 union.
+    // OR-ing the sign bit onto a non-negative result IS copysign, so the
+    // values are identical; the union's store and reload is what stops GCC
+    // from vectorising a loop that calls it.
+    inline float fast_asinf(float x) {
+      const float a = std::abs(x);
+      const bool big = a > 0.5f;
+      const float z0 = big ? 0.5f * (1.0f - a) : a * a;
+      const float xx = big ? std::sqrt(z0) : a;
+      const float z = ((((4.2163199048E-2f * z0 + 2.4181311049E-2f) * z0 + 4.5470025998E-2f) * z0 +
+                        7.4953002686E-2f) * z0 + 1.6666752422E-1f) * z0 * xx + xx;
+      const float tmp = 1.57079632679489661923f - (z + z);  // vdt::details::PIO2F
+      const float res = a < 1e-4f ? a : (big ? tmp : z);
+      return std::copysign(res, x);
+    }
+  }  // namespace vdtv
+
   struct ArithRef {
     using real = double;
     static constexpr const char *name = "ref";
@@ -50,7 +69,7 @@ namespace mkfit::seeding {
     static constexpr const char *name = "fast";
     static float hypot(float a, float b) { return std::sqrt(a * a + b * b); }
     static float sqrt(float a) { return std::sqrt(a); }
-    static float asin(float a) { return vdt::fast_asinf(a); }
+    static float asin(float a) { return vdtv::fast_asinf(a); }
     static float atan2(float y, float x) { return vdt::fast_atan2f(y, x); }
     // -Ofast implies -ffinite-math-only, so std::isfinite is folded to true;
     // test the exponent bits instead
@@ -186,15 +205,15 @@ namespace mkfit::seeding {
       const T b2 = rt * rt - cn * cn;
       if (b2_out)
         *b2_out = b2;
-      if (b2 < 0)
-        return false;
-      const T hh = A::sqrt(b2);
+      // branch-free, so that it vectorises: without a crossing, (px, py) is
+      // the finite foot point and the return value says so
+      const T hh = A::sqrt(std::max(b2, T(0)));
       const T fx = mx * (cn * im), fy = my * (cn * im);  // foot point
       const T wx = -my * im, wy = mx * im;               // along the line
       const T sg = ((fx - x0) * wx + (fy - y0) * wy) > 0 ? T(-1) : T(1);
       px = fx + sg * hh * wx;
       py = fy + sg * hh * wy;
-      return true;
+      return b2 >= 0;
     }
   }  // namespace amath
 
@@ -217,6 +236,72 @@ namespace mkfit::seeding {
     CutVal c3, reach;  // circle degeneracy, the 4th layer reachable at rdlo or rdhi
   };
 
+  // The curvature-form helix of a triplet and the 4th-layer window, written
+  // without branches so that finish_triplets() can run it in a simd loop
+  // across triplets.  helix_triplet<A>() calls the same function, so the
+  // margin evaluator sees the finder's arithmetic.
+  template <class A>
+  struct HelixK {
+    using T = typename A::real;
+    T k, ux, uy, cots, phid, phidh, zlo, zhi, b20, b21;
+    bool ok;
+  };
+
+  // flatten: inline everything it calls, vdt included, so that the simd
+  // loop in finish_triplets() sees no calls
+  template <class A>
+  [[gnu::always_inline, gnu::flatten]] inline void helix_k(const float qwin_d,
+                      const float phiwin_d,
+                      const float xa,
+                      const float ya,
+                      const float za,
+                      const float xb,
+                      const float yb,
+                      const float xc,
+                      const float yc,
+                      const float zc,
+                      const typename A::real rdlo,
+                      const typename A::real rdhi,
+                      HelixK<A> &o) {
+    using namespace amath;
+    using T = typename A::real;
+    const T dx1 = xb - xa, dy1 = yb - ya, dx2 = xc - xb, dy2 = yc - yb, dx3 = xc - xa, dy3 = yc - ya;
+    const T L1 = A::hypot(dx1, dy1), L2 = A::hypot(dx2, dy2), L3 = A::hypot(dx3, dy3);
+    const T cr = dx1 * dy2 - dy1 * dx2;
+    const T k = T(2) * cr / (L1 * L2 * L3);  // signed Menger curvature
+    // tangent at c: the chord b->c turned by half its turn angle
+    const T sa = T(0.5) * k * L2, ca = A::sqrt(std::max(T(0), T(1) - sa * sa));
+    const T ex = dx2 / L2, ey = dy2 / L2;
+    const T ux = ex * ca - ey * sa, uy = ex * sa + ey * ca;
+    const T s_ac = arc_k<A>(L1, k) + arc_k<A>(L2, k);
+    const T cots = (s_ac > T(1e-6)) ? T(zc - za) / s_ac : T(0.0);
+    // locals, not &o.b20: taking a member's address keeps o in memory and
+    // turns its stores into scatters, which stops the simd loop vectorising
+    T p0x, p0y, p1x, p1y, b20, b21;
+    const bool ok0 = curv_cross_r<A>(k, ux, uy, xc, yc, rdlo, p0x, p0y, &b20);
+    const bool ok1 = curv_cross_r<A>(k, ux, uy, xc, yc, rdhi, p1x, p1y, &b21);
+    o.b20 = b20;
+    o.b21 = b21;
+    const T a0 = A::atan2(p0y, p0x), a1 = A::atan2(p1y, p1x);
+    const T f0 = ok0 ? a0 : a1;
+    const T f1 = ok1 ? a1 : f0;
+    const T dfh = T(0.5) * wrap_pi((float)(f1 - f0));
+    const T arc0 = arc_k<A>(A::hypot(p0x - T(xc), p0y - T(yc)), k);
+    const T arc1 = arc_k<A>(A::hypot(p1x - T(xc), p1y - T(yc)), k);
+    const T zz0 = ok0 ? T(zc) + cots * arc0 : T(zc) + cots * arc1;
+    const T zz1 = ok1 ? T(zc) + cots * arc1 : zz0;
+    const T zdh = qwin_d + kCoverEps;
+    o.k = k;
+    o.ux = ux;
+    o.uy = uy;
+    o.cots = cots;
+    o.ok = ok0 | ok1;
+    o.phid = f0 + dfh;
+    o.phidh = T(phiwin_d) + std::abs(dfh) + T(kCoverEps);
+    o.zlo = std::min(zz0, zz1) - zdh;
+    o.zhi = std::max(zz0, zz1) + zdh;
+  }
+
   template <class A>
   inline void helix_triplet(const float qwin_d,
                             const float phiwin_d,
@@ -234,40 +319,24 @@ namespace mkfit::seeding {
     using namespace amath;
     using T = typename A::real;
     if constexpr (A::curvature_form) {
-      const T dx1 = xb - xa, dy1 = yb - ya, dx2 = xc - xb, dy2 = yc - yb, dx3 = xc - xa, dy3 = yc - ya;
-      const T L1 = A::hypot(dx1, dy1), L2 = A::hypot(dx2, dy2), L3 = A::hypot(dx3, dy3);
-      const T cr = dx1 * dy2 - dy1 * dx2;
-      const T k = T(2) * cr / (L1 * L2 * L3);  // signed Menger curvature
-      // tangent at c: the chord b->c turned by half its turn angle
-      const T sa = T(0.5) * k * L2, ca = A::sqrt(std::max(T(0), T(1) - sa * sa));
-      const T ex = dx2 / L2, ey = dy2 / L2;
-      h.k = k;
-      h.ux = ex * ca - ey * sa;
-      h.uy = ex * sa + ey * ca;
-      h.R = T(1) / std::abs(k);
+      HelixK<A> o;
+      helix_k<A>(qwin_d, phiwin_d, xa, ya, za, xb, yb, xc, yc, zc, rdlo, rdhi, o);
+      h.k = o.k;
+      h.ux = o.ux;
+      h.uy = o.uy;
+      h.R = T(1) / std::abs(o.k);
       h.c3 = {1e30, true, true};  // no degeneracy: k = 0 is a straight line
-      const T s_ac = arc_k<A>(L1, k) + arc_k<A>(L2, k);
-      h.cots = (s_ac > T(1e-6)) ? T(zc - za) / s_ac : T(0.0);
+      h.cots = o.cots;
       h.xc = xc;
       h.yc = yc;
-      T p0x, p0y, p1x, p1y, b20, b21;
-      const bool ok0 = curv_cross_r<A>(k, h.ux, h.uy, xc, yc, rdlo, p0x, p0y, &b20);
-      const bool ok1 = curv_cross_r<A>(k, h.ux, h.uy, xc, yc, rdhi, p1x, p1y, &b21);
-      h.ok = ok0 || ok1;
-      h.reach = {std::max(double(b20) / (2 * double(rdlo)), double(b21) / (2 * double(rdhi))), h.ok, true};
+      h.ok = o.ok;
+      h.reach = {std::max(double(o.b20) / (2 * double(rdlo)), double(o.b21) / (2 * double(rdhi))), h.ok, true};
       if (!h.ok)
         return;
-      const T f0 = ok0 ? A::atan2(p0y, p0x) : A::atan2(p1y, p1x);
-      const T f1 = ok1 ? A::atan2(p1y, p1x) : f0;
-      const T dfh = T(0.5) * wrap_pi((float)(f1 - f0));
-      const T zz0 = ok0 ? T(zc) + h.cots * arc_k<A>(A::hypot(p0x - T(xc), p0y - T(yc)), k)
-                        : T(zc) + h.cots * arc_k<A>(A::hypot(p1x - T(xc), p1y - T(yc)), k);
-      const T zz1 = ok1 ? T(zc) + h.cots * arc_k<A>(A::hypot(p1x - T(xc), p1y - T(yc)), k) : zz0;
-      const T zdh = qwin_d + kCoverEps;
-      h.phid = f0 + dfh;
-      h.phidh = T(phiwin_d) + std::abs(dfh) + T(kCoverEps);
-      h.zlo = std::min(zz0, zz1) - zdh;
-      h.zhi = std::max(zz0, zz1) + zdh;
+      h.phid = o.phid;
+      h.phidh = o.phidh;
+      h.zlo = o.zlo;
+      h.zhi = o.zhi;
       return;
     }
     T cx = 0, cy = 0, R, G = 0;

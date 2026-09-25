@@ -41,6 +41,8 @@ namespace mkfit::seeding {
     // stage 5: per triplet
     std::vector<double> t_cx, t_cy, t_R, t_cots, t_xc, t_yc, t_phid, t_phidh, t_zlo, t_zhi;
     std::vector<unsigned char> t_ok;
+    // stage 5, curvature form: the triplet's hits as struct-of-arrays
+    std::vector<float> g_xa, g_ya, g_za, g_xb, g_yb, g_xc, g_yc, g_zc;
     // stage 6: (triplet, d-hit) candidates
     std::vector<unsigned int> e_t, e_kd;
 
@@ -76,6 +78,50 @@ namespace mkfit::seeding {
     for (auto *v : {&W.t_cx, &W.t_cy, &W.t_R, &W.t_cots, &W.t_xc, &W.t_yc, &W.t_phid, &W.t_phidh, &W.t_zlo, &W.t_zhi})
       StagedWork::fit(*v, nt);
     StagedWork::fit(W.t_ok, nt);
+    if constexpr (A::curvature_form) {
+      // gather the three hits into struct-of-arrays, then the helix across
+      // triplets in one simd loop
+      for (auto *v : {&W.g_xa, &W.g_ya, &W.g_za, &W.g_xb, &W.g_yb, &W.g_xc, &W.g_yc, &W.g_zc})
+        StagedWork::fit(*v, nt);
+      for (unsigned int t = 0; t < nt; ++t) {
+        const unsigned int d = W.t_d[t], kc = W.t_kc[t];
+        const unsigned int ka = W.d_ka[d], kb = W.d_kb[d];
+        W.g_xa[t] = ga.x_[ka];
+        W.g_ya[t] = ga.y_[ka];
+        W.g_za[t] = ga.z_[ka];
+        W.g_xb[t] = gb.x_[kb];
+        W.g_yb[t] = gb.y_[kb];
+        W.g_xc[t] = gc.x_[kc];
+        W.g_yc[t] = gc.y_[kc];
+        W.g_zc[t] = gc.z_[kc];
+      }
+      const float *__restrict xa = W.g_xa.data(), *__restrict ya = W.g_ya.data(), *__restrict za = W.g_za.data();
+      const float *__restrict xb = W.g_xb.data(), *__restrict yb = W.g_yb.data();
+      const float *__restrict xc = W.g_xc.data(), *__restrict yc = W.g_yc.data(), *__restrict zc = W.g_zc.data();
+      double *__restrict ocx = W.t_cx.data(), *__restrict ocy = W.t_cy.data(), *__restrict oR = W.t_R.data();
+      double *__restrict ocs = W.t_cots.data(), *__restrict oxc = W.t_xc.data(), *__restrict oyc = W.t_yc.data();
+      double *__restrict opd = W.t_phid.data(), *__restrict oph = W.t_phidh.data();
+      double *__restrict ozl = W.t_zlo.data(), *__restrict ozh = W.t_zhi.data();
+      unsigned char *__restrict ook = W.t_ok.data();
+      const T rlo = rdlo, rhi = rdhi;
+      const float qd = P.qwin_d, pd = P.phiwin_d;
+#pragma omp simd
+      for (unsigned int t = 0; t < nt; ++t) {
+        HelixK<A> o;
+        helix_k<A>(qd, pd, xa[t], ya[t], za[t], xb[t], yb[t], xc[t], yc[t], zc[t], rlo, rhi, o);
+        ook[t] = o.ok;
+        ocx[t] = o.ux;  // the curvature form stores (k, ux, uy) where the centre form has (R, cx, cy)
+        ocy[t] = o.uy;
+        oR[t] = o.k;
+        ocs[t] = o.cots;
+        oxc[t] = xc[t];
+        oyc[t] = yc[t];
+        opd[t] = o.phid;
+        oph[t] = o.phidh;
+        ozl[t] = o.zlo;
+        ozh[t] = o.zhi;
+      }
+    } else
     for (unsigned int t = 0; t < nt; ++t) {
       const unsigned int d = W.t_d[t], kc = W.t_kc[t];
       const unsigned int ka = W.d_ka[d], kb = W.d_kb[d];
