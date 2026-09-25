@@ -14,6 +14,7 @@ reproducing that prototype's output exactly, then made fast.
 | `SeedFinderBMajor.h` | the b-hit as the outer loop; per b-hit a z-bucketed list of the c-hits that pass the phi and r tests, shared by every doublet through it |
 | `SeedMath.h` | the per-triplet and per-quad arithmetic, templated on a policy: `ArithRef` (double, the prototype's expressions), `ArithFast` (float + vdt, circle-centre form), `ArithFastK` (float + vdt, curvature form). Every cut also returns its signed margin |
 | `SeedMargins.h` | `eval_quad<A>()`: every cut of one quad in arithmetic A, pass flag and margin. It calls the functions `finish_triplets<A>()` runs, so it cannot drift from the finder |
+| `SeedFinderTile.h` | step B in float: per b-hit kernels K1 (doublets and slopes), K3 (the c list from a phi-only layer c), K4 (the r-z slope pre-filter in slope buckets, then the exact z test). `--tile`; `--tile-brute` keeps the dense-tile form for comparison |
 | `SeedStats.h` | `seedfind --stats`: trip counts and value ranges of the per-pair stages, walking the b-major finder's windows with its cuts (step B0). Its doublet and triplet counts must equal the finder's |
 | `seedfind.cc` | standalone driver: geometry plugin and events as `mkFit.cc` loads them, timers around the fill and the search only |
 | `Makefile` | flags from the build's `make echo-aclic`, re-read on every build; ROOT only if `libMkFitCore.so` links it |
@@ -118,6 +119,12 @@ layers is 1.2-1.6 ms per event on top.
 | templated, `--arith ref` | 54.3 | 65.0 |
 | `--arith fast` (float, vdt, circle centre) | 43.6 | 52.2 |
 | **`--arith fastk`** (float, vdt, curvature) | **42.8** | **51.2** |
+
+| *step B, float kernels, re-timed at load ~2-3:* | | |
+| b-major, fastk (same run) | 44.2 | 52.9 |
+| `--tile-brute` (dense slope tile, 8-wide AVX) | 37.8 | 45.2 |
+| **`--tile`** (slope buckets, one masked 8-wide step per doublet) | **24.6** | **29.5** |
+| same, `-march=native` (AVX2, FMA) | 24.4 | 29.1 |
 
 The step-A rows were run back to back, twice, on a box at load average ~4;
 the two passes agree to 0.3 %. Read them against each other, not against the
@@ -266,6 +273,35 @@ has for float, to validate the shape with an identical list. Then int16 with
 16 lanes, which needs AVX2. On NEON the one missing piece is movemask
 (emulated with a narrowing shift).
 
+### Step B, first half: the float kernels (done 2026-09-24)
+
+`--tile`. On 50 events it gives the identical list of 41226 quads and the
+same doublet and triplet counts. The pre-filter passes 0.0585 candidates per
+doublet into the exact z test. Per event, min of 5 reps:
+
+| stage | b-major | tile |
+|---|---|---|
+| doublets (stage 1 / K1) | 4.0 ms | 4.6 |
+| c lists (stage 3 / K3) | 8.2 | 5.4 (with the counting sort) |
+| z test (stages 2 + 4 / K4) | 23.7 | 5.7 |
+| helix + 4th layer (5-7) | 9.5 | 9.6 |
+
+Branch misses fell from ~1.4 to ~0.3 per doublet (perf).
+
+Three things that had to be found by measuring:
+
+- **The dense tile was volume-bound** at ~9 cycles per 8 pairs. Slope
+  buckets reduce it to one masked step per doublet: 19 -> 5.7 ms.
+- **A count captured by reference into a lambda is kept in memory.** The
+  compaction loops reloaded it on every element (`movl -0x124(%rbp)` hot in
+  perf annotate). Explicit run loops with a local count fixed it: K1
+  7.3 -> 4.6 ms.
+- **AVX2 buys ~1 % on this Zen+ box.** With `-march=native` GCC still
+  vectorises at 16 bytes. Its tuning for Zen 1/Zen+ treats 128-bit vectors as
+  optimal, since the units are 128 bits wide. Time on a Zen 2+ or Intel box
+  before judging AVX2.
+
+### Step B, second half: fixed-point integers (the original plan text)
 
 The per-pair tests run 10^6 times per event and are pure geometry. Nothing in
 them needs an exponent: every quantity is bounded by the detector. What they
