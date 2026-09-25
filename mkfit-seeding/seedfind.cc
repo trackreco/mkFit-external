@@ -61,7 +61,7 @@ namespace {
         "         [--phi-lin MODE MARG] [--qbin-c CM] [--qbin-d CM] [--layers A B C D]\n"
         "         [--staged | --fuse | --bmajor | --tile | --tile-brute] [--block N] [--lbin CM]\n"
         "         [--arith ref|fast|fastk] [--stats] [--margins REF] [--eps-cm E] [--eps-rad E] [--margins-print N]\n"
-        "         [--pt-min GEV] [--d0-max CM] [--truth OUT.txt]\n");
+        "         [--pt-min GEV] [--d0-max CM] [--qwin CM] [--qwin-d CM] [--phiwin-d RAD] [--truth OUT.txt]\n");
   }
 
   // The difference tool.  See SeedMargins.h.
@@ -314,6 +314,12 @@ int main(int argc, char *argv[]) {
       P.pt_min = atof(next());
     else if (a == "--d0-max")
       P.d0_max = atof(next());
+    else if (a == "--qwin")
+      P.qwin = atof(next());
+    else if (a == "--qwin-d")
+      P.qwin_d = atof(next());
+    else if (a == "--phiwin-d")
+      P.phiwin_d = atof(next());
     else if (a == "--phi-lin") {
       P.phi_lin = atoi(next());
       P.phi_lin_marg = atof(next());
@@ -364,7 +370,8 @@ int main(int argc, char *argv[]) {
   Layer gc(lic.zmin(), lic.zmax(), n_q_bins(lic, qbin_c)), gd(lid.zmin(), lid.zmax(), n_q_bins(lid, qbin_d));
   // the tile finder fetches layer c over all q: binned in phi only, one run per window
   Layer gc1(lic.zmin(), lic.zmax(), 1);
-  printf("[seedfind] pt_min %.3f GeV, d0_max %.3f cm\n", P.pt_min, P.d0_max);
+  printf("[seedfind] pt_min %.3f GeV, d0_max %.3f cm; windows: 3rd-hit z %.4f cm, 4th-hit z %.4f cm, 4th-hit phi %.4f rad\n",
+         P.pt_min, P.d0_max, P.qwin, P.qwin_d, P.phiwin_d);
   printf("[seedfind] layers %d %d %d %d; phi bins %u; q bins c %u (%.2f cm) d %u (%.2f cm); phi_lin %d %.4f\n",
          la, lb, lc, ld, gc.n_phi_bins(), gc.n_q_bins(), qbin_c, gd.n_q_bins(), qbin_d, P.phi_lin,
          P.phi_lin_marg);

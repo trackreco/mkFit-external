@@ -452,6 +452,34 @@ black, fastest of 5 reps, fastest of 3 interleaved passes, load 0.4-1.4:
 - The fake rate at pT_min 0.9 is flat at 6-9 % up to |eta| 1.0 and rises past
   the four-layer acceptance edge (1.12): 23 % at 1.2-1.3, > 80 % beyond 1.4.
 
+**3 of 4 as a match**, same runs (columns 12-20 of the tables). The study's
+undecidable class is lenient: a quad whose valid labels disagree cannot be
+true whatever its unlabelled hits are, so the consistent rule (fake if max
+label count + unlabelled < 4) is the fair 4-of-4 baseline:
+
+| pT_min | eff 4/4 | eff 3/4 | fake 4/4 study rule | 4/4 consistent | 3/4 | dup 4/4 | 3/4 |
+|---|---|---|---|---|---|---|---|
+| 0.2 | 0.522 | 0.533 | 0.292 | 0.529 | 0.420 | 0.108 | 0.146 |
+| 0.5 | 0.795 | 0.801 | 0.119 | 0.246 | 0.163 | 0.107 | 0.146 |
+| 0.9 | 0.940 | 0.942 | 0.090 | 0.190 | 0.118 | 0.117 | 0.158 |
+| 2.0 | 0.984 | 0.985 | 0.091 | 0.191 | 0.116 | 0.150 | 0.208 |
+
+Over tracks with a labelled hit in >= 3 of the 4 layers (550 /ev at 0.9) the
+3-of-4 efficiency is 0.70.
+
+**Window scale.** `--qwin`, `--qwin-d`, `--phiwin-d` (defaults 0.035 cm, 0.025
+cm, 0.002 rad), all three x f, 20 events, study-rule fakes:
+
+| pT_min | f | eff | fake | quads /ev | ms /ev |
+|---|---|---|---|---|---|
+| 0.5 | 1 / 1.4 / 1.8 / 2.5 / 3.5 | 0.795 / 0.903 / 0.945 / 0.971 / 0.981 | 0.12 / 0.23 / 0.37 / 0.58 / 0.78 | 1390 / 2179 / 3289 / 6560 / 15320 | 33.7 / 41.0 / 45.7 / 58.0 / 70.5 |
+| 0.9 | 1 / 1.4 / 1.8 / 2.5 | 0.940 / 0.973 / 0.982 / 0.990 | 0.09 / 0.20 / 0.33 / 0.55 | 833 / 1161 / 1642 / 3101 | 19.8 / 22.4 / 24.6 / 28.9 |
+| 0.2 | 1 / 2.5 / 4.5 | 0.522 / 0.847 / 0.940 | 0.29 / 0.79 / 0.95 | 2657 / 23881 / 128087 | 113 / 221 / 378 |
+
+f = 0.9/0.5 = 1.8 restores the 0.9 GeV efficiency at 0.5 GeV, at 5.4x the fake
+quads. Times: fastest of 3 reps, load 2.4-3.3. The tile finder at pT_min 0.5,
+f 1.8, against `--bmajor --arith ref`: 2 edge flips, self-check clean.
+
 Also fixed: the `K4 pre-filter hits` counter summed over repetitions. It is
 0.0573 per doublet (47859 per event against 47282 triplets, 98.8 % pure).
 
