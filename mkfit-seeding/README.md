@@ -378,6 +378,41 @@ per doublet and added a second counting sort, and it was slower. So the
 lookups are not what K4 pays for. The hot store that suggested a dependency
 was most likely perf sampling skid.
 
+### int16 pair tests (branch `mkfit-seeding-int16`, 2026-09-24)
+
+`--tile --arith fastk16`. The a-b and b-c tests of K1 and K3 run in int16.
+Phi is uint16 with 2 pi = 2^16, so a difference wraps by overflow and the step
+is 96 urad. r is int16 in 2^-10 cm. The phi band splits exactly into
+`gout(outer) + gin(inner) + margin`, and both per-hit terms are precomputed at
+fill (`SeedLayer::prep_i16`). One inline function, `pair_i16()`, is the test
+in the finder's simd loops and in the margin evaluator. The fetch is widened
+by 3 phi steps so that it still covers the integer band. The slopes and
+everything after K3 stay float.
+
+**int16 decides the pair tests; it is not a pre-filter.** K1 passes 69 % of
+what it fetches, so a pre-filter with a float confirm would redo most of the
+float work.
+
+Difference tool, 50 events, pair-cut epsilon 3e-4 rad:
+
+- 128 of 41226 quads differ, 123 gained and 5 lost. All are edge flips at the
+  pair phi cuts, the worst 0.455 eps (137 urad). FAR 0, NOFLIP 0.
+- The asymmetry is the integer `|d| <= w` on rounded values: it accepts the
+  equality step, so the band is looser by about half a step (~48 urad).
+  Doublets rise by the matching 0.16 %.
+- The same 128 quads differ on uaf-4 as on black.
+- The epsilon is loose: 1.4 % of all reference quads have a cut within it,
+  against 0.16 % at 1 urad.
+
+| ns / doublet, interleaved | fastk | fastk16 |
+|---|---|---|
+| black, `-mavx` (int16 8 lanes) | 23.2-23.9 | 22.6-23.2 |
+| uaf-4, `-march=native` (int16 16 lanes) | 18.7 | 18.05 |
+
+On uaf-4 that is -3.5 %: K1 3.22 -> 3.0 ms, K3 3.85 -> 3.61 ms. The perf share
+of the test arithmetic had predicted 4-5 %. The rest of K1 and K3 is the float
+slope and bucket loop and the compaction, which int16 does not touch.
+
 ### Step B, second half: fixed-point integers (the original plan text)
 
 The per-pair tests run 10^6 times per event and are pure geometry. Nothing in

@@ -135,6 +135,30 @@ namespace mkfit::seeding {
 
     const binnor_t &binnor_ref() const { return binnor_; }
 
+    // Fixed-point copies for the int16 pair tests (branch mkfit-seeding-int16),
+    // filled by prep_i16() once per event:
+    //   phi16_  phi with 2 pi = 2^16, so a difference wraps by integer overflow
+    //   r16_    r in units of 2^-10 cm (int16, so r < 32 cm)
+    //   gin16_, gout16_  the two per-hit terms of the phi band, in phi16 units:
+    //           w(r_in, r_out) = (r_out - r_in)/2R + D0 (1/r_in - 1/r_out) + marg
+    //                          = gout(r_out) + gin(r_in) + marg,  exactly
+    static constexpr float kPhi16 = 32768.0f / kPi;
+    static constexpr float kR16 = 1024.0f;
+    std::vector<unsigned short> phi16_;
+    std::vector<short> r16_, gin16_, gout16_;
+    void prep_i16(float inv2R, float d0m) {
+      phi16_.resize(n_);
+      r16_.resize(n_);
+      gin16_.resize(n_);
+      gout16_.resize(n_);
+      for (unsigned int i = 0; i < n_; ++i) {
+        phi16_[i] = (unsigned short)(int)std::lrint(phi_[i] * kPhi16);
+        r16_[i] = (short)std::lrint(r_[i] * kR16);
+        gin16_[i] = (short)std::lrint((d0m * invr_[i] - r_[i] * inv2R) * kPhi16);
+        gout16_[i] = (short)std::lrint((r_[i] * inv2R - d0m * invr_[i]) * kPhi16);
+      }
+    }
+
     // struct-of-arrays, bin order
     std::vector<float> phi_, z_, r_, invr_, x_, y_;
     std::vector<unsigned int> orig_;

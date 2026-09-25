@@ -62,6 +62,7 @@ namespace mkfit::seeding {
     static double atan2(double y, double x) { return std::atan2(y, x); }
     static bool finite(double a) { return std::isfinite(a); }
     static constexpr bool curvature_form = false;
+    static constexpr bool pair_i16 = false;
   };
 
   struct ArithFast {
@@ -79,12 +80,45 @@ namespace mkfit::seeding {
       return (u & 0x7f800000u) != 0x7f800000u;
     }
     static constexpr bool curvature_form = false;
+    static constexpr bool pair_i16 = false;
   };
 
   struct ArithFastK : ArithFast {
     static constexpr const char *name = "fastk";
     static constexpr bool curvature_form = true;
   };
+
+  // ArithFastK, with the pair tests (a-b and b-c phi band and r order) in
+  // int16 fixed point, see SeedLayer::prep_i16() and pair_i16() below
+  struct ArithFastK16 : ArithFastK {
+    static constexpr const char *name = "fastk16";
+    static constexpr bool pair_i16 = true;
+  };
+
+  // The int16 pair test of an (inner, outer) hit pair: the phi band and the
+  // r ordering, with d = phi16_out - phi16_in wrapping by overflow.  Every
+  // intermediate is kept in 16 bits so that a simd loop over it runs 16
+  // lanes wide on AVX2.  m_phi is the band margin in phi16 units (>= 0
+  // passes), m_r the r margin in r16 units (> 0 passes).
+  constexpr short kR16Order = 102;  // 0.1 cm in r16 units (0.1 * 1024 = 102.4)
+  inline bool pair_i16(unsigned short p_out,
+                       unsigned short p_in,
+                       short w_out_term,  // gout16 of the outer hit, plus the margin
+                       short w_in_term,   // gin16 of the inner hit
+                       short r_out,
+                       short r_in,
+                       short *m_phi = nullptr,
+                       short *m_r = nullptr) {
+    const short d = (short)(unsigned short)(p_out - p_in);
+    const short ad = d < 0 ? (short)-d : d;
+    const short w = (short)(w_out_term + w_in_term);
+    const short dr = (short)(r_out - r_in);
+    if (m_phi)
+      *m_phi = (short)(w - ad);
+    if (m_r)
+      *m_r = (short)(dr - kR16Order);
+    return (ad <= w) & (dr > kR16Order);
+  }
 
   namespace amath {
     constexpr float kTwoPi = 2.0f * kPi;

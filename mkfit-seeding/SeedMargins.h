@@ -91,6 +91,20 @@ namespace mkfit::seeding {
     const float pb = gb.phi_[kb], zb = gb.z_[kb], rrb = gb.r_[kb], invb = gb.invr_[kb];
     const float pc = gc.phi_[kc], zc = gc.z_[kc], rrc = gc.r_[kc], invc = gc.invr_[kc];
 
+    if constexpr (A::pair_i16) {
+      // the finder's int16 pair tests, margins converted to cm and rad
+      const short marg16 = (short)std::lrint(P.phi_margin * LA::kPhi16);
+      short mp, mr;
+      bool ok = pair_i16(gb.phi16_[kb], ga.phi16_[ka], (short)(gb.gout16_[kb] + marg16), ga.gin16_[ka], gb.r16_[kb],
+                         ga.r16_[ka], &mp, &mr);
+      e.c[MC_ab_r] = {mr / double(LA::kR16), mr > 0, true};
+      e.c[MC_ab_phi] = {mp / double(LA::kPhi16), mp >= 0, true};
+      (void)ok;
+      ok = pair_i16(gc.phi16_[kc], gb.phi16_[kb], (short)(gc.gout16_[kc] + marg16), gb.gin16_[kb], gc.r16_[kc],
+                    gb.r16_[kb], &mp, &mr);
+      e.c[MC_bc_r] = {mr / double(LA::kR16), mr > 0, true};
+      e.c[MC_bc_phi] = {mp / double(LA::kPhi16), mp >= 0, true};
+    } else {
     //---- a-b
     e.c[MC_ab_r] = {double(rrb - (rra + 0.1f)), !(rrb <= rra + 0.1f), true};
     {
@@ -102,6 +116,7 @@ namespace mkfit::seeding {
     if (P.phi_lin != 1) {
       const float w = wphi_w(rrb, invb, rrc, invc), x = std::abs(wrap_pi(pc - pb));
       e.c[MC_bc_phi] = {double(w) - double(x), !(x > w), true};
+    }
     }
     if (P.phi_lin) {
       const float slope = wrap_pi(pb - pa) / (rrb - rra);

@@ -93,6 +93,12 @@ namespace mkfit::seeding {
       return L.phi_range(c - w, c + w);
     };
     constexpr float kFetchEps = 1e-6f;
+    // int16 pair tests: the band margin in phi16 units, and a fetch wider by
+    // 3 phi16 units, above the int16 band's rounding bound of 2.5 units, so
+    // that the fetch still covers what the integer cut accepts
+    const short marg16 = (short)std::lrint(P.phi_margin * LA::kPhi16);
+    const float fetch_i16 = A::pair_i16 ? 3.0f / LA::kPhi16 : 0.0f;
+    (void)marg16;
     // slope buckets over +-kSMax, clamped; t_c <= t_max from the smallest r_c - r_b
     constexpr float kSMax = 16.0f, kBw = 0.5f;
     constexpr unsigned int kNb = (unsigned int)(2 * kSMax / kBw);
@@ -127,7 +133,7 @@ namespace mkfit::seeding {
       for (unsigned int kb = kb0; kb < kb1; ++kb) {
         TW.b_dbeg[kb - kb0] = nd;
         const float pbph = gb.phi_[kb], zb = gb.z_[kb], rrb = gb.r_[kb], invb = gb.invr_[kb];
-        const float w = wphi_w((float)ralo, inv_ralo, rrb, invb) + kFetchEps;
+        const float w = wphi_w((float)ralo, inv_ralo, rrb, invb) + kFetchEps + fetch_i16;
         unsigned int rr[4];
         const int nr = runs(ga, phi_bins(ga, pbph, w), rr);
         for (int ir = 0; ir < nr; ++ir) {
@@ -144,12 +150,24 @@ namespace mkfit::seeding {
           unsigned char *__restrict tm = TW.t_m.data();
           unsigned short *__restrict tb0 = TW.t_b0.data();
           unsigned short *__restrict tb1 = TW.t_b1.data();
+          if constexpr (A::pair_i16) {
+            const unsigned short *__restrict ap16 = ga.phi16_.data() + a0;
+            const short *__restrict agi = ga.gin16_.data() + a0;
+            const short *__restrict ar16 = ga.r16_.data() + a0;
+            const unsigned short pb16 = gb.phi16_[kb];
+            const short wb = (short)(gb.gout16_[kb] + marg16), rb16 = gb.r16_[kb];
+#pragma omp simd
+            for (unsigned int i = 0; i < n; ++i)
+              tm[i] = pair_i16(pb16, ap16[i], wb, agi[i], rb16, ar16[i]);
+          }
 #pragma omp simd
           for (unsigned int i = 0; i < n; ++i) {
             const float rra = ar[i];
-            const bool pass =
-                !(rrb <= rra + 0.1f) & !(std::abs(wrap_pi(pbph - ap[i])) > wphi_w(rra, ai[i], rrb, invb));
-            tm[i] = pass;
+            if constexpr (!A::pair_i16) {
+              const bool pass =
+                  !(rrb <= rra + 0.1f) & !(std::abs(wrap_pi(pbph - ap[i])) > wphi_w(rra, ai[i], rrb, invb));
+              tm[i] = pass;
+            }
             const float sa = (zb - az[i]) / (rrb - rra);
             ts[i] = sa;
             const float y0 = std::min(std::max((sa - t_max + kSMax) * (1.0f / kBw), 0.0f), float(kNb - 1));
@@ -190,7 +208,7 @@ namespace mkfit::seeding {
         if (db == de)
           continue;
         const float pbph = gb.phi_[kb], zb = gb.z_[kb], rrb = gb.r_[kb], invb = gb.invr_[kb];
-        const float w_bc = wphi_w(rrb, invb, (float)rchi, inv_rchi);
+        const float w_bc = wphi_w(rrb, invb, (float)rchi, inv_rchi) + fetch_i16;
         unsigned int nl = 0;
         unsigned int rr[4];
         const int nr = runs(gc, phi_bins(gc, pbph, w_bc), rr);
@@ -208,12 +226,24 @@ namespace mkfit::seeding {
           float *__restrict tt = TW.t_t.data();
           unsigned char *__restrict tm = TW.t_m.data();
           unsigned short *__restrict tb = TW.t_b0.data();
+          if constexpr (A::pair_i16) {
+            const unsigned short *__restrict cp16 = gc.phi16_.data() + c0;
+            const short *__restrict cgo = gc.gout16_.data() + c0;
+            const short *__restrict cr16 = gc.r16_.data() + c0;
+            const unsigned short pb16 = gb.phi16_[kb];
+            const short gib = gb.gin16_[kb], rb16 = gb.r16_[kb];
+#pragma omp simd
+            for (unsigned int i = 0; i < n; ++i)
+              tm[i] = pair_i16(cp16[i], pb16, (short)(cgo[i] + marg16), gib, cr16[i], rb16);
+          }
 #pragma omp simd
           for (unsigned int i = 0; i < n; ++i) {
             const float rrc = cr[i];
-            const bool pass =
-                !(rrc <= rrb + 0.1f) & !(std::abs(wrap_pi(cp[i] - pbph)) > wphi_w(rrb, invb, rrc, ci[i]));
-            tm[i] = pass;
+            if constexpr (!A::pair_i16) {
+              const bool pass =
+                  !(rrc <= rrb + 0.1f) & !(std::abs(wrap_pi(cp[i] - pbph)) > wphi_w(rrb, invb, rrc, ci[i]));
+              tm[i] = pass;
+            }
             const float idr = 1.0f / (rrc - rrb);
             const float sc = (cz[i] - zb) * idr;
             ts[i] = sc;

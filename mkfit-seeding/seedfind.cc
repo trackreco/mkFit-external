@@ -66,6 +66,7 @@ namespace {
   struct MarginStudy {
     std::map<unsigned int, std::vector<Quad>> ref;  // per event, sorted
     double eps_cm = 1e-4, eps_rad = 1e-6;
+    double eps_pair_rad = 3e-4;  // the pair phi cuts: int16 rounds the band to 2.5 phi16 units = 2.4e-4 rad
     int n_print = 50, n_printed = 0;
     long n_ref = 0, n_new = 0, n_ref_only = 0, n_new_only = 0;
     long n_edge = 0, n_far = 0, n_noflip = 0, n_selfbad = 0, n_self = 0;
@@ -96,7 +97,10 @@ namespace {
       return true;
     }
 
-    double scaled(int i, double m) const { return std::abs(m) / (margin_cut_info(i).rad ? eps_rad : eps_cm); }
+    double scaled(int i, double m) const {
+      const double e = (i == MC_ab_phi || i == MC_bc_phi) ? eps_pair_rad : margin_cut_info(i).rad ? eps_rad : eps_cm;
+      return std::abs(m) / e;
+    }
 
     void print_eval(const char *tag, const QuadEval &r, const QuadEval &f) {
       printf("      %-5s pT %7.2f cot %+6.3f :", tag, 0.0114 * r.R, r.cot);
@@ -204,7 +208,7 @@ namespace {
     }
 
     void report() const {
-      printf("[margins] eps %.3g cm, %.3g rad\n", eps_cm, eps_rad);
+      printf("[margins] eps %.3g cm, %.3g rad, pair phi cuts %.3g rad\n", eps_cm, eps_rad, eps_pair_rad);
       printf("   reference quads %ld, this run %ld; ref-only %ld, new-only %ld\n", n_ref, n_new, n_ref_only,
              n_new_only);
       printf("   differing quads: edge %ld (worst %.3g eps), FAR %ld, NOFLIP %ld\n", n_edge, worst_edge, n_far,
@@ -283,6 +287,8 @@ int main(int argc, char *argv[]) {
         arith = 1;
       else if (v == "fastk")
         arith = 2;
+      else if (v == "fastk16")
+        arith = 3;
       else {
         usage();
         return 1;
@@ -295,6 +301,8 @@ int main(int argc, char *argv[]) {
       MS.eps_cm = atof(next());
     else if (a == "--eps-rad")
       MS.eps_rad = atof(next());
+    else if (a == "--eps-pair-rad")
+      MS.eps_pair_rad = atof(next());
     else if (a == "--margins-print")
       MS.n_print = atoi(next());
     else if (a == "--dump")
@@ -372,6 +380,12 @@ int main(int argc, char *argv[]) {
     gc.fill(ev.layerHits_[lc]);
     if (tile)
       gc1.fill(ev.layerHits_[lc]);
+    if (arith == 3) {
+      // the int16 pair-test arrays; the evaluator reads them from gc as well
+      const float inv2R = (float)(1.0 / (2 * (P.pt_min / (0.003f * 3.8f))));
+      for (Layer *L : {&ga, &gb, &gc, &gd, &gc1})
+        L->prep_i16(inv2R, P.d0_max);
+    }
     gd.fill(ev.layerHits_[ld]);
     const auto t1 = clk::now();
     t_fill += secs(t0, t1);
@@ -384,8 +398,10 @@ int main(int argc, char *argv[]) {
       const auto s0 = clk::now();
       if (tile && arith == 2)
         find_quads_tile<ArithFastK>(P, ga, gb, gc1, gd, quads, cnt, work, twork, block);
-      else if (tile) {
-        printf("[seedfind] --tile is implemented with --arith fastk only\n");
+      else if (tile && arith == 3)
+        find_quads_tile<ArithFastK16>(P, ga, gb, gc1, gd, quads, cnt, work, twork, block);
+      else if (tile || arith == 3) {
+        printf("[seedfind] --tile needs --arith fastk or fastk16, and fastk16 needs --tile\n");
         return 1;
       } else if (bmajor && arith == 1)
         find_quads_bmajor<ArithFast>(P, ga, gb, gc, gd, quads, cnt, work, bwork, block);
@@ -412,6 +428,8 @@ int main(int argc, char *argv[]) {
         MS.event<ArithFast, ArithFast>(iev, P, ga, gb, gc, gd, quads);
       else if (arith == 2)
         MS.event<ArithFastK, ArithFastK>(iev, P, ga, gb, gc, gd, quads);
+      else if (arith == 3)
+        MS.event<ArithFastK16, ArithFastK16>(iev, P, ga, gb, gc, gd, quads);
       else
         MS.event<ArithRef, ArithFastK>(iev, P, ga, gb, gc, gd, quads);
     }
@@ -420,7 +438,7 @@ int main(int argc, char *argv[]) {
   }
 
   const double ne = n_events;
-  printf("[seedfind] %d events, reps %d (min taken per event), arith %s, %s\n", n_events, reps, arith == 2 ? "fastk" : arith == 1 ? "fast" : "ref",
+  printf("[seedfind] %d events, reps %d (min taken per event), arith %s, %s\n", n_events, reps, arith == 3 ? "fastk16" : arith == 2 ? "fastk" : arith == 1 ? "fast" : "ref",
          staged ? ((tile ? (twork_brute ? "tile brute, block " : "tile slope-buckets, block ") : bmajor ? "b-major, block " : fuse ? "fused, block " : "staged, block ") + std::to_string(block)).c_str()
                 : "scalar");
   printf("   doublets   %12.0f /ev\n", tot.doublets / ne);
