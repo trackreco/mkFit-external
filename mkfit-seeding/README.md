@@ -327,6 +327,40 @@ units), 2026-09-24:
 - Per core, uaf-4 runs the tile finder 13-17 % faster than black (25.8 against
   29.5 ns with the same flags).
 
+### After the float kernels: bookkeeping, then vectorising stages 5 and 7 (2026-09-24)
+
+perf on the tile finder put the test arithmetic of K1 and K3 at only ~7 % of
+the samples. That is what int16 would speed up, so **int16 was deferred**.
+Three changes went in first, each checked against the identical 50-event
+list:
+
+- `8162325`: K1 drops the constant b-hit stream, K3 sums prefixes over the
+  occupied slope buckets only, and K4 runs in two phases. 30.0 -> 28.1 ns per
+  doublet.
+- `e1ec231`: the curvature-form helix is branch-free (`helix_k`) and runs in
+  a simd loop over struct-of-arrays. Three obstacles had to go: calls that
+  were not inlined (fixed with `gnu::flatten`), vdt's union in `fast_asinf`
+  (replaced by `vdtv::fast_asinf`, which gives the same values through
+  `copysign`), and a store through a member's address. Helix 5.6 -> 2.4 ms per
+  event.
+- `4b66a05`: the 4th-layer test is done the same way (`quad_k`). 2.0 -> 0.93 ms
+  per event.
+
+The margin evaluator calls the same `helix_k` / `quad_k`. Its per-cut shift
+table is unchanged to every digit, so the vectorised stages reproduce the
+scalar float results.
+
+| ns / doublet | black, `-mavx` | uaf-4, `-mavx` | uaf-4, `-march=native` |
+|---|---|---|---|
+| tile, `d4dd6f3` | 29.5 | 25.8 | 24.4 |
+| **tile, `4b66a05`** | **23.2** | **21.1** | **18.75** |
+
+Against the prototype's 176.6 ns per doublet, that is **7.6x on black and
+9.4x on uaf-4 with AVX2**, for the same quad list.
+
+uaf-4 native per event: K1 3.3, K3 3.9, **K4 5.1**, helix 1.2, 4th-layer
+candidates 1.7, 4th-layer test 0.6 ms. K4 is now a third of the time.
+
 ### Step B, second half: fixed-point integers (the original plan text)
 
 The per-pair tests run 10^6 times per event and are pure geometry. Nothing in
