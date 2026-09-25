@@ -27,6 +27,7 @@
 #include "RecoTracker/MkFitCore/standalone/ConfigStandalone.h"
 #include "RecoTracker/MkFitCore/standalone/Event.h"
 #include "SeedTruth.h"
+#include "SeedMissed.h"
 
 #include <algorithm>
 #include <chrono>
@@ -61,7 +62,7 @@ namespace {
         "         [--phi-lin MODE MARG] [--qbin-c CM] [--qbin-d CM] [--layers A B C D]\n"
         "         [--staged | --fuse | --bmajor | --tile | --tile-brute] [--block N] [--lbin CM]\n"
         "         [--arith ref|fast|fastk] [--stats] [--margins REF] [--eps-cm E] [--eps-rad E] [--margins-print N]\n"
-        "         [--pt-min GEV] [--d0-max CM] [--qwin CM] [--qwin-d CM] [--phiwin-d RAD] [--truth OUT.txt]\n");
+        "         [--pt-min GEV] [--d0-max CM] [--qwin CM] [--qwin-d CM] [--phiwin-d RAD] [--truth OUT.txt] [--why-missed]\n");
   }
 
   // The difference tool.  See SeedMargins.h.
@@ -248,6 +249,8 @@ int main(int argc, char *argv[]) {
   MarginStudy MS;
   std::string truth_out;
   SeedTruth ST;
+  bool why_missed = false;
+  SeedMissed WM;
   bool stats = false;
   SeedStats SS;
   unsigned int block = 64;
@@ -310,6 +313,8 @@ int main(int argc, char *argv[]) {
       dump = next();
     else if (a == "--truth")
       truth_out = next();
+    else if (a == "--why-missed")
+      why_missed = true;
     else if (a == "--pt-min")
       P.pt_min = atof(next());
     else if (a == "--d0-max")
@@ -432,6 +437,8 @@ int main(int argc, char *argv[]) {
     tot.add(cnt);
     if (!truth_out.empty())
       ST.event(ev, la, lb, lc, ld, P.pt_min, P.d0_max, quads);
+    if (why_missed)
+      WM.event<ArithFastK>(ev, la, lb, lc, ld, P, ga, gb, gc, gd, quads);
     if (stats)
       seed_stats(P, ga, gb, gc, gd, SS);
     if (!margins_ref.empty()) {
@@ -476,6 +483,8 @@ int main(int argc, char *argv[]) {
 
   if (!margins_ref.empty())
     MS.report();
+  if (why_missed)
+    WM.report();
   if (!truth_out.empty()) {
     ST.report();
     if (!ST.write(truth_out, P.pt_min, P.d0_max)) {

@@ -506,6 +506,17 @@ f = 0.9/0.5 = 1.8 restores the 0.9 GeV efficiency at 0.5 GeV, at 5.4x the fake
 quads. Times: fastest of 3 reps, load 2.4-3.3. The tile finder at pT_min 0.5,
 f 1.8, against `--bmajor --arith ref`: 2 edge flips, self-check clean.
 
+**Why a findable track is missed: `seedfind --why-missed`** (`SeedMissed.h`).
+Every cut is evaluated on the missed track's own hits with `eval_quad<A>`, the
+best combination kept when a layer holds several, and the first failing cut
+in pipeline order is the reason. pT_min 0.9, 20 events: 22.7 of 375.5
+findable tracks per event are missed (6.05 %). First failing cut: d_z 8.05 /ev
+(median 52 um beyond 250), d_phi 7.25 (0.51 mrad beyond 2), c_z 6.80 (141 um
+beyond 350), ab_phi 0.35, bc_phi 0.25; **no missed track passes every cut**,
+so none is a finder or fetch loss. By pT: 15.1 / 6.5 / 1.1 / 0.05 per event
+below 1.2 / 1.2-2 / 2-5 / above 5 GeV: multiple scattering at the lowest
+momenta, typically 1.2-1.4x outside the fixed windows.
+
 Also fixed: the `K4 pre-filter hits` counter summed over repetitions. It is
 0.0573 per doublet (47859 per event against 47282 triplets, 98.8 % pure).
 
