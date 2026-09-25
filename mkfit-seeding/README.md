@@ -391,6 +391,32 @@ doublet:
 - phi3 has GCC 14.3 from CVMFS `el8_amd64_gcc14` (Alma 8 has no gcc15
   build), so its rows carry a compiler difference too.
 
+**Reference timing set (2026-09-24 22:40-22:45).** One session, all four
+machines, the first **20** events (837323 doublets and 833 quads per event),
+fastest of 5 reps per event, fastest of 3 interleaved passes; search time per
+event [ms], single thread. The tables above are on 5 events and at various
+loads; these supersede them for quoting.
+
+| machine, build | load | fastk | fastk16 |
+|---|---|---|---|
+| black, `-mavx` | 1.3-1.7 | 19.76 | 19.14 |
+| black, `-march=native` | 1.3-1.7 | 19.80 | -- |
+| uaf-9, `-mavx` | 0.0-0.4 | 25.43 | 23.91 |
+| uaf-9, `-march=haswell` | 0.2-0.5 | 21.98 | 20.90 |
+| uaf-4, `-mavx` | 4.0-4.2 | 17.68 | 17.19 |
+| uaf-4, `-march=native` | 4.0 | 15.89 | 15.43 |
+| phi3, `-march=skylake` | 0.0-0.4 | 15.06 | 14.70 |
+| phi3, `-march=skylake-avx512` | 0.1-0.4 | 14.59 | 14.30 |
+| phi3, `... -mprefer-vector-width=512` | 0.1-0.4 | 14.96 | 14.38 |
+
+black, every version, `-mavx`: scalar port q 2 cm 142.30, q 0.5 cm 120.11,
+staged 89.66, fused 81.05, b-major ref 53.08, fast 44.13, fastk 39.31, tile
+brute 27.65, tile 19.76 ms/ev. The prototype was timed on 5 events only
+(176.6 ns of search time per doublet); x 837323 that is ~148 ms/ev, an
+estimate. Hence 7.5x on black and 10.3x at best (phi3, AVX-512, int16).
+AVX2 over `-mavx`: Haswell 14 %, Zen 2 10 %, Zen+ 0 %. AVX-512 at 256-bit
+preference over AVX2: 3 %.
+
 **K4: three restructurings measured, none kept** (black, interleaved against
 the lookup form at 5.5 ms per event; the list was identical in all three):
 
