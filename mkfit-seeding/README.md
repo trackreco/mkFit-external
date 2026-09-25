@@ -361,6 +361,23 @@ Against the prototype's 176.6 ns per doublet, that is **7.6x on black and
 uaf-4 native per event: K1 3.3, K3 3.9, **K4 5.1**, helix 1.2, 4th-layer
 candidates 1.7, 4th-layer test 0.6 ms. K4 is now a third of the time.
 
+**K4: three restructurings measured, none kept** (black, interleaved against
+the lookup form at 5.5 ms per event; the list was identical in all three):
+
+| variant | K4 ms / event |
+|---|---|
+| lookup form, one 8-wide masked step per doublet (kept) | 5.5 |
+| masks stored at fixed per-doublet slots, to break a suspected loop-carried dependency | 5.9 |
+| bucket against bucket: doublets counting-sorted too, list buckets loaded once | 8.4 |
+| 4-wide SSE step, since a range holds ~3 entries | 6.4 |
+| *lookup form with the exact confirmation skipped, as a cost split* | *5.0* |
+
+The exact confirmation costs only 0.45 ms. The rest is the pre-filter step,
+~19 cycles per doublet at IPC ~1. The join removed the two table lookups
+per doublet and added a second counting sort, and it was slower. So the
+lookups are not what K4 pays for. The hot store that suggested a dependency
+was most likely perf sampling skid.
+
 ### Step B, second half: fixed-point integers (the original plan text)
 
 The per-pair tests run 10^6 times per event and are pure geometry. Nothing in
