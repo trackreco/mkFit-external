@@ -361,6 +361,36 @@ Against the prototype's 176.6 ns per doublet, that is **7.6x on black and
 uaf-4 native per event: K1 3.3, K3 3.9, **K4 5.1**, helix 1.2, 4th-layer
 candidates 1.7, 4th-layer test 0.6 ms. K4 is now a third of the time.
 
+**Four machines, 2026-09-24.** `/ceph` is shared between uaf-4, uaf-9 and
+phi3, so all three ran the same sources: `git archive` of `59b10cfe7db` and
+`mkfit-seeding-int16` at `bb0b0d0`, and the same sample. `fastk` gave the
+identical 50-event list everywhere. `fastk16` (branch `mkfit-seeding-int16`)
+gave the same 128 edge-flip quads everywhere. Min of 5 reps, 5 events, ns per
+doublet:
+
+| machine | compiler | flags | fastk | fastk16 |
+|---|---|---|---|---|
+| black, Ryzen 7 2700 (Zen+) | GCC 15.2 | `-mavx` | 23.2 | 22.6-23.2 |
+| uaf-9, Xeon E5-2670 v3 (Haswell) | GCC 15.3 | `-mavx` | 29.5 | 28.0 |
+| uaf-9 | GCC 15.3 | `-march=haswell` | 25.7 | 24.6 |
+| uaf-4, EPYC 7662 (Zen 2) | GCC 15.3 | `-march=native` | 18.7 | 18.05 |
+| phi3, Xeon Gold 6130 (Skylake-SP) | GCC 14.3 | `-march=skylake` (AVX2) | 17.9 | 17.3 |
+| phi3 | GCC 14.3 | `-march=skylake-avx512` | 17.1 | 16.9 |
+| phi3 | GCC 14.3 | `... -mprefer-vector-width=512` | 17.5 | 17.1 |
+
+- AVX2 over `-mavx` is worth 13 % on Haswell, 5-6 % on Zen 2 and ~1 % on
+  Zen+.
+- AVX-512 at GCC's default 256-bit preference is worth another 4.5 % on
+  Skylake-SP.
+- Forcing 512-bit vectors speeds up the helix by 18 % (1.05 -> 0.86 ms per
+  event) but slows every other stage by 4-5 %, so it is a net loss. This is
+  consistent with the known 512-bit clock reduction on that part; the
+  frequency was not measured.
+- int16 is -1.5 to -5 % everywhere, including at 32 lanes, because the test
+  arithmetic is a small share of the time.
+- phi3 has GCC 14.3 from CVMFS `el8_amd64_gcc14` (Alma 8 has no gcc15
+  build), so its rows carry a compiler difference too.
+
 **K4: three restructurings measured, none kept** (black, interleaved against
 the lookup form at 5.5 ms per event; the list was identical in all three):
 
