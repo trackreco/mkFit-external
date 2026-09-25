@@ -51,6 +51,8 @@ namespace mkfit::seeding {
     std::vector<unsigned short> l_bk;
     std::vector<float> s_sc, s_tc;              // the list sorted into slope buckets, padded
     std::vector<unsigned int> s_kc, bk_start, bk_cur;
+    std::vector<unsigned int> h_d, h_j;         // K4 phase 1: (doublet, first list slot) of a nonzero mask
+    std::vector<unsigned char> h_m;             //             and the mask
     bool brute = false;
     long k4_cand = 0;  // pre-filter hits, for the counters
   };
@@ -168,12 +170,12 @@ namespace mkfit::seeding {
           unsigned int m = nd;  // a local count: a captured one is kept in memory
           for (unsigned int i = 0; i < n; ++i) {
             oka[m] = a0 + i;
-            okb[m] = kb;
             osa[m] = ts[i];
             olo[m] = tb0[i];
             ohi[m] = tb1[i];
             m += tm[i];
           }
+          std::fill(okb + nd, okb + m, kb);
           nd = m;
         }
       }
@@ -250,14 +252,24 @@ namespace mkfit::seeding {
         if (!TW.brute) {
           const unsigned short *__restrict lbk = TW.l_bk.data();
           unsigned int *__restrict cur = TW.bk_cur.data();
+          // histogram, and the prefix sum over the occupied buckets only
           for (unsigned int k = 0; k <= kNb; ++k)
             bs[k] = 0;
-          for (unsigned int j = 0; j < nl; ++j)
-            ++bs[lbk[j] + 1];
-          for (unsigned int k = 0; k < kNb; ++k) {
+          unsigned int bmin = kNb, bmax = 0;
+          for (unsigned int j = 0; j < nl; ++j) {
+            const unsigned int b = lbk[j];
+            ++bs[b + 1];
+            bmin = std::min(bmin, b);
+            bmax = std::max(bmax, b);
+          }
+          if (nl == 0)
+            bmin = bmax = 0;
+          for (unsigned int k = bmin; k <= bmax; ++k) {
             bs[k + 1] += bs[k];
             cur[k] = bs[k];
           }
+          for (unsigned int k = bmax + 2; k <= kNb; ++k)
+            bs[k] = nl;
           for (unsigned int j = 0; j < nl; ++j) {
             const unsigned int pos = cur[lbk[j]]++;
             ssc[pos] = TW.l_sc[j];
@@ -291,38 +303,70 @@ namespace mkfit::seeding {
           W.t_kc[nt] = kc;
           ++nt;
         };
-        // one 8-wide step over [j, j + 8), lanes at or past `end` masked off
-        auto step = [&](unsigned int d, float sa, unsigned int j, unsigned int end) {
+        // one 8-wide step over [j, j + 8): the mask of candidates, lanes at or
+        // past `end` cleared.  Branch-free.
+        auto step_mask = [&](float sa, unsigned int j, unsigned int end) -> unsigned int {
+          const unsigned int left = std::min(end - j, 8u);
 #if defined(__AVX__)
           const __m256 vabs = _mm256_castsi256_ps(_mm256_set1_epi32(0x7fffffff));
           const __m256 diff = _mm256_and_ps(_mm256_sub_ps(_mm256_set1_ps(sa), _mm256_loadu_ps(ssc + j)), vabs);
-          unsigned int m = _mm256_movemask_ps(_mm256_cmp_ps(diff, _mm256_loadu_ps(stc + j), _CMP_LE_OQ));
-          const unsigned int left = end - j;
-          m &= left >= 8 ? 0xffu : (1u << left) - 1;
+          const unsigned int m = _mm256_movemask_ps(_mm256_cmp_ps(diff, _mm256_loadu_ps(stc + j), _CMP_LE_OQ));
+#else
+          unsigned int m = 0;
+          for (unsigned int k = 0; k < 8; ++k)
+            m |= (unsigned int)(std::abs(sa - ssc[j + k]) <= stc[j + k]) << k;
+#endif
+          return m & (0xffu >> (8 - left));
+        };
+        // phase 1: per doublet, record (d, j, mask) only where the mask is nonzero
+        unsigned int nh = 0;
+        StagedWork::fit(TW.h_d, de - db);
+        StagedWork::fit(TW.h_j, de - db);
+        StagedWork::fit(TW.h_m, de - db);
+        {
+          unsigned int *__restrict hd = TW.h_d.data();
+          unsigned int *__restrict hj = TW.h_j.data();
+          unsigned char *__restrict hm = TW.h_m.data();
+          for (unsigned int d = db; d < de; ++d) {
+            unsigned int i0, i1;
+            if (!TW.brute) {
+              i0 = bs[TW.d_blo[d]];
+              i1 = bs[TW.d_bhi[d]];
+            } else {
+              i0 = 0;
+              i1 = nl;
+            }
+            const float sa = TW.d_sa[d];
+            const unsigned int m = step_mask(sa, i0, i1);
+            hd[nh] = d;
+            hj[nh] = i0;
+            hm[nh] = m;
+            nh += m != 0;
+            // rare in bucket mode: a range longer than one step
+            for (unsigned int j = i0 + 8; j < i1; j += 8) {
+              const unsigned int mm = step_mask(sa, j, i1);
+              if (mm) {
+                StagedWork::fit(TW.h_d, nh + 1 + (de - d));
+                StagedWork::fit(TW.h_j, nh + 1 + (de - d));
+                StagedWork::fit(TW.h_m, nh + 1 + (de - d));
+                hd = TW.h_d.data();
+                hj = TW.h_j.data();
+                hm = TW.h_m.data();
+                hd[nh] = d;
+                hj[nh] = j;
+                hm[nh] = mm;
+                ++nh;
+              }
+            }
+          }
+        }
+        // phase 2: the exact z test on each candidate
+        for (unsigned int h = 0; h < nh; ++h) {
+          unsigned int m = TW.h_m[h];
           while (m) {
-            confirm(d, j + __builtin_ctz(m));
+            confirm(TW.h_d[h], TW.h_j[h] + __builtin_ctz(m));
             m &= m - 1;
           }
-#else
-          for (unsigned int k = j; k < std::min(end, j + 8); ++k)
-            if (std::abs(sa - ssc[k]) <= stc[k])
-              confirm(d, k);
-#endif
-        };
-        if (!TW.brute) {
-          const unsigned short *__restrict dlo = TW.d_blo.data();
-          const unsigned short *__restrict dhi = TW.d_bhi.data();
-          for (unsigned int d = db; d < de; ++d) {
-            const unsigned int i0 = bs[dlo[d]], i1 = bs[dhi[d]];
-            // almost always one step; the padding makes a step at i0 = nl safe
-            step(d, TW.d_sa[d], i0, i1);
-            for (unsigned int j = i0 + 8; j < i1; j += 8)
-              step(d, TW.d_sa[d], j, i1);
-          }
-        } else {
-          for (unsigned int d = db; d < de; ++d)
-            for (unsigned int j = 0; j < nl; j += 8)
-              step(d, TW.d_sa[d], j, nl);
         }
         tick(3);
       }
