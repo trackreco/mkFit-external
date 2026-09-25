@@ -428,14 +428,16 @@ extra and 2 of 12903 are rejected by the finder's own evaluator, by 3e-8 rad
 evaluator differ in the last rounding. So they are not bit-identical in
 general, although the margin table at 0.9 is.
 
-20 events, tile finder, fastk, one repetition, D0_max 1 mm:
+20 events, tile finder, fastk, D0_max 1 mm. Only the phi band follows pT_min;
+the z windows and the 4th-hit phi window stay at their 0.9 GeV values. Time:
+black, fastest of 5 reps, fastest of 3 interleaved passes, load 0.4-1.4:
 
 | pT_min [GeV] | findable /ev | efficiency | fake / decidable | undecidable | extra true quads per found track | doublets /ev | ms /ev |
 |---|---|---|---|---|---|---|---|
-| 0.2 | 1870 | 0.522 | 0.292 | 0.380 | 0.108 | 2.33 M | 116 |
-| 0.5 | 940 | 0.795 | 0.119 | 0.211 | 0.107 | 1.18 M | 36 |
-| 0.9 | 376 | 0.940 | 0.090 | 0.184 | 0.117 | 0.84 M | 22 |
-| 2.0 | 72 | 0.984 | 0.091 | 0.192 | 0.150 | 0.60 M | 13 |
+| 0.2 | 1870 | 0.522 | 0.292 | 0.380 | 0.108 | 2.33 M | 111.8 |
+| 0.5 | 940 | 0.795 | 0.119 | 0.211 | 0.107 | 1.18 M | 33.1 |
+| 0.9 | 376 | 0.940 | 0.090 | 0.184 | 0.117 | 0.84 M | 20.0 |
+| 2.0 | 72 | 0.984 | 0.091 | 0.192 | 0.150 | 0.60 M | 12.8 |
 
 - **Duplicates are 0.11-0.15 per found track, flat in |eta|.** The study's
   "~1.8 true quads per found track" divided all true quads by found tracks.
