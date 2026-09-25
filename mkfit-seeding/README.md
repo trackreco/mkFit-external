@@ -408,6 +408,51 @@ per doublet and added a second counting sort, and it was slower. So the
 lookups are not what K4 pays for. The hot store that suggested a dependency
 was most likely perf sampling skid.
 
+### Seed quality from truth: `seedfind --truth` (2026-09-24)
+
+`SeedTruth.h` matches the finder's quads to simulation with the study's
+definitions (`../mkfit-standalone-seedgeom/SeedGeom.cc`): a hit's label is
+`mcHitID -> simHitsInfo_ -> mcTrackID`; findable is a hit with the label in all
+four layers, pT > pT_min and the production point within D0_max of the beam
+spot in xy; found is one quad of four hits with the label; a quad is true,
+fake (four valid labels that disagree) or undecidable (a label is -1). New
+options `--pt-min`, `--d0-max`, `--truth OUT.txt`. `truth2root.py` turns the
+tables into TGraphAsymmErrors and TMultiGraphs versus |eta| for JSROOT.
+
+At pT_min 0.9 it reproduces the study: efficiency **0.9395** on the same 20
+events (the study: 0.9395), decidable purity 0.910. The tile finder was also
+checked with the difference tool against `--bmajor --arith ref` at the other
+windows, 5 events: 0 differences at pT_min 0.5 and 2.0. At 0.2 one quad is
+extra and 2 of 12903 are rejected by the finder's own evaluator, by 3e-8 rad
+(d_phi) and 15 nm (d_z): the vectorised helix/quad loops and the scalar
+evaluator differ in the last rounding. So they are not bit-identical in
+general, although the margin table at 0.9 is.
+
+20 events, tile finder, fastk, one repetition, D0_max 1 mm:
+
+| pT_min [GeV] | findable /ev | efficiency | fake / decidable | undecidable | extra true quads per found track | doublets /ev | ms /ev |
+|---|---|---|---|---|---|---|---|
+| 0.2 | 1870 | 0.522 | 0.292 | 0.380 | 0.108 | 2.33 M | 116 |
+| 0.5 | 940 | 0.795 | 0.119 | 0.211 | 0.107 | 1.18 M | 36 |
+| 0.9 | 376 | 0.940 | 0.090 | 0.184 | 0.117 | 0.84 M | 22 |
+| 2.0 | 72 | 0.984 | 0.091 | 0.192 | 0.150 | 0.60 M | 13 |
+
+- **Duplicates are 0.11-0.15 per found track, flat in |eta|.** The study's
+  "~1.8 true quads per found track" divided all true quads by found tracks.
+  At pT_min 0.9, 218 of the 612 true quads per event belong to non-findable
+  tracks: 203 below pT_min, 15 produced beyond D0_max.
+- **pT_min is a lower bound, not a cut.** Only the curvature term of the phi
+  band depends on it; the D0 term and the margin dominate at high pT_min. With
+  the windows at 2 GeV, 171 true quads per event belong to tracks below 2 GeV,
+  against 72 findable above.
+- **Low-pT efficiency is the fixed windows.** The z windows and the 2 mrad at
+  the 4th hit are sized for 0.9 GeV.
+- The fake rate at pT_min 0.9 is flat at 6-9 % up to |eta| 1.0 and rises past
+  the four-layer acceptance edge (1.12): 23 % at 1.2-1.3, > 80 % beyond 1.4.
+
+Also fixed: the `K4 pre-filter hits` counter summed over repetitions. It is
+0.0573 per doublet (47859 per event against 47282 triplets, 98.8 % pure).
+
 ### Step B, second half: fixed-point integers (the original plan text)
 
 The per-pair tests run 10^6 times per event and are pure geometry. Nothing in

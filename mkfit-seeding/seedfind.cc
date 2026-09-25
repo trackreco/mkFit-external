@@ -26,6 +26,7 @@
 #include "RecoTracker/MkFitCore/interface/TrackerInfo.h"
 #include "RecoTracker/MkFitCore/standalone/ConfigStandalone.h"
 #include "RecoTracker/MkFitCore/standalone/Event.h"
+#include "SeedTruth.h"
 
 #include <algorithm>
 #include <chrono>
@@ -59,7 +60,8 @@ namespace {
         "seedfind --input-file F [--geom G] [--num-events N] [--reps R] [--dump FILE]\n"
         "         [--phi-lin MODE MARG] [--qbin-c CM] [--qbin-d CM] [--layers A B C D]\n"
         "         [--staged | --fuse | --bmajor | --tile | --tile-brute] [--block N] [--lbin CM]\n"
-        "         [--arith ref|fast|fastk] [--stats] [--margins REF] [--eps-cm E] [--eps-rad E] [--margins-print N]\n");
+        "         [--arith ref|fast|fastk] [--stats] [--margins REF] [--eps-cm E] [--eps-rad E] [--margins-print N]\n"
+        "         [--pt-min GEV] [--d0-max CM] [--truth OUT.txt]\n");
   }
 
   // The difference tool.  See SeedMargins.h.
@@ -140,8 +142,13 @@ namespace {
       for (const auto &q : quads) {
         ev2(q, er, ef);
         ++n_self;
-        if (!(std::is_same_v<A, ArithRef> ? er : ef).pass())
+        if (!(std::is_same_v<A, ArithRef> ? er : ef).pass()) {
+          if (n_selfbad < n_print) {
+            printf("   self-check: ev %u quad %u %u %u %u rejected by its own evaluator\n", iev, q[0], q[1], q[2], q[3]);
+            print_eval("", er, ef);
+          }
           ++n_selfbad;
+        }
       }
       // precision of the fast arithmetic, and the edge baseline, over the reference quads
       for (const auto &q : rq) {
@@ -239,6 +246,8 @@ int main(int argc, char *argv[]) {
   int arith = 0;  // 0 ref, 1 fast, 2 fastk
   std::string margins_ref;
   MarginStudy MS;
+  std::string truth_out;
+  SeedTruth ST;
   bool stats = false;
   SeedStats SS;
   unsigned int block = 64;
@@ -299,6 +308,12 @@ int main(int argc, char *argv[]) {
       MS.n_print = atoi(next());
     else if (a == "--dump")
       dump = next();
+    else if (a == "--truth")
+      truth_out = next();
+    else if (a == "--pt-min")
+      P.pt_min = atof(next());
+    else if (a == "--d0-max")
+      P.d0_max = atof(next());
     else if (a == "--phi-lin") {
       P.phi_lin = atoi(next());
       P.phi_lin_marg = atof(next());
@@ -349,6 +364,7 @@ int main(int argc, char *argv[]) {
   Layer gc(lic.zmin(), lic.zmax(), n_q_bins(lic, qbin_c)), gd(lid.zmin(), lid.zmax(), n_q_bins(lid, qbin_d));
   // the tile finder fetches layer c over all q: binned in phi only, one run per window
   Layer gc1(lic.zmin(), lic.zmax(), 1);
+  printf("[seedfind] pt_min %.3f GeV, d0_max %.3f cm\n", P.pt_min, P.d0_max);
   printf("[seedfind] layers %d %d %d %d; phi bins %u; q bins c %u (%.2f cm) d %u (%.2f cm); phi_lin %d %.4f\n",
          la, lb, lc, ld, gc.n_phi_bins(), gc.n_q_bins(), qbin_c, gd.n_q_bins(), qbin_d, P.phi_lin,
          P.phi_lin_marg);
@@ -378,6 +394,7 @@ int main(int argc, char *argv[]) {
 
     double best = std::numeric_limits<double>::max();
     SeedCounters cnt;
+    const long k4_before = twork.k4_cand;  // counted on every repetition; kept for one
     for (int r = 0; r < reps; ++r) {
       quads.clear();
       cnt = SeedCounters();
@@ -403,8 +420,11 @@ int main(int argc, char *argv[]) {
         find_quads(P, ga, gb, gc, gd, quads, cnt);
       best = std::min(best, secs(s0, clk::now()));
     }
+    twork.k4_cand = k4_before + (twork.k4_cand - k4_before) / reps;
     t_find += best;
     tot.add(cnt);
+    if (!truth_out.empty())
+      ST.event(ev, la, lb, lc, ld, P.pt_min, P.d0_max, quads);
     if (stats)
       seed_stats(P, ga, gb, gc, gd, SS);
     if (!margins_ref.empty()) {
@@ -449,6 +469,14 @@ int main(int argc, char *argv[]) {
 
   if (!margins_ref.empty())
     MS.report();
+  if (!truth_out.empty()) {
+    ST.report();
+    if (!ST.write(truth_out, P.pt_min, P.d0_max)) {
+      printf("cannot open %s\n", truth_out.c_str());
+      return 1;
+    }
+    printf("[seedfind] wrote truth tables to %s\n", truth_out.c_str());
+  }
   if (stats)
     SS.report();
 
