@@ -20,6 +20,7 @@
 #include "SeedFinderBMajor.h"
 #include "SeedMargins.h"
 #include "SeedStats.h"
+#include "SeedFinderTile.h"
 
 #include "RecoTracker/MkFitCore/interface/Config.h"
 #include "RecoTracker/MkFitCore/interface/TrackerInfo.h"
@@ -57,7 +58,7 @@ namespace {
     printf(
         "seedfind --input-file F [--geom G] [--num-events N] [--reps R] [--dump FILE]\n"
         "         [--phi-lin MODE MARG] [--qbin-c CM] [--qbin-d CM] [--layers A B C D]\n"
-        "         [--staged | --fuse | --bmajor] [--block N] [--lbin CM]\n"
+        "         [--staged | --fuse | --bmajor | --tile | --tile-brute] [--block N] [--lbin CM]\n"
         "         [--arith ref|fast|fastk] [--stats] [--margins REF] [--eps-cm E] [--eps-rad E] [--margins-print N]\n");
   }
 
@@ -233,7 +234,8 @@ namespace {
 int main(int argc, char *argv[]) {
   std::string input, geom = "CMS-phase2", dump;
   int n_events = 10, reps = 1;
-  bool staged = false, fuse = false, bmajor = false;
+  bool staged = false, fuse = false, bmajor = false, tile = false;
+  bool twork_brute = false;
   int arith = 0;  // 0 ref, 1 fast, 2 fastk
   std::string margins_ref;
   MarginStudy MS;
@@ -263,6 +265,10 @@ int main(int argc, char *argv[]) {
       reps = std::max(1, atoi(next()));
     else if (a == "--staged")
       staged = true;
+    else if (a == "--tile")
+      staged = tile = true;
+    else if (a == "--tile-brute")
+      staged = tile = twork_brute = true;
     else if (a == "--bmajor")
       staged = bmajor = true;
     else if (a == "--fuse")
@@ -341,6 +347,8 @@ int main(int argc, char *argv[]) {
   // a is iterated whole and b is queried in phi alone, so one q bin each
   Layer ga(lia.zmin(), lia.zmax(), 1), gb(lib.zmin(), lib.zmax(), 1);
   Layer gc(lic.zmin(), lic.zmax(), n_q_bins(lic, qbin_c)), gd(lid.zmin(), lid.zmax(), n_q_bins(lid, qbin_d));
+  // the tile finder fetches layer c over all q: binned in phi only, one run per window
+  Layer gc1(lic.zmin(), lic.zmax(), 1);
   printf("[seedfind] layers %d %d %d %d; phi bins %u; q bins c %u (%.2f cm) d %u (%.2f cm); phi_lin %d %.4f\n",
          la, lb, lc, ld, gc.n_phi_bins(), gc.n_q_bins(), qbin_c, gd.n_q_bins(), qbin_d, P.phi_lin,
          P.phi_lin_marg);
@@ -349,6 +357,8 @@ int main(int argc, char *argv[]) {
   std::vector<Quad> quads;
   SeedCounters tot;
   StagedWork work;
+  TileWork twork;
+  twork.brute = twork_brute;
   BMajorWork bwork;
   double t_fill = 0, t_find = 0;
 
@@ -360,6 +370,8 @@ int main(int argc, char *argv[]) {
     ga.fill(ev.layerHits_[la]);
     gb.fill(ev.layerHits_[lb]);
     gc.fill(ev.layerHits_[lc]);
+    if (tile)
+      gc1.fill(ev.layerHits_[lc]);
     gd.fill(ev.layerHits_[ld]);
     const auto t1 = clk::now();
     t_fill += secs(t0, t1);
@@ -370,7 +382,12 @@ int main(int argc, char *argv[]) {
       quads.clear();
       cnt = SeedCounters();
       const auto s0 = clk::now();
-      if (bmajor && arith == 1)
+      if (tile && arith == 2)
+        find_quads_tile<ArithFastK>(P, ga, gb, gc1, gd, quads, cnt, work, twork, block);
+      else if (tile) {
+        printf("[seedfind] --tile is implemented with --arith fastk only\n");
+        return 1;
+      } else if (bmajor && arith == 1)
         find_quads_bmajor<ArithFast>(P, ga, gb, gc, gd, quads, cnt, work, bwork, block);
       else if (bmajor && arith == 2)
         find_quads_bmajor<ArithFastK>(P, ga, gb, gc, gd, quads, cnt, work, bwork, block);
@@ -404,7 +421,7 @@ int main(int argc, char *argv[]) {
 
   const double ne = n_events;
   printf("[seedfind] %d events, reps %d (min taken per event), arith %s, %s\n", n_events, reps, arith == 2 ? "fastk" : arith == 1 ? "fast" : "ref",
-         staged ? ((bmajor ? "b-major, block " : fuse ? "fused, block " : "staged, block ") + std::to_string(block)).c_str()
+         staged ? ((tile ? (twork_brute ? "tile brute, block " : "tile slope-buckets, block ") : bmajor ? "b-major, block " : fuse ? "fused, block " : "staged, block ") + std::to_string(block)).c_str()
                 : "scalar");
   printf("   doublets   %12.0f /ev\n", tot.doublets / ne);
   printf("   c touched  %12.0f /ev  (%.3f per doublet)\n", tot.c_touched / ne, (double)tot.c_touched / tot.doublets);
@@ -416,7 +433,12 @@ int main(int argc, char *argv[]) {
   printf("   find       %12.3f ms/ev  (%.1f ns per doublet)\n", 1e3 * t_find / ne, 1e9 * t_find / tot.doublets);
   if (staged) {
     // the counters are those of the LAST repetition of each event
-    const char *nm[7] = {"1 doublets", "2 windows", bmajor ? "3 c-lists" : "3 c-cands", bmajor ? "4 c-search" : "4 triplets", "5 helix", "6 d-cands", "7 quads"};
+    const char *nm[7] = {tile ? "K1 doublets" : "1 doublets", "2 windows",
+                         tile ? "K3 c-lists" : bmajor ? "3 c-lists" : "3 c-cands",
+                         tile ? "K4 tile" : bmajor ? "4 c-search" : "4 triplets", "5 helix", "6 d-cands", "7 quads"};
+    if (tile)
+      printf("   K4 pre-filter hits %9.0f /ev  (%.4f per doublet)\n", twork.k4_cand / ne,
+             (double)twork.k4_cand / tot.doublets);
     double ts = 0;
     for (double t : tot.t_stage)
       ts += t;

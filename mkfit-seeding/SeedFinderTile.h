@@ -1,0 +1,338 @@
+#ifndef mkfit_seeding_SeedFinderTile_h
+#define mkfit_seeding_SeedFinderTile_h
+
+// The per-pair stages as three kernels per b-hit, each a loop over contiguous
+// hits against one broadcast b-hit (step B, README "Step B0"):
+//
+//   K1  the a-window (one contiguous run, two at the phi wrap): the doublet
+//       tests, and the r-z slope s_a = (z_b - z_a)/(r_b - r_a) of each;
+//   K3  the c-window, from a layer c binned in PHI ONLY so it is one run too:
+//       the b-c tests, the slope s_c = (z_c - z_b)/(r_c - r_b) and the
+//       tolerance t_c = q_win/(r_c - r_b);
+//   K4  |s_a - s_c| <= t_c over doublets x list.  This IS the layer-c z test,
+//       divided by dr_a dr_c > 0.  Run as a conservative pre-filter (t_c
+//       carries a slack for the float rounding); every hit is re-tested with
+//       the finder's exact c_z expression.  Two forms:
+//         brute    the dense tile, 8 list entries per AVX instruction.  Measured
+//                  ~9 cycles per 8 pairs on Zen+, and 67 entries per doublet
+//                  for 0.058 hits: the volume is the cost.
+//         buckets  (default) the list counting-sorted into slope buckets of
+//                  width 0.5 over +-16, clamped at the edges.  With t_c <=
+//                  t_max ~0.01 a doublet tests the ONE contiguous range
+//                  [bucket(s_a - t_max), bucket(s_a + t_max)], ~3 entries, in
+//                  one masked 8-wide step.  The bucket map is monotone, so the
+//                  range holds every entry within t_max: still conservative.
+//
+// K1 and K3 compute the b-major finder's expressions exactly, as vectorisable
+// mask loops followed by a scalar compaction, so doublets and list are the
+// same.  K4 plus its confirm give the same triplets.  Stages 5-7 are
+// finish_triplets<A>(), with the phi-only layer c as its layer c: they only
+// read per-hit arrays through the index, and orig_ maps back to the same hits.
+//
+// Default window only (phi_lin 0).
+
+#include "SeedFinderBMajor.h"
+
+#if defined(__AVX__)
+#include <immintrin.h>
+#endif
+
+namespace mkfit::seeding {
+
+  struct TileWork {
+    std::vector<unsigned int> b_dbeg;
+    std::vector<float> d_sa;                    // per doublet of the block: slope
+    std::vector<unsigned short> d_blo, d_bhi;   // per doublet: slope-bucket range [blo, bhi)
+    std::vector<float> t_s, t_t;                // K1/K3 scratch per fetched hit: slope, tolerance
+    std::vector<unsigned short> t_b0, t_b1;     // K1/K3 scratch: bucket indices
+    std::vector<unsigned char> t_m;             // K1/K3 scratch: pass mask
+    std::vector<float> l_sc, l_tc;              // per b-hit list, compacted
+    std::vector<unsigned int> l_kc;
+    std::vector<unsigned short> l_bk;
+    std::vector<float> s_sc, s_tc;              // the list sorted into slope buckets, padded
+    std::vector<unsigned int> s_kc, bk_start, bk_cur;
+    bool brute = false;
+    long k4_cand = 0;  // pre-filter hits, for the counters
+  };
+
+  namespace detail {
+    // slope slack of the K4 pre-filter [dimensionless]: float rounding of s_a,
+    // s_c and t_c is ~1e-6 at |s| ~ 20; the exact test decides after it
+    constexpr float kSlopeSlack = 1e-4f;
+  }  // namespace detail
+
+  template <class A = ArithFastK, typename LA, typename LB, typename LC, typename LD>
+  void find_quads_tile(const SeedParams &P,
+                       const LA &ga,
+                       const LB &gb,
+                       const LC &gc,  // phi-only binning
+                       const LD &gd,
+                       std::vector<Quad> &out,
+                       SeedCounters &cnt,
+                       StagedWork &W,
+                       TileWork &TW,
+                       unsigned int block = 32) {
+    using namespace detail;
+    if (P.phi_lin != 0) {
+      fprintf(stderr, "find_quads_tile: only phi_lin 0 is implemented\n");
+      return;
+    }
+    constexpr float kBfield = 3.8f;
+    const double Rmin = P.pt_min / (0.003f * kBfield);
+    const float inv2R = (float)(1.0 / (2 * Rmin)), d0m = P.d0_max, marg = P.phi_margin;
+    const double ralo = ga.rlo_, rchi = gc.rhi_;
+    const float inv_ralo = 1.0f / (float)ralo, inv_rchi = 1.0f / (float)rchi;
+    const float qwin = P.qwin;
+    auto wphi_w = [=](float r_in, float inv_in, float r_out, float inv_out) {
+      return (r_out - r_in) * inv2R + d0m * (inv_in - inv_out) + marg;
+    };
+    auto phi_bins = [](const auto &L, float c, float w) {
+      w = std::min(w, 0.9f * kPi);
+      return L.phi_range(c - w, c + w);
+    };
+    constexpr float kFetchEps = 1e-6f;
+    // slope buckets over +-kSMax, clamped; t_c <= t_max from the smallest r_c - r_b
+    constexpr float kSMax = 16.0f, kBw = 0.5f;
+    constexpr unsigned int kNb = (unsigned int)(2 * kSMax / kBw);
+    const float t_max = qwin / std::max(0.1f, (float)(gc.rlo_ - gb.rhi_)) + kSlopeSlack;
+    TW.bk_start.resize(kNb + 1);
+    TW.bk_cur.resize(kNb);
+
+    // [begin, end) runs of a phi window over all q: one, or two at the wrap
+    auto runs = [](const auto &L, auto p, unsigned int r[4]) -> int {
+      int k = 0;
+      L.for_each_run(p, L.q_all(), [&](unsigned int b, unsigned int e) {
+        r[2 * k] = b;
+        r[2 * k + 1] = e;
+        ++k;
+      });
+      return k;
+    };
+
+    using clk = std::chrono::steady_clock;
+    for (unsigned int kb0 = 0; kb0 < gb.n(); kb0 += block) {
+      const unsigned int kb1 = std::min(gb.n(), kb0 + block);
+      auto tprev = clk::now();
+      auto tick = [&](int st) {
+        const auto now = clk::now();
+        cnt.t_stage[st] += std::chrono::duration<double>(now - tprev).count();
+        tprev = now;
+      };
+
+      //---- K1: doublets, their slopes and slope-bucket ranges
+      unsigned int nd = 0;
+      TW.b_dbeg.resize(kb1 - kb0 + 1);
+      for (unsigned int kb = kb0; kb < kb1; ++kb) {
+        TW.b_dbeg[kb - kb0] = nd;
+        const float pbph = gb.phi_[kb], zb = gb.z_[kb], rrb = gb.r_[kb], invb = gb.invr_[kb];
+        const float w = wphi_w((float)ralo, inv_ralo, rrb, invb) + kFetchEps;
+        unsigned int rr[4];
+        const int nr = runs(ga, phi_bins(ga, pbph, w), rr);
+        for (int ir = 0; ir < nr; ++ir) {
+          const unsigned int a0 = rr[2 * ir], n = rr[2 * ir + 1] - a0;
+          StagedWork::fit(TW.t_s, n);
+          StagedWork::fit(TW.t_m, n);
+          StagedWork::fit(TW.t_b0, n);
+          StagedWork::fit(TW.t_b1, n);
+          const float *__restrict ar = ga.r_.data() + a0;
+          const float *__restrict ap = ga.phi_.data() + a0;
+          const float *__restrict ai = ga.invr_.data() + a0;
+          const float *__restrict az = ga.z_.data() + a0;
+          float *__restrict ts = TW.t_s.data();
+          unsigned char *__restrict tm = TW.t_m.data();
+          unsigned short *__restrict tb0 = TW.t_b0.data();
+          unsigned short *__restrict tb1 = TW.t_b1.data();
+#pragma omp simd
+          for (unsigned int i = 0; i < n; ++i) {
+            const float rra = ar[i];
+            const bool pass =
+                !(rrb <= rra + 0.1f) & !(std::abs(wrap_pi(pbph - ap[i])) > wphi_w(rra, ai[i], rrb, invb));
+            tm[i] = pass;
+            const float sa = (zb - az[i]) / (rrb - rra);
+            ts[i] = sa;
+            const float y0 = std::min(std::max((sa - t_max + kSMax) * (1.0f / kBw), 0.0f), float(kNb - 1));
+            const float y1 = std::min(std::max((sa + t_max + kSMax) * (1.0f / kBw), 0.0f), float(kNb - 1));
+            tb0[i] = (unsigned short)(int)y0;
+            tb1[i] = (unsigned short)((int)y1 + 1);
+          }
+          StagedWork::fit(W.d_ka, nd + n);
+          StagedWork::fit(W.d_kb, nd + n);
+          StagedWork::fit(TW.d_sa, nd + n);
+          StagedWork::fit(TW.d_blo, nd + n);
+          StagedWork::fit(TW.d_bhi, nd + n);
+          unsigned int *__restrict oka = W.d_ka.data();
+          unsigned int *__restrict okb = W.d_kb.data();
+          float *__restrict osa = TW.d_sa.data();
+          unsigned short *__restrict olo = TW.d_blo.data();
+          unsigned short *__restrict ohi = TW.d_bhi.data();
+          unsigned int m = nd;  // a local count: a captured one is kept in memory
+          for (unsigned int i = 0; i < n; ++i) {
+            oka[m] = a0 + i;
+            okb[m] = kb;
+            osa[m] = ts[i];
+            olo[m] = tb0[i];
+            ohi[m] = tb1[i];
+            m += tm[i];
+          }
+          nd = m;
+        }
+      }
+      TW.b_dbeg[kb1 - kb0] = nd;
+      cnt.doublets += nd;
+      tick(0);
+
+      //---- K3 + K4 per b-hit
+      unsigned int nt = 0;
+      for (unsigned int kb = kb0; kb < kb1; ++kb) {
+        const unsigned int db = TW.b_dbeg[kb - kb0], de = TW.b_dbeg[kb - kb0 + 1];
+        if (db == de)
+          continue;
+        const float pbph = gb.phi_[kb], zb = gb.z_[kb], rrb = gb.r_[kb], invb = gb.invr_[kb];
+        const float w_bc = wphi_w(rrb, invb, (float)rchi, inv_rchi);
+        unsigned int nl = 0;
+        unsigned int rr[4];
+        const int nr = runs(gc, phi_bins(gc, pbph, w_bc), rr);
+        for (int ir = 0; ir < nr; ++ir) {
+          const unsigned int c0 = rr[2 * ir], n = rr[2 * ir + 1] - c0;
+          StagedWork::fit(TW.t_s, n);
+          StagedWork::fit(TW.t_t, n);
+          StagedWork::fit(TW.t_m, n);
+          StagedWork::fit(TW.t_b0, n);
+          const float *__restrict cr = gc.r_.data() + c0;
+          const float *__restrict cp = gc.phi_.data() + c0;
+          const float *__restrict ci = gc.invr_.data() + c0;
+          const float *__restrict cz = gc.z_.data() + c0;
+          float *__restrict ts = TW.t_s.data();
+          float *__restrict tt = TW.t_t.data();
+          unsigned char *__restrict tm = TW.t_m.data();
+          unsigned short *__restrict tb = TW.t_b0.data();
+#pragma omp simd
+          for (unsigned int i = 0; i < n; ++i) {
+            const float rrc = cr[i];
+            const bool pass =
+                !(rrc <= rrb + 0.1f) & !(std::abs(wrap_pi(cp[i] - pbph)) > wphi_w(rrb, invb, rrc, ci[i]));
+            tm[i] = pass;
+            const float idr = 1.0f / (rrc - rrb);
+            const float sc = (cz[i] - zb) * idr;
+            ts[i] = sc;
+            tt[i] = qwin * idr + kSlopeSlack;
+            tb[i] = (unsigned short)(int)std::min(std::max((sc + kSMax) * (1.0f / kBw), 0.0f), float(kNb - 1));
+          }
+          StagedWork::fit(TW.l_sc, nl + n);
+          StagedWork::fit(TW.l_tc, nl + n);
+          StagedWork::fit(TW.l_kc, nl + n);
+          StagedWork::fit(TW.l_bk, nl + n);
+          float *__restrict osc = TW.l_sc.data();
+          float *__restrict otc = TW.l_tc.data();
+          unsigned int *__restrict okc = TW.l_kc.data();
+          unsigned short *__restrict obk = TW.l_bk.data();
+          unsigned int m = nl;
+          for (unsigned int i = 0; i < n; ++i) {
+            osc[m] = ts[i];
+            otc[m] = tt[i];
+            okc[m] = c0 + i;
+            obk[m] = tb[i];
+            m += tm[i];
+          }
+          nl = m;
+        }
+        cnt.c_touched += nl;
+
+        // the list, sorted into slope buckets (or as is, for the brute tile),
+        // padded with 8 entries that can never pass
+        StagedWork::fit(TW.s_sc, nl + 8);
+        StagedWork::fit(TW.s_tc, nl + 8);
+        StagedWork::fit(TW.s_kc, nl + 8);
+        float *__restrict ssc = TW.s_sc.data();
+        float *__restrict stc = TW.s_tc.data();
+        unsigned int *__restrict skc = TW.s_kc.data();
+        unsigned int *__restrict bs = TW.bk_start.data();
+        if (!TW.brute) {
+          const unsigned short *__restrict lbk = TW.l_bk.data();
+          unsigned int *__restrict cur = TW.bk_cur.data();
+          for (unsigned int k = 0; k <= kNb; ++k)
+            bs[k] = 0;
+          for (unsigned int j = 0; j < nl; ++j)
+            ++bs[lbk[j] + 1];
+          for (unsigned int k = 0; k < kNb; ++k) {
+            bs[k + 1] += bs[k];
+            cur[k] = bs[k];
+          }
+          for (unsigned int j = 0; j < nl; ++j) {
+            const unsigned int pos = cur[lbk[j]]++;
+            ssc[pos] = TW.l_sc[j];
+            stc[pos] = TW.l_tc[j];
+            skc[pos] = TW.l_kc[j];
+          }
+        } else {
+          std::copy(TW.l_sc.begin(), TW.l_sc.begin() + nl, ssc);
+          std::copy(TW.l_tc.begin(), TW.l_tc.begin() + nl, stc);
+          std::copy(TW.l_kc.begin(), TW.l_kc.begin() + nl, skc);
+        }
+        for (unsigned int j = nl; j < nl + 8; ++j) {
+          ssc[j] = 1e30f;
+          stc[j] = -1.0f;
+        }
+        tick(2);
+
+        //---- K4: the slope pre-filter, then the exact c_z test on its hits
+        auto confirm = [&](unsigned int d, unsigned int j) {
+          ++TW.k4_cand;
+          const unsigned int ka = W.d_ka[d], kc = skc[j];
+          const float za = ga.z_[ka], rra = ga.r_[ka];
+          const double cot = (zb - za) / (rrb - rra);
+          const double zpred = za + cot * (gc.r_[kc] - rra);
+          const double dz = gc.z_[kc] - zpred;
+          if (std::abs(dz) > P.qwin)
+            return;
+          StagedWork::fit(W.t_d, nt + 1);
+          StagedWork::fit(W.t_kc, nt + 1);
+          W.t_d[nt] = d;
+          W.t_kc[nt] = kc;
+          ++nt;
+        };
+        // one 8-wide step over [j, j + 8), lanes at or past `end` masked off
+        auto step = [&](unsigned int d, float sa, unsigned int j, unsigned int end) {
+#if defined(__AVX__)
+          const __m256 vabs = _mm256_castsi256_ps(_mm256_set1_epi32(0x7fffffff));
+          const __m256 diff = _mm256_and_ps(_mm256_sub_ps(_mm256_set1_ps(sa), _mm256_loadu_ps(ssc + j)), vabs);
+          unsigned int m = _mm256_movemask_ps(_mm256_cmp_ps(diff, _mm256_loadu_ps(stc + j), _CMP_LE_OQ));
+          const unsigned int left = end - j;
+          m &= left >= 8 ? 0xffu : (1u << left) - 1;
+          while (m) {
+            confirm(d, j + __builtin_ctz(m));
+            m &= m - 1;
+          }
+#else
+          for (unsigned int k = j; k < std::min(end, j + 8); ++k)
+            if (std::abs(sa - ssc[k]) <= stc[k])
+              confirm(d, k);
+#endif
+        };
+        if (!TW.brute) {
+          const unsigned short *__restrict dlo = TW.d_blo.data();
+          const unsigned short *__restrict dhi = TW.d_bhi.data();
+          for (unsigned int d = db; d < de; ++d) {
+            const unsigned int i0 = bs[dlo[d]], i1 = bs[dhi[d]];
+            // almost always one step; the padding makes a step at i0 = nl safe
+            step(d, TW.d_sa[d], i0, i1);
+            for (unsigned int j = i0 + 8; j < i1; j += 8)
+              step(d, TW.d_sa[d], j, i1);
+          }
+        } else {
+          for (unsigned int d = db; d < de; ++d)
+            for (unsigned int j = 0; j < nl; j += 8)
+              step(d, TW.d_sa[d], j, nl);
+        }
+        tick(3);
+      }
+      cnt.triplets += nt;
+
+      tprev = clk::now();
+      finish_triplets<A>(P, ga, gb, gc, gd, nt, W, out, cnt, tick);
+    }
+  }
+
+}  // namespace mkfit::seeding
+
+#endif
