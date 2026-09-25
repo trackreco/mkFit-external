@@ -38,6 +38,9 @@ namespace mkfit::seeding {
     // true quads of tracks outside the findable denominator, by reason
     double q_true_lowpt[kNb] = {}, q_true_displ[kNb] = {};
     double n_events = 0;
+    // tracks passing the pT and D0 cuts with hits in exactly 3 of the 4 layers,
+    // by the layer that has none: what a skip-one-layer variant could recover
+    double miss_one[4] = {}, miss_more = 0;
 
     static int bin(double aeta) {
       const int b = (int)(aeta / kEtaMax * kNb);
@@ -65,12 +68,21 @@ namespace mkfit::seeding {
         }
       std::unordered_map<int, int> n_true;  // findable label -> true quads
       for (const auto &kv : present) {
-        if (kv.second != 15u || kv.first >= (int)ev.simTracks_.size())
+        if (kv.first >= (int)ev.simTracks_.size())
           continue;
         const Track &t = ev.simTracks_[kv.first];
-        if (t.pT() < pt_min || std::hypot(t.x() - ev.beamSpot_.x, t.y() - ev.beamSpot_.y) > d0_max)
+        if (t.pT() < pt_min || std::hypot(t.x() - ev.beamSpot_.x, t.y() - ev.beamSpot_.y) > d0_max ||
+            std::abs(t.momEta()) > kEtaMax)
           continue;
-        n_true[kv.first] = 0;
+        if (kv.second == 15u) {
+          n_true[kv.first] = 0;
+          continue;
+        }
+        const int nl = __builtin_popcount(kv.second);
+        if (nl == 3)
+          miss_one[__builtin_ctz(~kv.second & 15u)] += 1;
+        else if (nl == 2)
+          miss_more += 1;
       }
 
       for (const auto &q : quads) {
@@ -141,6 +153,8 @@ namespace mkfit::seeding {
              F / std::max(1.0, D), X / std::max(1.0, F));
       printf("   truth: quads %.1f /ev: true %.4f, fake %.4f, undecidable %.4f; fake among decidable %.4f\n", A / ne,
              T / std::max(1.0, A), K / std::max(1.0, A), U / std::max(1.0, A), K / std::max(1.0, T + K));
+      printf("   truth: tracks passing pT/D0 with 3 of 4 layers, missing a/b/c/d: %.1f %.1f %.1f %.1f /ev; 2 of 4: %.1f /ev\n",
+             miss_one[0] / ne, miss_one[1] / ne, miss_one[2] / ne, miss_one[3] / ne, miss_more / ne);
       printf("   truth: true quads of non-findable tracks %.1f /ev: below pT_min %.1f, produced beyond D0_max %.1f\n",
              (TL + TD) / ne, TL / ne, TD / ne);
     }
