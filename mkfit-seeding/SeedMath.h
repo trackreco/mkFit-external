@@ -225,6 +225,47 @@ namespace mkfit::seeding {
     bool valid = false;  // false: not evaluated, an earlier stage made it undefined
   };
 
+  // The 4th-hit windows of one triplet.  Fixed (phi, z) unless scaled: then
+  //   w = f sqrt(a^2 + (b x)^2),  x = g(theta) / pT_est,
+  // with pT_est = 0.0114 R [GeV, cm] from the triplet's curvature, g = u^0.5
+  // for phi and u^1.25 for z, u = 1 / sin(theta): the multiple-scattering
+  // scaling measured on true quads (README, "Windows from the curvature").
+  // Below pT_est = pt_keep a scaled window is never narrower than the fixed
+  // one, so low-pT tracks lose nothing against the fixed windows.  1 / pT_est
+  // is capped at 1 / pT_min: a combinatorial triplet whose circle says 0.3 GeV
+  // would otherwise open the widest window of all.
+  struct WinD {
+    float phi = 0, z = 0;  // fixed windows [rad, cm]
+    bool scaled = false;
+    float f = 1, a_phi = 0, b_phi = 0, a_z = 0, b_z = 0, pt_keep = 0, ipt_max = 1e30f;
+    bool low_fixed = false;  // below pt_keep: the fixed windows exactly, not the wider of the two
+    template <class P>
+    static WinD of(const P &p) {
+      return {p.phiwin_d, p.qwin_d, p.win_scaled != 0, p.win_f, p.win_a_phi, p.win_b_phi, p.win_a_z, p.win_b_z,
+              p.win_pt_keep, 1.0f / p.pt_min, p.win_low_fixed != 0};
+    }
+  };
+
+  // Branch free, for the simd loop over triplets; with scaled off it returns
+  // the fixed windows exactly.
+  template <class A>
+  [[gnu::always_inline]] inline void win_d(
+      const WinD &W, typename A::real k, typename A::real cots, typename A::real &wp, typename A::real &wz) {
+    using T = typename A::real;
+    const T ipt = std::min(std::abs(k) * T(1.0 / 0.0114), T(W.ipt_max));  // 1 / pT_est [1/GeV]
+    const T u = A::sqrt(T(1) + cots * cots);
+    const T su = A::sqrt(u), qu = A::sqrt(su);
+    const T xp = su * ipt, xz = u * qu * ipt;
+    const T sp = T(W.f) * A::sqrt(T(W.a_phi) * T(W.a_phi) + T(W.b_phi) * T(W.b_phi) * xp * xp);
+    const T sz = T(W.f) * A::sqrt(T(W.a_z) * T(W.a_z) + T(W.b_z) * T(W.b_z) * xz * xz);
+    const bool low = ipt * T(W.pt_keep) > T(1);
+    const T mp = W.low_fixed ? T(W.phi) : std::max(sp, T(W.phi));
+    const T mz = W.low_fixed ? T(W.z) : std::max(sz, T(W.z));
+    const T lp = low ? mp : sp, lz = low ? mz : sz;
+    wp = W.scaled ? lp : T(W.phi);
+    wz = W.scaled ? lz : T(W.z);
+  }
+
   // The helix of a triplet and the 4th-layer window.
   template <class A>
   struct TripletHelix {
@@ -232,6 +273,7 @@ namespace mkfit::seeding {
     T cx = 0, cy = 0, R = 0, cots = 0, xc = 0, yc = 0;
     T k = 0, ux = 0, uy = 0;  // curvature form
     T phid = 0, phidh = 0, zlo = 0, zhi = 0;
+    T wp = 0, wz = 0;  // the triplet's 4th-hit windows, phi and z
     bool ok = false;
     CutVal c3, reach;  // circle degeneracy, the 4th layer reachable at rdlo or rdhi
   };
@@ -243,15 +285,14 @@ namespace mkfit::seeding {
   template <class A>
   struct HelixK {
     using T = typename A::real;
-    T k, ux, uy, cots, phid, phidh, zlo, zhi, b20, b21;
+    T k, ux, uy, cots, phid, phidh, zlo, zhi, b20, b21, wp, wz;
     bool ok;
   };
 
   // flatten: inline everything it calls, vdt included, so that the simd
   // loop in finish_triplets() sees no calls
   template <class A>
-  [[gnu::always_inline, gnu::flatten]] inline void helix_k(const float qwin_d,
-                      const float phiwin_d,
+  [[gnu::always_inline, gnu::flatten]] inline void helix_k(const WinD &W,
                       const float xa,
                       const float ya,
                       const float za,
@@ -275,6 +316,8 @@ namespace mkfit::seeding {
     const T ux = ex * ca - ey * sa, uy = ex * sa + ey * ca;
     const T s_ac = arc_k<A>(L1, k) + arc_k<A>(L2, k);
     const T cots = (s_ac > T(1e-6)) ? T(zc - za) / s_ac : T(0.0);
+    T wp, wz;
+    win_d<A>(W, k, cots, wp, wz);
     // locals, not &o.b20: taking a member's address keeps o in memory and
     // turns its stores into scatters, which stops the simd loop vectorising
     T p0x, p0y, p1x, p1y, b20, b21;
@@ -290,21 +333,22 @@ namespace mkfit::seeding {
     const T arc1 = arc_k<A>(A::hypot(p1x - T(xc), p1y - T(yc)), k);
     const T zz0 = ok0 ? T(zc) + cots * arc0 : T(zc) + cots * arc1;
     const T zz1 = ok1 ? T(zc) + cots * arc1 : zz0;
-    const T zdh = qwin_d + kCoverEps;
+    const T zdh = wz + T(kCoverEps);
+    o.wp = wp;
+    o.wz = wz;
     o.k = k;
     o.ux = ux;
     o.uy = uy;
     o.cots = cots;
     o.ok = ok0 | ok1;
     o.phid = f0 + dfh;
-    o.phidh = T(phiwin_d) + std::abs(dfh) + T(kCoverEps);
+    o.phidh = wp + std::abs(dfh) + T(kCoverEps);
     o.zlo = std::min(zz0, zz1) - zdh;
     o.zhi = std::max(zz0, zz1) + zdh;
   }
 
   template <class A>
-  inline void helix_triplet(const float qwin_d,
-                            const float phiwin_d,
+  inline void helix_triplet(const WinD &W,
                             const float xa,
                             const float ya,
                             const float za,
@@ -320,7 +364,9 @@ namespace mkfit::seeding {
     using T = typename A::real;
     if constexpr (A::curvature_form) {
       HelixK<A> o;
-      helix_k<A>(qwin_d, phiwin_d, xa, ya, za, xb, yb, xc, yc, zc, rdlo, rdhi, o);
+      helix_k<A>(W, xa, ya, za, xb, yb, xc, yc, zc, rdlo, rdhi, o);
+      h.wp = o.wp;
+      h.wz = o.wz;
       h.k = o.k;
       h.ux = o.ux;
       h.uy = o.uy;
@@ -348,6 +394,7 @@ namespace mkfit::seeding {
     const T s_bc = arc<A>(A::hypot(T(xc) - T(xb), T(yc) - T(yb)), R);
     const T s_ac = s_ab + s_bc;
     const T cot_s = (s_ac > T(1e-6)) ? T(zc - za) / s_ac : T(0.0);
+    win_d<A>(W, T(1) / R, cot_s, h.wp, h.wz);
     T p0x, p0y, p1x, p1y, b20, b21;
     const bool ok0 = circle_cross_r<A>(cx, cy, R, rdlo, xc, yc, p0x, p0y, &b20);
     const bool ok1 = circle_cross_r<A>(cx, cy, R, rdhi, xc, yc, p1x, p1y, &b21);
@@ -368,9 +415,9 @@ namespace mkfit::seeding {
     const T zz0 = ok0 ? T(zc) + cot_s * arc<A>(A::hypot(p0x - T(xc), p0y - T(yc)), R)
                       : T(zc) + cot_s * arc<A>(A::hypot(p1x - T(xc), p1y - T(yc)), R);
     const T zz1 = ok1 ? T(zc) + cot_s * arc<A>(A::hypot(p1x - T(xc), p1y - T(yc)), R) : zz0;
-    const T zdh = qwin_d + kCoverEps;
+    const T zdh = h.wz + T(kCoverEps);
     h.phid = f0 + dfh;
-    h.phidh = T(phiwin_d) + std::abs(dfh) + T(kCoverEps);
+    h.phidh = h.wp + std::abs(dfh) + T(kCoverEps);
     h.zlo = std::min(zz0, zz1) - zdh;
     h.zhi = std::max(zz0, zz1) + zdh;
   }
@@ -392,8 +439,8 @@ namespace mkfit::seeding {
   };
 
   template <class A>
-  [[gnu::always_inline, gnu::flatten]] inline void quad_k(const float qwin_d,
-                                                          const float phiwin_d,
+  [[gnu::always_inline, gnu::flatten]] inline void quad_k(const typename A::real qwin_d,
+                                                          const typename A::real phiwin_d,
                                                           const typename A::real k,
                                                           const typename A::real ux,
                                                           const typename A::real uy,
@@ -424,9 +471,7 @@ namespace mkfit::seeding {
 
   // full = false: stop at the first failing cut, as the finder does.
   template <class A>
-  inline bool quad_cuts(const float qwin_d,
-                        const float phiwin_d,
-                        const TripletHelix<A> &h,
+  inline bool quad_cuts(const TripletHelix<A> &h,
                         const float zc,
                         const float rrc,
                         const float rrd,
@@ -435,6 +480,7 @@ namespace mkfit::seeding {
                         QuadCuts *qc) {
     using namespace amath;
     using T = typename A::real;
+    const T qwin_d = h.wz, phiwin_d = h.wp;
     if constexpr (A::curvature_form) {
       QuadK<A> o;
       quad_k<A>(qwin_d, phiwin_d, h.k, h.ux, h.uy, h.xc, h.yc, h.cots, zc, rrc, rrd, phi_d, z_d, o);

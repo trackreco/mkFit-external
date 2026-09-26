@@ -77,6 +77,37 @@ the triplet circle's R (pT_est = 0.0114 R [GeV, cm]) and cot theta, and the
   too straight by a kink or a bad hit. A window that shrinks with pT_est
   therefore needs a constant floor.
 
+**4th-hit windows from the curvature, `--win-scaled F PT_KEEP` (2026-09-26):
+built, measured, and NOT better than widening the fixed windows.** Per triplet,
+w = F sqrt(a^2 + (b x)^2), x = g(theta) / pT_est, with a, b the 95 % contour
+fitted on true quads whose curvature estimate is within 20 % (d_phi a 0.2 mrad,
+b 1.6 mrad GeV; d_z a 63 um, b 177 um GeV). 1 / pT_est is capped at 1 / pT_min.
+Below PT_KEEP the window is the wider of the scaled and the fixed one, or with
+`--win-low-fixed` the fixed one exactly. `--win-floor A_PHI A_Z` sets a. With
+the option off, every finder's 50-event list is bit-identical to before. With
+it on, the tile, b-major and brute lists agree, and why-missed finds no track
+that passes every cut. 20 events, pT > 0.9, fakes by the consistent rule:
+
+| 4th-hit windows | efficiency | 0.9-1.2 / 1.2-2 / 2-5 / >5 GeV | fake |
+|---|---|---|---|
+| fixed x1.0 | 0.9443 | 0.912 / 0.959 / 0.986 / 0.992 | 0.129 |
+| fixed x1.4 (default) | 0.9722 | 0.957 / 0.979 / 0.992 / 0.992 | 0.211 |
+| fixed x1.8 | 0.9787 | 0.969 / 0.983 / 0.993 / 0.992 | 0.288 |
+| fixed x2.2 | 0.9828 | 0.976 / 0.985 / 0.994 / 0.992 | 0.364 |
+| fixed x2.6 | 0.9842 | 0.979 / 0.986 / 0.994 / 0.992 | 0.432 |
+| scaled F 2.0, no cap | 0.9748 | 0.973 / 0.976 / 0.980 / 0.959 | 0.289 |
+| scaled F 2.5, cap | 0.9806 | 0.977 / 0.982 / 0.986 / 0.984 | 0.340 |
+| scaled F 2.5, cap, floor 0.8 mrad / 100 um | 0.9826 | 0.978 / 0.984 / 0.990 / 0.992 | 0.376 |
+| scaled F 2.0 above 1.2 GeV, fixed below | 0.9722 | 0.958 / 0.979 / 0.989 / 0.992 | 0.195 |
+
+Every scaled point lies on or just below the fixed curve. The best one keeps the
+default's efficiency with 8 % fewer fakes, and it is 0.3 points lower at 2-5 GeV
+(1.2 sigma). Without the cap, combinatorial triplets with a small pT_est opened
+the widest windows. A floor under ~0.8 mrad / 100 um lost high-pT tracks with a
+kink, which the curvature estimate places at too high a pT. Not measured: the
+fake rate binned in pT_est, which would show where the fakes are. Raw logs in the
+working report's prep/res-2026-09-26/s-*.log.
+
 ## Acceptance: the quad list, not the physics numbers
 
 The reference is the prototype in cover mode (`sg_cover(true)`,

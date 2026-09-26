@@ -32,8 +32,8 @@ namespace mkfit::seeding {
         return;
       }
       fprintf(out, "# seedfind --residuals: one row per findable track, its own hits\n");
-      fprintf(out, "# windows at this run: c_z %.4f cm, d_phi %.5f rad, d_z %.4f cm; phi_lin %d %.4f\n", P.qwin,
-              P.phiwin_d, P.qwin_d, P.phi_lin, P.phi_lin_marg);
+      fprintf(out, "# windows at this run: c_z %.4f cm, d_phi %.5f rad, d_z %.4f cm; phi_lin %d %.4f; win_scaled %d\n",
+              P.qwin, P.phiwin_d, P.qwin_d, P.phi_lin, P.phi_lin_marg, P.win_scaled);
       fprintf(out, "# stage: first failing cut, index into SeedMissed::kOrder (12 = none fails)\n");
       fprintf(out, "# pt_est = 0.0114 * R [GeV, cm]; residuals are |.|, nan where the cut was not evaluated\n");
       fprintf(out, "# ev label pt p eta found stage R cot c_z d_phi d_z\n");
@@ -98,11 +98,11 @@ namespace mkfit::seeding {
                   }
                 }
                 double sum = 0;
-                const double rz = res(e.c[MC_c_z], P.qwin), rp = res(e.c[MC_d_phi], P.phiwin_d),
-                             rd = res(e.c[MC_d_z], P.qwin_d);
+                const double rz = res(e.c[MC_c_z], P.qwin), rp = res(e.c[MC_d_phi], e.wp),
+                             rd = res(e.c[MC_d_z], e.wz);
                 sum += std::isnan(rz) ? 1e3 : rz / P.qwin;
-                sum += std::isnan(rp) ? 1e3 : rp / P.phiwin_d;
-                sum += std::isnan(rd) ? 1e3 : rd / P.qwin_d;
+                sum += std::isnan(rp) ? 1e3 : rp / e.wp;
+                sum += std::isnan(rd) ? 1e3 : rd / e.wz;
                 if (stage > best_stage || (stage == best_stage && sum < best_sum)) {
                   best_stage = stage;
                   best_sum = sum;
@@ -111,7 +111,7 @@ namespace mkfit::seeding {
               }
         fprintf(out, "%d %d %.5g %.5g %.4f %d %d %.6g %.6g %.5g %.5g %.5g\n", iev, l, t.pT(), t.p(), t.momEta(),
                 found.count(l) ? 1 : 0, best_stage, best.R, best.cot, res(best.c[MC_c_z], P.qwin),
-                res(best.c[MC_d_phi], P.phiwin_d), res(best.c[MC_d_z], P.qwin_d));
+                res(best.c[MC_d_phi], best.wp), res(best.c[MC_d_z], best.wz));
         ++n_rows;
       }
     }

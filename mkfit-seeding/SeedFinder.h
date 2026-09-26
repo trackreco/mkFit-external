@@ -36,6 +36,15 @@ namespace mkfit::seeding {
     int phi_lin = 2;           // 0 off, 1 linear only, 2 linear AND generic band
     float phi_lin_marg = 0.002f;  // rad
     float lbin = 0.25f;        // cm, z bucket of the per-b-hit list (b-major finder only)
+    // 4th-hit windows from the triplet's curvature (WinD in SeedMath.h); off:
+    // the fixed qwin_d / phiwin_d.  a, b: the 95 % contour of true quads,
+    // 100 events at pT_min 0.5 (README); f scales it; pt_keep [GeV].
+    int win_scaled = 0;
+    float win_f = 1.75f;
+    float win_a_phi = 0.0002f, win_b_phi = 0.0016f;  // rad, rad GeV
+    float win_a_z = 0.0063f, win_b_z = 0.0177f;      // cm, cm GeV
+    float win_pt_keep = 1.0f;
+    int win_low_fixed = 0;  // 1: below pt_keep the fixed windows exactly
   };
 
   struct SeedCounters {
@@ -123,6 +132,10 @@ namespace mkfit::seeding {
                   std::vector<Quad> &out,
                   SeedCounters &cnt) {
     using namespace detail;
+    if (P.win_scaled) {
+      fprintf(stderr, "find_quads: the scalar port has fixed 4th-hit windows only (win_scaled)\n");
+      return;
+    }
     constexpr float kBfield = 3.8f;
     const double Rmin = P.pt_min / (0.003f * kBfield);
     const float inv2R = (float)(1.0 / (2 * Rmin)), d0m = P.d0_max, marg = P.phi_margin;

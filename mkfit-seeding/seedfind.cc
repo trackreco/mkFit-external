@@ -64,6 +64,7 @@ namespace {
         "         [--staged | --fuse | --bmajor | --tile | --tile-brute] [--block N] [--lbin CM]\n"
         "         [--arith ref|fast|fastk] [--stats] [--margins REF] [--eps-cm E] [--eps-rad E] [--margins-print N]\n"
         "         [--pt-min GEV] [--d0-max CM] [--qwin CM] [--qwin-d CM] [--phiwin-d RAD] [--truth OUT.txt] [--why-missed] [--residuals OUT.txt]\n"
+        "         [--win-scaled F PT_KEEP] [--win-floor A_PHI A_Z]   4th-hit windows from the curvature\n"
         "         [--first-look]   the first look's windows and no phi_lin cut; put window options after it\n");
   }
 
@@ -331,7 +332,18 @@ int main(int argc, char *argv[]) {
       P.qwin_d = atof(next());
     else if (a == "--phiwin-d")
       P.phiwin_d = atof(next());
-    else if (a == "--first-look") {
+    else if (a == "--win-scaled") {
+      // 4th-hit windows from the triplet's curvature: f, then pt_keep [GeV]
+      P.win_scaled = 1;
+      P.win_f = atof(next());
+      P.win_pt_keep = atof(next());
+    } else if (a == "--win-low-fixed")
+      P.win_low_fixed = 1;
+    else if (a == "--win-floor") {
+      // the scaled windows' floors a_phi [rad], a_z [cm]
+      P.win_a_phi = atof(next());
+      P.win_a_z = atof(next());
+    } else if (a == "--first-look") {
       // the windows of the first-look deck and of every reference list made
       // before 2026-09-26
       P.qwin = 0.035f;

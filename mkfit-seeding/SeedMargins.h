@@ -54,6 +54,7 @@ namespace mkfit::seeding {
   struct QuadEval {
     CutVal c[MC_N];
     double R = 0, cot = 0;  // for the printout: pT = 0.0114 R [GeV, cm], and cot(theta)
+    double wp = 0, wz = 0;  // the triplet's 4th-hit windows, phi and z
     bool pass() const {
       for (int i = 0; i < MC_N; ++i)
         if (margin_cut_info(i).decisive && c[i].valid && !c[i].pass)
@@ -120,9 +121,11 @@ namespace mkfit::seeding {
     }
     //---- triplet helix and the 4th-layer window
     TripletHelix<A> h;
-    helix_triplet<A>(P.qwin_d, P.phiwin_d, ga.x_[ka], ga.y_[ka], za, gb.x_[kb], gb.y_[kb], gc.x_[kc], gc.y_[kc], zc,
+    helix_triplet<A>(WinD::of(P), ga.x_[ka], ga.y_[ka], za, gb.x_[kb], gb.y_[kb], gc.x_[kc], gc.y_[kc], zc,
                      T(gd.rlo_), T(gd.rhi_), h);
     e.R = h.R;
+    e.wp = h.wp;
+    e.wz = h.wz;
     e.c[MC_c3] = h.c3;
     e.c[MC_reach] = h.reach;
     if (h.ok) {
@@ -134,7 +137,7 @@ namespace mkfit::seeding {
     }
     //---- quad
     QuadCuts qc;
-    quad_cuts<A>(P.qwin_d, P.phiwin_d, h, zc, rrc, gd.r_[kd], gd.phi_[kd], gd.z_[kd], &qc);
+    quad_cuts<A>(h, zc, rrc, gd.r_[kd], gd.phi_[kd], gd.z_[kd], &qc);
     e.c[MC_cd_r] = qc.cd_r;
     e.c[MC_d_cross] = qc.d_cross;
     e.c[MC_d_phi] = qc.d_phi;

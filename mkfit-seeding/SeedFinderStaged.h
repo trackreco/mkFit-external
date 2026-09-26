@@ -39,12 +39,12 @@ namespace mkfit::seeding {
     // stage 3/4: (doublet, c-hit) candidates, then triplets
     std::vector<unsigned int> c_d, c_kc, t_d, t_kc;
     // stage 5: per triplet
-    std::vector<double> t_cx, t_cy, t_R, t_cots, t_xc, t_yc, t_phid, t_phidh, t_zlo, t_zhi;
+    std::vector<double> t_cx, t_cy, t_R, t_cots, t_xc, t_yc, t_phid, t_phidh, t_zlo, t_zhi, t_wp, t_wz;
     std::vector<unsigned char> t_ok;
     // stage 5, curvature form: the triplet's hits as struct-of-arrays
     std::vector<float> g_xa, g_ya, g_za, g_xb, g_yb, g_xc, g_yc, g_zc;
     // stage 7, curvature form: each (triplet, d-hit) candidate as struct-of-arrays
-    std::vector<float> q_k, q_ux, q_uy, q_xc, q_yc, q_cs, q_zc, q_rc, q_rd, q_pd, q_zd;
+    std::vector<float> q_k, q_ux, q_uy, q_xc, q_yc, q_cs, q_zc, q_rc, q_rd, q_pd, q_zd, q_wp, q_wz;
     std::vector<unsigned char> q_ok;
     // stage 6: (triplet, d-hit) candidates
     std::vector<unsigned int> e_t, e_kd;
@@ -78,7 +78,9 @@ namespace mkfit::seeding {
       return L.phi_range(c - w, c + w);
     };
     //---- 5: helix per triplet, and the 4th-layer window
-    for (auto *v : {&W.t_cx, &W.t_cy, &W.t_R, &W.t_cots, &W.t_xc, &W.t_yc, &W.t_phid, &W.t_phidh, &W.t_zlo, &W.t_zhi})
+    const WinD wd = WinD::of(P);
+    for (auto *v : {&W.t_cx, &W.t_cy, &W.t_R, &W.t_cots, &W.t_xc, &W.t_yc, &W.t_phid, &W.t_phidh, &W.t_zlo, &W.t_zhi,
+                    &W.t_wp, &W.t_wz})
       StagedWork::fit(*v, nt);
     StagedWork::fit(W.t_ok, nt);
     if constexpr (A::curvature_form) {
@@ -105,13 +107,13 @@ namespace mkfit::seeding {
       double *__restrict ocs = W.t_cots.data(), *__restrict oxc = W.t_xc.data(), *__restrict oyc = W.t_yc.data();
       double *__restrict opd = W.t_phid.data(), *__restrict oph = W.t_phidh.data();
       double *__restrict ozl = W.t_zlo.data(), *__restrict ozh = W.t_zhi.data();
+      double *__restrict owp = W.t_wp.data(), *__restrict owz = W.t_wz.data();
       unsigned char *__restrict ook = W.t_ok.data();
       const T rlo = rdlo, rhi = rdhi;
-      const float qd = P.qwin_d, pd = P.phiwin_d;
 #pragma omp simd
       for (unsigned int t = 0; t < nt; ++t) {
         HelixK<A> o;
-        helix_k<A>(qd, pd, xa[t], ya[t], za[t], xb[t], yb[t], xc[t], yc[t], zc[t], rlo, rhi, o);
+        helix_k<A>(wd, xa[t], ya[t], za[t], xb[t], yb[t], xc[t], yc[t], zc[t], rlo, rhi, o);
         ook[t] = o.ok;
         ocx[t] = o.ux;  // the curvature form stores (k, ux, uy) where the centre form has (R, cx, cy)
         ocy[t] = o.uy;
@@ -123,6 +125,8 @@ namespace mkfit::seeding {
         oph[t] = o.phidh;
         ozl[t] = o.zlo;
         ozh[t] = o.zhi;
+        owp[t] = o.wp;
+        owz[t] = o.wz;
       }
     } else
     for (unsigned int t = 0; t < nt; ++t) {
@@ -130,8 +134,8 @@ namespace mkfit::seeding {
       const unsigned int ka = W.d_ka[d], kb = W.d_kb[d];
       TripletHelix<A> h;
       // x, y precomputed at fill with the same float expression, r * cos(phi)
-      helix_triplet<A>(P.qwin_d, P.phiwin_d, ga.x_[ka], ga.y_[ka], ga.z_[ka], gb.x_[kb], gb.y_[kb], gc.x_[kc],
-                       gc.y_[kc], gc.z_[kc], rdlo, rdhi, h);
+      helix_triplet<A>(wd, ga.x_[ka], ga.y_[ka], ga.z_[ka], gb.x_[kb], gb.y_[kb], gc.x_[kc], gc.y_[kc], gc.z_[kc],
+                       rdlo, rdhi, h);
       W.t_ok[t] = h.ok;
       if (!h.ok)
         continue;
@@ -146,6 +150,8 @@ namespace mkfit::seeding {
       W.t_phidh[t] = h.phidh;
       W.t_zlo[t] = h.zlo;
       W.t_zhi[t] = h.zhi;
+      W.t_wp[t] = h.wp;
+      W.t_wz[t] = h.wz;
     }
 
     tick(4);
@@ -172,7 +178,8 @@ namespace mkfit::seeding {
     if constexpr (A::curvature_form) {
       // gather each candidate's triplet and d-hit into struct-of-arrays, the
       // test in one simd loop, then compact
-      for (auto *v : {&W.q_k, &W.q_ux, &W.q_uy, &W.q_xc, &W.q_yc, &W.q_cs, &W.q_zc, &W.q_rc, &W.q_rd, &W.q_pd, &W.q_zd})
+      for (auto *v : {&W.q_k, &W.q_ux, &W.q_uy, &W.q_xc, &W.q_yc, &W.q_cs, &W.q_zc, &W.q_rc, &W.q_rd, &W.q_pd, &W.q_zd,
+                      &W.q_wp, &W.q_wz})
         StagedWork::fit(*v, ne);
       StagedWork::fit(W.q_ok, ne);
       for (unsigned int i = 0; i < ne; ++i) {
@@ -188,17 +195,19 @@ namespace mkfit::seeding {
         W.q_rd[i] = gd.r_[kd];
         W.q_pd[i] = gd.phi_[kd];
         W.q_zd[i] = gd.z_[kd];
+        W.q_wp[i] = W.t_wp[t];
+        W.q_wz[i] = W.t_wz[t];
       }
       const float *__restrict qk = W.q_k.data(), *__restrict qux = W.q_ux.data(), *__restrict quy = W.q_uy.data();
       const float *__restrict qxc = W.q_xc.data(), *__restrict qyc = W.q_yc.data(), *__restrict qcs = W.q_cs.data();
       const float *__restrict qzc = W.q_zc.data(), *__restrict qrc = W.q_rc.data(), *__restrict qrd = W.q_rd.data();
       const float *__restrict qpd = W.q_pd.data(), *__restrict qzd = W.q_zd.data();
+      const float *__restrict qwp = W.q_wp.data(), *__restrict qwz = W.q_wz.data();
       unsigned char *__restrict qok = W.q_ok.data();
-      const float qd = P.qwin_d, pd = P.phiwin_d;
 #pragma omp simd
       for (unsigned int i = 0; i < ne; ++i) {
         QuadK<A> o;
-        quad_k<A>(qd, pd, qk[i], qux[i], quy[i], qxc[i], qyc[i], qcs[i], qzc[i], qrc[i], qrd[i], qpd[i], qzd[i], o);
+        quad_k<A>(qwz[i], qwp[i], qk[i], qux[i], quy[i], qxc[i], qyc[i], qcs[i], qzc[i], qrc[i], qrd[i], qpd[i], qzd[i], o);
         qok[i] = o.pass;
       }
       for (unsigned int i = 0; i < ne; ++i) {
@@ -226,7 +235,9 @@ namespace mkfit::seeding {
       h.cots = (T)W.t_cots[t];
       h.xc = (T)W.t_xc[t];
       h.yc = (T)W.t_yc[t];
-      if (!quad_cuts<A>(P.qwin_d, P.phiwin_d, h, gc.z_[kc], gc.r_[kc], gd.r_[kd], gd.phi_[kd], gd.z_[kd], nullptr))
+      h.wp = (T)W.t_wp[t];
+      h.wz = (T)W.t_wz[t];
+      if (!quad_cuts<A>(h, gc.z_[kc], gc.r_[kc], gd.r_[kd], gd.phi_[kd], gd.z_[kd], nullptr))
         continue;
       cnt.quads++;
       const unsigned int d = W.t_d[t];

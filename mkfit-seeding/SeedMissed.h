@@ -113,7 +113,7 @@ namespace mkfit::seeding {
         n_missed += 1;
         // best combination: the one whose first failing cut is latest in the order
         int best_stage = -1;
-        double best_m = 0;
+        double best_m = 0, best_wp = 0, best_wz = 0;
         bool best_fetch = false;
         for (unsigned int a : hl[0])
           for (unsigned int b : hl[1])
@@ -143,6 +143,8 @@ namespace mkfit::seeding {
                 if (stage > best_stage) {
                   best_stage = stage;
                   best_m = m;
+                  best_wp = e.wp;
+                  best_wz = e.wz;
                   best_fetch = fetch_fail;
                 }
               }
@@ -155,7 +157,7 @@ namespace mkfit::seeding {
         margin[best_stage].push_back(best_m);
         if (best_stage < kNo) {
           const int c = kOrder[best_stage];
-          const double w = c == MC_c_z ? P.qwin : c == MC_d_phi ? P.phiwin_d : c == MC_d_z ? P.qwin_d : 0;
+          const double w = c == MC_c_z ? P.qwin : c == MC_d_phi ? best_wp : c == MC_d_z ? best_wz : 0;
           if (w > 0)
             ratio[best_stage].push_back({ip, 1.0 - best_m / w});
         }
