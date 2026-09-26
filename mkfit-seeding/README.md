@@ -517,6 +517,16 @@ so none is a finder or fetch loss. By pT: 15.1 / 6.5 / 1.1 / 0.05 per event
 below 1.2 / 1.2-2 / 2-5 / above 5 GeV: multiple scattering at the lowest
 momenta, typically 1.2-1.4x outside the fixed windows.
 
+**Vector left-pack in K1 and K3, 2026-09-26.** Both kernels compute their
+pass mask vectorised, then compacted the passing entries with a scalar loop of
+four or five stores per fetched hit, and Zen+ retires one store per cycle. The
+compaction is now `detail::left_pack<NS>`: per 4 lanes one lookup of a pshufb
+control, one byte shuffle and one 16-byte store per 32-bit stream. To make every
+stream 32 bits wide, a doublet's two 16-bit bucket indices are one word,
+`d_bb = blo | bhi << 16`. The 50-event list is identical in the default mode,
+with the phi cut and in brute mode. Black, one session, fastest of 3 passes: K1
+4.31 -> 2.91 ms per event, K3 4.91 -> 4.40, search 18.11 -> 16.06.
+
 **The doublet-slope phi cut in the tile finder, 2026-09-26.** `--phi-lin 2 M`
 now works with `--tile`. It cuts the layer-c hit on its phi predicted linearly in
 r from the doublet's own phi slope, |phi_c - phi_b - s_phi (r_c - r_b)| <=

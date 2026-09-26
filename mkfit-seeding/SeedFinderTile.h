@@ -36,6 +36,8 @@
 
 #include "SeedFinderBMajor.h"
 
+#include <cstring>
+
 #if defined(__AVX__)
 #include <immintrin.h>
 #endif
@@ -45,13 +47,13 @@ namespace mkfit::seeding {
   struct TileWork {
     std::vector<unsigned int> b_dbeg;
     std::vector<float> d_sa;                    // per doublet of the block: slope
-    std::vector<unsigned short> d_blo, d_bhi;   // per doublet: slope-bucket range [blo, bhi)
+    std::vector<unsigned int> d_bb;             // per doublet: slope-bucket range, blo | bhi << 16
     std::vector<float> t_s, t_t;                // K1/K3 scratch per fetched hit: slope, tolerance
-    std::vector<unsigned short> t_b0, t_b1;     // K1/K3 scratch: bucket indices
+    std::vector<unsigned int> t_bb;             // K1/K3 scratch: bucket words
     std::vector<unsigned char> t_m;             // K1/K3 scratch: pass mask
     std::vector<float> l_sc, l_tc;              // per b-hit list, compacted
     std::vector<unsigned int> l_kc;
-    std::vector<unsigned short> l_bk;
+    std::vector<unsigned int> l_bk;
     std::vector<float> s_sc, s_tc;              // the list sorted into slope buckets, padded
     std::vector<unsigned int> s_kc, bk_start, bk_cur;
     std::vector<unsigned int> h_d, h_j;         // K4 phase 1: (doublet, first list slot) of a nonzero mask
@@ -61,6 +63,69 @@ namespace mkfit::seeding {
   };
 
   namespace detail {
+#if defined(__AVX__)
+    // pshufb controls that move the 32-bit lanes set in a 4-bit mask to the front
+    struct PackLut {
+      alignas(16) unsigned char c[16][16];
+      constexpr PackLut() : c{} {
+        for (int m = 0; m < 16; ++m) {
+          int k = 0;
+          for (int l = 0; l < 4; ++l)
+            if (m >> l & 1) {
+              for (int b = 0; b < 4; ++b)
+                c[m][4 * k + b] = (unsigned char)(4 * l + b);
+              ++k;
+            }
+          for (; k < 4; ++k)
+            for (int b = 0; b < 4; ++b)
+              c[m][4 * k + b] = 0x80;
+        }
+      }
+    };
+    inline constexpr PackLut kPackLut{};
+#endif
+
+    // Left-pack for the K1 and K3 compaction: for i in [0, n) with tm[i] != 0,
+    // append base + i to oidx and in[s][i] to out[s] (NS streams of 32-bit
+    // words), starting at position m; returns the new m.  Vector form: per 4
+    // lanes one table lookup, one byte shuffle and one 16-byte store per stream.
+    // tm must be zero from n up to n rounded up to 8, the inputs readable that
+    // far, and the outputs have room for m + n + 8 words.
+    template <int NS>
+    inline unsigned int left_pack(unsigned int n,
+                                  const unsigned char *__restrict tm,
+                                  unsigned int base,
+                                  const unsigned int *const (&in)[NS],
+                                  unsigned int *__restrict oidx,
+                                  unsigned int *const (&out)[NS],
+                                  unsigned int m) {
+#if defined(__AVX__)
+      const __m128i zero = _mm_setzero_si128(), step = _mm_setr_epi32(0, 1, 2, 3);
+      for (unsigned int i = 0; i < n; i += 8) {
+        const unsigned int m8 =
+            (unsigned int)_mm_movemask_epi8(_mm_cmpgt_epi8(_mm_loadl_epi64((const __m128i *)(tm + i)), zero)) & 0xffu;
+        for (unsigned int h = 0; h < 8; h += 4) {
+          const unsigned int m4 = (m8 >> h) & 15u;
+          const __m128i ctl = _mm_load_si128((const __m128i *)kPackLut.c[m4]);
+          const __m128i vi = _mm_add_epi32(_mm_set1_epi32((int)(base + i + h)), step);
+          _mm_storeu_si128((__m128i *)(oidx + m), _mm_shuffle_epi8(vi, ctl));
+          for (int s = 0; s < NS; ++s)
+            _mm_storeu_si128((__m128i *)(out[s] + m),
+                             _mm_shuffle_epi8(_mm_loadu_si128((const __m128i *)(in[s] + i + h)), ctl));
+          m += (unsigned int)__builtin_popcount(m4);
+        }
+      }
+#else
+      for (unsigned int i = 0; i < n; ++i) {
+        oidx[m] = base + i;
+        for (int s = 0; s < NS; ++s)
+          std::memcpy(out[s] + m, in[s] + i, 4);
+        m += tm[i] != 0;
+      }
+#endif
+      return m;
+    }
+
     // slope slack of the K4 pre-filter [dimensionless]: float rounding of s_a,
     // s_c and t_c is ~1e-6 at |s| ~ 20; the exact test decides after it
     constexpr float kSlopeSlack = 1e-4f;
@@ -145,8 +210,7 @@ namespace mkfit::seeding {
                                                      unsigned int de,
                                                      unsigned int nl,
                                                      const unsigned int *__restrict bs,
-                                                     const unsigned short *__restrict blo,
-                                                     const unsigned short *__restrict bhi,
+                                                     const unsigned int *__restrict bb,
                                                      const float *__restrict dsa,
                                                      const float *__restrict ssc,
                                                      const float *__restrict stc,
@@ -155,8 +219,8 @@ namespace mkfit::seeding {
                                                      unsigned char *__restrict hm) {
       unsigned int nh = 0;
       for (unsigned int d = db; d < de; ++d) {
-        const unsigned int i0 = Brute ? 0 : bs[blo[d]];
-        const unsigned int i1 = Brute ? nl : bs[bhi[d]];
+        const unsigned int i0 = Brute ? 0 : bs[bb[d] & 0xffffu];
+        const unsigned int i1 = Brute ? nl : bs[bb[d] >> 16];
         const float sa = dsa[d];
         const unsigned int m = Brute ? k4_step(ssc, stc, sa, i0, i1) : k4_step_unmasked(ssc, stc, dsa + d, i0);
         // Stored only where the mask is nonzero, 5.9 % of doublets.  Storing
@@ -245,18 +309,16 @@ namespace mkfit::seeding {
         const int nr = runs(ga, phi_bins(ga, pbph, w), rr);
         for (int ir = 0; ir < nr; ++ir) {
           const unsigned int a0 = rr[2 * ir], n = rr[2 * ir + 1] - a0;
-          StagedWork::fit(TW.t_s, n);
-          StagedWork::fit(TW.t_m, n);
-          StagedWork::fit(TW.t_b0, n);
-          StagedWork::fit(TW.t_b1, n);
+          StagedWork::fit(TW.t_s, n + 8);
+          StagedWork::fit(TW.t_m, n + 8);
+          StagedWork::fit(TW.t_bb, n + 8);
           const float *__restrict ar = ga.r_.data() + a0;
           const float *__restrict ap = ga.phi_.data() + a0;
           const float *__restrict ai = ga.invr_.data() + a0;
           const float *__restrict az = ga.z_.data() + a0;
           float *__restrict ts = TW.t_s.data();
           unsigned char *__restrict tm = TW.t_m.data();
-          unsigned short *__restrict tb0 = TW.t_b0.data();
-          unsigned short *__restrict tb1 = TW.t_b1.data();
+          unsigned int *__restrict tbb = TW.t_bb.data();
 #pragma omp simd
           for (unsigned int i = 0; i < n; ++i) {
             const float rra = ar[i];
@@ -267,27 +329,18 @@ namespace mkfit::seeding {
             ts[i] = sa;
             const float y0 = std::min(std::max((sa - t_max + kSMax) * (1.0f / kBw), 0.0f), float(kNb - 1));
             const float y1 = std::min(std::max((sa + t_max + kSMax) * (1.0f / kBw), 0.0f), float(kNb - 1));
-            tb0[i] = (unsigned short)(int)y0;
-            tb1[i] = (unsigned short)((int)y1 + 1);
+            tbb[i] = (unsigned int)(int)y0 | ((unsigned int)((int)y1 + 1) << 16);
           }
-          StagedWork::fit(W.d_ka, nd + n);
-          StagedWork::fit(W.d_kb, nd + n);
-          StagedWork::fit(TW.d_sa, nd + n);
-          StagedWork::fit(TW.d_blo, nd + n);
-          StagedWork::fit(TW.d_bhi, nd + n);
-          unsigned int *__restrict oka = W.d_ka.data();
+          for (unsigned int i = n; i < n + 8; ++i)
+            tm[i] = 0;
+          StagedWork::fit(W.d_ka, nd + n + 8);
+          StagedWork::fit(W.d_kb, nd + n + 8);
+          StagedWork::fit(TW.d_sa, nd + n + 8);
+          StagedWork::fit(TW.d_bb, nd + n + 8);
           unsigned int *__restrict okb = W.d_kb.data();
-          float *__restrict osa = TW.d_sa.data();
-          unsigned short *__restrict olo = TW.d_blo.data();
-          unsigned short *__restrict ohi = TW.d_bhi.data();
-          unsigned int m = nd;  // a local count: a captured one is kept in memory
-          for (unsigned int i = 0; i < n; ++i) {
-            oka[m] = a0 + i;
-            osa[m] = ts[i];
-            olo[m] = tb0[i];
-            ohi[m] = tb1[i];
-            m += tm[i];
-          }
+          const unsigned int *const k1_in[2] = {reinterpret_cast<const unsigned int *>(ts), tbb};
+          unsigned int *const k1_out[2] = {reinterpret_cast<unsigned int *>(TW.d_sa.data()), TW.d_bb.data()};
+          const unsigned int m = left_pack<2>(n, tm, a0, k1_in, W.d_ka.data(), k1_out, nd);
           std::fill(okb + nd, okb + m, kb);
           nd = m;
         }
@@ -309,10 +362,10 @@ namespace mkfit::seeding {
         const int nr = runs(gc, phi_bins(gc, pbph, w_bc), rr);
         for (int ir = 0; ir < nr; ++ir) {
           const unsigned int c0 = rr[2 * ir], n = rr[2 * ir + 1] - c0;
-          StagedWork::fit(TW.t_s, n);
-          StagedWork::fit(TW.t_t, n);
-          StagedWork::fit(TW.t_m, n);
-          StagedWork::fit(TW.t_b0, n);
+          StagedWork::fit(TW.t_s, n + 8);
+          StagedWork::fit(TW.t_t, n + 8);
+          StagedWork::fit(TW.t_m, n + 8);
+          StagedWork::fit(TW.t_bb, n + 8);
           const float *__restrict cr = gc.r_.data() + c0;
           const float *__restrict cp = gc.phi_.data() + c0;
           const float *__restrict ci = gc.invr_.data() + c0;
@@ -320,7 +373,7 @@ namespace mkfit::seeding {
           float *__restrict ts = TW.t_s.data();
           float *__restrict tt = TW.t_t.data();
           unsigned char *__restrict tm = TW.t_m.data();
-          unsigned short *__restrict tb = TW.t_b0.data();
+          unsigned int *__restrict tb = TW.t_bb.data();
 #pragma omp simd
           for (unsigned int i = 0; i < n; ++i) {
             const float rrc = cr[i];
@@ -331,25 +384,19 @@ namespace mkfit::seeding {
             const float sc = (cz[i] - zb) * idr;
             ts[i] = sc;
             tt[i] = qwin * idr + kSlopeSlack;
-            tb[i] = (unsigned short)(int)std::min(std::max((sc + kSMax) * (1.0f / kBw), 0.0f), float(kNb - 1));
+            tb[i] = (unsigned int)(int)std::min(std::max((sc + kSMax) * (1.0f / kBw), 0.0f), float(kNb - 1));
           }
-          StagedWork::fit(TW.l_sc, nl + n);
-          StagedWork::fit(TW.l_tc, nl + n);
-          StagedWork::fit(TW.l_kc, nl + n);
-          StagedWork::fit(TW.l_bk, nl + n);
-          float *__restrict osc = TW.l_sc.data();
-          float *__restrict otc = TW.l_tc.data();
-          unsigned int *__restrict okc = TW.l_kc.data();
-          unsigned short *__restrict obk = TW.l_bk.data();
-          unsigned int m = nl;
-          for (unsigned int i = 0; i < n; ++i) {
-            osc[m] = ts[i];
-            otc[m] = tt[i];
-            okc[m] = c0 + i;
-            obk[m] = tb[i];
-            m += tm[i];
-          }
-          nl = m;
+          for (unsigned int i = n; i < n + 8; ++i)
+            tm[i] = 0;
+          StagedWork::fit(TW.l_sc, nl + n + 8);
+          StagedWork::fit(TW.l_tc, nl + n + 8);
+          StagedWork::fit(TW.l_kc, nl + n + 8);
+          StagedWork::fit(TW.l_bk, nl + n + 8);
+          const unsigned int *const k3_in[3] = {reinterpret_cast<const unsigned int *>(ts),
+                                                reinterpret_cast<const unsigned int *>(tt), tb};
+          unsigned int *const k3_out[3] = {reinterpret_cast<unsigned int *>(TW.l_sc.data()),
+                                           reinterpret_cast<unsigned int *>(TW.l_tc.data()), TW.l_bk.data()};
+          nl = left_pack<3>(n, tm, c0, k3_in, TW.l_kc.data(), k3_out, nl);
         }
         cnt.c_touched += nl;
 
@@ -363,7 +410,7 @@ namespace mkfit::seeding {
         unsigned int *__restrict skc = TW.s_kc.data();
         unsigned int *__restrict bs = TW.bk_start.data();
         if (!TW.brute) {
-          const unsigned short *__restrict lbk = TW.l_bk.data();
+          const unsigned int *__restrict lbk = TW.l_bk.data();
           unsigned int *__restrict cur = TW.bk_cur.data();
           // histogram, and the prefix sum over the occupied buckets only
           for (unsigned int k = 0; k <= kNb; ++k)
@@ -431,7 +478,7 @@ namespace mkfit::seeding {
         StagedWork::fit(TW.h_j, hcap);
         StagedWork::fit(TW.h_m, hcap);
         const unsigned int nh =
-            (TW.brute ? k4_phase1<true> : k4_phase1<false>)(db, de, nl, bs, TW.d_blo.data(), TW.d_bhi.data(),
+            (TW.brute ? k4_phase1<true> : k4_phase1<false>)(db, de, nl, bs, TW.d_bb.data(),
                                                              TW.d_sa.data(), ssc, stc, TW.h_d.data(),
                                                              TW.h_j.data(), TW.h_m.data());
         // phase 2: the exact z test on each candidate
