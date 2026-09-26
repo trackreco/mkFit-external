@@ -62,7 +62,8 @@ namespace {
         "         [--phi-lin MODE MARG] [--qbin-c CM] [--qbin-d CM] [--layers A B C D]\n"
         "         [--staged | --fuse | --bmajor | --tile | --tile-brute] [--block N] [--lbin CM]\n"
         "         [--arith ref|fast|fastk] [--stats] [--margins REF] [--eps-cm E] [--eps-rad E] [--margins-print N]\n"
-        "         [--pt-min GEV] [--d0-max CM] [--qwin CM] [--qwin-d CM] [--phiwin-d RAD] [--truth OUT.txt] [--why-missed]\n");
+        "         [--pt-min GEV] [--d0-max CM] [--qwin CM] [--qwin-d CM] [--phiwin-d RAD] [--truth OUT.txt] [--why-missed]\n"
+        "         [--first-look]   the first look's windows and no phi_lin cut; put window options after it\n");
   }
 
   // The difference tool.  See SeedMargins.h.
@@ -325,7 +326,15 @@ int main(int argc, char *argv[]) {
       P.qwin_d = atof(next());
     else if (a == "--phiwin-d")
       P.phiwin_d = atof(next());
-    else if (a == "--phi-lin") {
+    else if (a == "--first-look") {
+      // the windows of the first-look deck and of every reference list made
+      // before 2026-09-26
+      P.qwin = 0.035f;
+      P.qwin_d = 0.025f;
+      P.phiwin_d = 0.002f;
+      P.phi_lin = 0;
+      P.phi_lin_marg = 0.003f;
+    } else if (a == "--phi-lin") {
       P.phi_lin = atoi(next());
       P.phi_lin_marg = atof(next());
     } else if (a == "--lbin")
@@ -439,8 +448,11 @@ int main(int argc, char *argv[]) {
       ST.event(ev, la, lb, lc, ld, P.pt_min, P.d0_max, quads);
     if (why_missed)
       WM.event<ArithFastK>(ev, la, lb, lc, ld, P, ga, gb, gc, gd, quads);
-    if (stats)
+    if (stats) {
+      if (P.phi_lin && iev == 0)
+        printf("[stats] note: --stats does not apply the phi_lin cut, so its triplet count is the one without it\n");
       seed_stats(P, ga, gb, gc, gd, SS);
+    }
     if (!margins_ref.empty()) {
       if (arith == 1)
         MS.event<ArithFast, ArithFast>(iev, P, ga, gb, gc, gd, quads);

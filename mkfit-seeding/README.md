@@ -50,6 +50,16 @@ difference tool, below. `--eps-cm` / `--eps-rad` set its epsilon (default
 1e-4 cm = 1 um and 1e-6 rad), `--margins-print N` how many differing quads it
 lists.
 
+**Defaults changed 2026-09-26 (maintainer): the doublet-slope phi cut is on
+(`phi_lin` 2, 2 mrad) and the three fixed windows are 1.4x wider (3rd-hit z
+0.049 cm, 4th-hit z 0.035 cm, 4th-hit phi 2.8 mrad).** pT > 0.9, 20 events:
+efficiency 0.972, fake 0.21 by the consistent rule, against 0.940 and 0.19
+before. **Every number and reference list in this file dated before that was
+taken with the old values; `seedfind --first-look` restores them** (put any
+window option after it). With `--first-look` the 50-event list is identical to
+the one before the change. `--stats` does not apply the phi cut, so with it on
+its triplet count no longer equals the finder's.
+
 ## Acceptance: the quad list, not the physics numbers
 
 The reference is the prototype in cover mode (`sg_cover(true)`,

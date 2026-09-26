@@ -24,12 +24,17 @@ namespace mkfit::seeding {
   struct SeedParams {
     float pt_min = 0.9f;       // GeV
     float d0_max = 0.1f;       // cm
-    float qwin = 0.035f;       // cm, 3rd-layer z tolerance
-    float qwin_d = 0.025f;     // cm, 4th-layer z tolerance
-    float phiwin_d = 0.002f;   // rad, 4th-layer phi tolerance
+    // Defaults since 2026-09-26: the three fixed windows 1.4x the first look's
+    // (0.035 cm, 0.025 cm, 2 mrad) and the doublet-slope phi cut at layer c
+    // (phi_lin 2, 2 mrad).  Against the first look, pT > 0.9, 20 events:
+    // efficiency 0.940 -> 0.972 at the same fake rate (0.19 -> 0.21), in less
+    // time.  `seedfind --first-look` restores the first look's values.
+    float qwin = 0.049f;       // cm, 3rd-layer z tolerance
+    float qwin_d = 0.035f;     // cm, 4th-layer z tolerance
+    float phiwin_d = 0.0028f;  // rad, 4th-layer phi tolerance
     float phi_margin = 0.002f; // rad
-    int phi_lin = 0;           // 0 off, 1 linear only, 2 linear AND generic band
-    float phi_lin_marg = 0.003f;
+    int phi_lin = 2;           // 0 off, 1 linear only, 2 linear AND generic band
+    float phi_lin_marg = 0.002f;  // rad
     float lbin = 0.25f;        // cm, z bucket of the per-b-hit list (b-major finder only)
   };
 
