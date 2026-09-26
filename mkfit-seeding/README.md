@@ -60,6 +60,23 @@ window option after it). With `--first-look` the 50-event list is identical to
 the one before the change. `--stats` does not apply the phi cut, so with it on
 its triplet count no longer equals the finder's.
 
+**Residuals of the fixed windows on true quads, `seedfind --residuals OUT.txt`
+(2026-09-26).** One row per findable track, found or not: truth pT, p and eta,
+the triplet circle's R (pT_est = 0.0114 R [GeV, cm]) and cot theta, and the
+|residual| of c_z, d_phi and d_z on the track's own hits. 100 events at pT_min
+0.5, 91 145 tracks. pT_est / pT has median 0.996 and 16-84 % range 0.951-1.044.
+- **q95 x pT_est is constant from 0.5 to ~2 GeV**: about 270 um GeV for c_z,
+  1.9 mrad GeV for d_phi and 255 um GeV for d_z. That is the multiple-scattering
+  1/pT scaling of the f x pT result.
+- **It grows with |cot theta|.** For d_phi it follows sin(theta)^-0.5 (x1.38 at
+  |cot| 1.6-2.5 against x1.40 predicted). For c_z and d_z it rises somewhat more
+  slowly than sin^-1.5 (x2.3-2.6 against x2.7).
+- **Above pT_est ~3 GeV the tails grow again. That is migration, not high-pT
+  tracks.** By TRUE pT, tracks above 3 GeV are found 99 %. By pT_est, 24 % of
+  the tracks above 10 GeV have pT_est / pT outside [0.8, 1.25]: a circle made
+  too straight by a kink or a bad hit. A window that shrinks with pT_est
+  therefore needs a constant floor.
+
 ## Acceptance: the quad list, not the physics numbers
 
 The reference is the prototype in cover mode (`sg_cover(true)`,

@@ -28,6 +28,7 @@
 #include "RecoTracker/MkFitCore/standalone/Event.h"
 #include "SeedTruth.h"
 #include "SeedMissed.h"
+#include "SeedResiduals.h"
 
 #include <algorithm>
 #include <chrono>
@@ -62,7 +63,7 @@ namespace {
         "         [--phi-lin MODE MARG] [--qbin-c CM] [--qbin-d CM] [--layers A B C D]\n"
         "         [--staged | --fuse | --bmajor | --tile | --tile-brute] [--block N] [--lbin CM]\n"
         "         [--arith ref|fast|fastk] [--stats] [--margins REF] [--eps-cm E] [--eps-rad E] [--margins-print N]\n"
-        "         [--pt-min GEV] [--d0-max CM] [--qwin CM] [--qwin-d CM] [--phiwin-d RAD] [--truth OUT.txt] [--why-missed]\n"
+        "         [--pt-min GEV] [--d0-max CM] [--qwin CM] [--qwin-d CM] [--phiwin-d RAD] [--truth OUT.txt] [--why-missed] [--residuals OUT.txt]\n"
         "         [--first-look]   the first look's windows and no phi_lin cut; put window options after it\n");
   }
 
@@ -252,6 +253,8 @@ int main(int argc, char *argv[]) {
   SeedTruth ST;
   bool why_missed = false;
   SeedMissed WM;
+  std::string residuals_out;
+  SeedResiduals SR;
   bool stats = false;
   SeedStats SS;
   unsigned int block = 64;
@@ -316,6 +319,8 @@ int main(int argc, char *argv[]) {
       truth_out = next();
     else if (a == "--why-missed")
       why_missed = true;
+    else if (a == "--residuals")
+      residuals_out = next();
     else if (a == "--pt-min")
       P.pt_min = atof(next());
     else if (a == "--d0-max")
@@ -448,6 +453,11 @@ int main(int argc, char *argv[]) {
       ST.event(ev, la, lb, lc, ld, P.pt_min, P.d0_max, quads);
     if (why_missed)
       WM.event<ArithFastK>(ev, la, lb, lc, ld, P, ga, gb, gc, gd, quads);
+    if (!residuals_out.empty()) {
+      if (iev == 0)
+        SR.open(residuals_out, P);
+      SR.event<ArithFastK>(iev, ev, la, lb, lc, ld, P, ga, gb, gc, gd, quads);
+    }
     if (stats) {
       if (P.phi_lin && iev == 0)
         printf("[stats] note: --stats does not apply the phi_lin cut, so its triplet count is the one without it\n");
@@ -497,6 +507,7 @@ int main(int argc, char *argv[]) {
     MS.report();
   if (why_missed)
     WM.report();
+  SR.close();
   if (!truth_out.empty()) {
     ST.report();
     if (!ST.write(truth_out, P.pt_min, P.d0_max)) {
