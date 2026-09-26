@@ -126,6 +126,51 @@ namespace mkfit::seeding {
       return m;
     }
 
+    // K3's counting sort of the c-list into slope buckets: bs[k] becomes the
+    // first slot of bucket k (bs[nb] = nl), and the three streams are scattered
+    // bucket by bucket.  A function of its own, with __restrict parameters, so
+    // the compiler may load all three sources before the scattered stores:
+    // inlined, it loaded l_tc only after the store to s_sc, whose address comes
+    // from the cursor, and the load waited on it.
+    __attribute__((noinline)) inline void bucket_sort(unsigned int nl,
+                                                      unsigned int nb,
+                                                      const unsigned int *__restrict lbk,
+                                                      const float *__restrict lsc,
+                                                      const float *__restrict ltc,
+                                                      const unsigned int *__restrict lkc,
+                                                      unsigned int *__restrict bs,
+                                                      unsigned int *__restrict cur,
+                                                      float *__restrict ssc,
+                                                      float *__restrict stc,
+                                                      unsigned int *__restrict skc) {
+      for (unsigned int k = 0; k <= nb; ++k)
+        bs[k] = 0;
+      unsigned int bmin = nb, bmax = 0;
+      for (unsigned int j = 0; j < nl; ++j) {
+        const unsigned int b = lbk[j];
+        ++bs[b + 1];
+        bmin = std::min(bmin, b);
+        bmax = std::max(bmax, b);
+      }
+      if (nl == 0)
+        bmin = bmax = 0;
+      // the prefix sum over the occupied buckets only
+      for (unsigned int k = bmin; k <= bmax; ++k) {
+        bs[k + 1] += bs[k];
+        cur[k] = bs[k];
+      }
+      for (unsigned int k = bmax + 2; k <= nb; ++k)
+        bs[k] = nl;
+      for (unsigned int j = 0; j < nl; ++j) {
+        const unsigned int pos = cur[lbk[j]]++;
+        const float sc = lsc[j], tc = ltc[j];
+        const unsigned int kc = lkc[j];
+        ssc[pos] = sc;
+        stc[pos] = tc;
+        skc[pos] = kc;
+      }
+    }
+
     // slope slack of the K4 pre-filter [dimensionless]: float rounding of s_a,
     // s_c and t_c is ~1e-6 at |s| ~ 20; the exact test decides after it
     constexpr float kSlopeSlack = 1e-4f;
@@ -410,32 +455,8 @@ namespace mkfit::seeding {
         unsigned int *__restrict skc = TW.s_kc.data();
         unsigned int *__restrict bs = TW.bk_start.data();
         if (!TW.brute) {
-          const unsigned int *__restrict lbk = TW.l_bk.data();
-          unsigned int *__restrict cur = TW.bk_cur.data();
-          // histogram, and the prefix sum over the occupied buckets only
-          for (unsigned int k = 0; k <= kNb; ++k)
-            bs[k] = 0;
-          unsigned int bmin = kNb, bmax = 0;
-          for (unsigned int j = 0; j < nl; ++j) {
-            const unsigned int b = lbk[j];
-            ++bs[b + 1];
-            bmin = std::min(bmin, b);
-            bmax = std::max(bmax, b);
-          }
-          if (nl == 0)
-            bmin = bmax = 0;
-          for (unsigned int k = bmin; k <= bmax; ++k) {
-            bs[k + 1] += bs[k];
-            cur[k] = bs[k];
-          }
-          for (unsigned int k = bmax + 2; k <= kNb; ++k)
-            bs[k] = nl;
-          for (unsigned int j = 0; j < nl; ++j) {
-            const unsigned int pos = cur[lbk[j]]++;
-            ssc[pos] = TW.l_sc[j];
-            stc[pos] = TW.l_tc[j];
-            skc[pos] = TW.l_kc[j];
-          }
+          bucket_sort(nl, kNb, TW.l_bk.data(), TW.l_sc.data(), TW.l_tc.data(), TW.l_kc.data(), bs, TW.bk_cur.data(),
+                      ssc, stc, skc);
         } else {
           std::copy(TW.l_sc.begin(), TW.l_sc.begin() + nl, ssc);
           std::copy(TW.l_tc.begin(), TW.l_tc.begin() + nl, stc);
