@@ -517,6 +517,32 @@ so none is a finder or fetch loss. By pT: 15.1 / 6.5 / 1.1 / 0.05 per event
 below 1.2 / 1.2-2 / 2-5 / above 5 GeV: multiple scattering at the lowest
 momenta, typically 1.2-1.4x outside the fixed windows.
 
+**The doublet-slope phi cut in the tile finder, 2026-09-26.** `--phi-lin 2 M`
+now works with `--tile`. It cuts the layer-c hit on its phi predicted linearly in
+r from the doublet's own phi slope, |phi_c - phi_b - s_phi (r_c - r_b)| <=
+D0_max |1/r_c - 1/r_b - (r_c - r_b)(1/r_b - 1/r_a)/(r_b - r_a)| + M, in addition
+to the generic band. It runs in K4's confirm step next to the exact c_z test, in
+the b-major finder's float expression: the 50-event lists of the two finders are
+identical at M = 2 and 3 mrad. Mode 1 (linear only) is not supported, because the
+c-list is fetched with the generic band.
+
+pT_min 0.9, 20 events, strict 4-of-4, fakes by the consistent rule:
+
+| M | efficiency | triplets / ev | quads / ev | fake | undecidable |
+|---|---|---|---|---|---|
+| off | 0.9395 | 48458 | 823.7 | 0.190 | 0.184 |
+| 1 mrad | 0.9386 | 16689 | 729.6 | 0.094 | 0.127 |
+| 2 mrad | 0.9389 | 17585 | 732.8 | 0.097 | 0.128 |
+| 3 mrad | 0.9389 | 18447 | 735.6 | 0.101 | 0.130 |
+| 5 mrad | 0.9390 | 20154 | 741.0 | 0.106 | 0.133 |
+| 10 mrad | 0.9393 | 24215 | 752.3 | 0.117 | 0.140 |
+
+Duplicates stay at 0.117 per found track. Timing on black, one session, fastest
+of 5 reps over 3 interleaved passes: the search went 17.93 -> 15.14 ms per event
+at 2 mrad. K4 costs 0.51 ms more, the confirm step now evaluating the phi cut on
+49000 candidates per event. The circle and fourth-layer stages save 3.29 ms,
+since 64 % fewer triplets reach them. The default stays off.
+
 **K4's 19 cycles per doublet, explained, 2026-09-26.** The disassembly of
 phase 1 (the per-doublet slope step) showed about 40 instructions per doublet,
 with the loop counter kept on the stack (`addl $1,-0xc0(%rbp)` every iteration)

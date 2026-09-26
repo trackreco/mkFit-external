@@ -29,7 +29,10 @@
 // finish_triplets<A>(), with the phi-only layer c as its layer c: they only
 // read per-hit arrays through the index, and orig_ maps back to the same hits.
 //
-// Default window only (phi_lin 0).
+// phi_lin 0 (the generic b-c band) and 2 (that band AND the layer-c phi
+// predicted linearly in r from the doublet's own phi slope).  Mode 2 applies
+// the linear cut in the confirm step, next to the exact c_z test, in the
+// b-major finder's float expression, so the two give the same triplets.
 
 #include "SeedFinderBMajor.h"
 
@@ -184,8 +187,8 @@ namespace mkfit::seeding {
                        TileWork &TW,
                        unsigned int block = 32) {
     using namespace detail;
-    if (P.phi_lin != 0) {
-      fprintf(stderr, "find_quads_tile: only phi_lin 0 is implemented\n");
+    if (P.phi_lin == 1) {
+      fprintf(stderr, "find_quads_tile: phi_lin mode 1 not supported (the c-list is the generic band)\n");
       return;
     }
     constexpr float kBfield = 3.8f;
@@ -194,6 +197,7 @@ namespace mkfit::seeding {
     const double ralo = ga.rlo_, rchi = gc.rhi_;
     const float inv_ralo = 1.0f / (float)ralo, inv_rchi = 1.0f / (float)rchi;
     const float qwin = P.qwin;
+    const float mlin = P.phi_lin_marg;
     auto wphi_w = [=](float r_in, float inv_in, float r_out, float inv_out) {
       return (r_out - r_in) * inv2R + d0m * (inv_in - inv_out) + marg;
     };
@@ -406,6 +410,15 @@ namespace mkfit::seeding {
           const double dz = gc.z_[kc] - zpred;
           if (std::abs(dz) > P.qwin)
             return;
+          if (P.phi_lin) {
+            // the layer-c phi, linear in r from the doublet's phi slope
+            const float rrc = gc.r_[kc], invc = gc.invr_[kc], inva = ga.invr_[ka];
+            const float kab = 1.0f / (rrb - rra);
+            const float slope = wrap_pi(pbph - ga.phi_[ka]) / (rrb - rra);
+            const float wl = d0m * std::abs(invc - invb - (rrc - rrb) * kab * (invb - inva)) + mlin;
+            if (std::abs(wrap_pi(gc.phi_[kc] - pbph - slope * (rrc - rrb))) > wl)
+              return;
+          }
           StagedWork::fit(W.t_d, nt + 1);
           StagedWork::fit(W.t_kc, nt + 1);
           W.t_d[nt] = d;
