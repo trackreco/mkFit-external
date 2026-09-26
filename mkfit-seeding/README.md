@@ -517,6 +517,32 @@ so none is a finder or fetch loss. By pT: 15.1 / 6.5 / 1.1 / 0.05 per event
 below 1.2 / 1.2-2 / 2-5 / above 5 GeV: multiple scattering at the lowest
 momenta, typically 1.2-1.4x outside the fixed windows.
 
+**Before and after on four machines, 2026-09-26.** db9ae41 (before) and 803b561
+(after, K4 in its own function, the left-pack, the sort function) built on each
+machine with the reference set's compiler and flags, 20 events, fastest of 5
+reps per event and of 3 interleaved passes, one session per machine. Search time
+per event [ms], before / after / after with `--phi-lin 2 0.002`:
+
+| machine, build | before | after | + phi cut |
+|---|---|---|---|
+| black, Zen+, AVX (GCC 15.2) | 19.59 | 16.09 | 13.22 |
+| uaf-4, Zen 2, AVX | 17.75 | 13.74 | 11.33 |
+| uaf-4, Zen 2, native | 15.85 | 11.95 | 10.24 |
+| uaf-9, Haswell, AVX | 25.38 | 20.64 | 17.71 |
+| uaf-9, Haswell, AVX2 | 22.20 | 17.56 | 15.55 |
+| phi3, Skylake-SP, AVX2 (GCC 14.3) | 14.98 | 12.14 | 10.25 |
+| phi3, Skylake-SP, AVX-512 | 14.91 | 11.86 | 10.02 |
+
+The 50-event quad lists of before and after are identical on every machine and
+build. "Before" reproduces the reference set within 2.2 %. Raw output in the
+working report's prep/machines-2026-09-26/, bench sources in
+/ceph/users/matevz/seeding-bench/seedsrc/.
+
+**Tried and not kept:** a two-pass fourth-layer fetch with `__builtin_prefetch`
+of the layer-d start-table entries. Stage 6 went 1.95 -> 2.47 ms per event on
+black, 2.02 without the prefetch. On black the whole run has 2.21 instructions
+per cycle and 2.2 % of level-1 loads missing, so the finder is not memory bound.
+
 **Vector left-pack in K1 and K3, 2026-09-26.** Both kernels compute their
 pass mask vectorised, then compacted the passing entries with a scalar loop of
 four or five stores per fetched hit, and Zen+ retires one store per cycle. The
