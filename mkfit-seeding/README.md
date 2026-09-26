@@ -517,6 +517,27 @@ so none is a finder or fetch loss. By pT: 15.1 / 6.5 / 1.1 / 0.05 per event
 below 1.2 / 1.2-2 / 2-5 / above 5 GeV: multiple scattering at the lowest
 momenta, typically 1.2-1.4x outside the fixed windows.
 
+**`--why-missed` extended, 2026-09-25.** The report now also gives the missed
+fraction per pT bin with its own findable denominator, and for the three
+fixed-window cuts the |residual| / window of the first failing cut (median,
+90th percentile, maximum, fractions beyond 2x and 5x) per pT bin. It ends with
+`effpt lo hi findable missed` lines in fine pT bins, 0.5-50 GeV, for plotting.
+pT_min 0.9, windows x1, 20 events: missed 9.5 / 4.5 / 1.7 / 0.8 % at pT
+0.9-1.2 / 1.2-2 / 2-5 / above 5 GeV (the last is 1 of 123 tracks). d_z failures
+sit at a median 1.21x the window with 0.6 % beyond 5x; d_phi at 1.25x with 4 %
+beyond 5x, up to 14x; c_z at 1.41x with 8 % beyond 5x, up to 30x. Tracks more
+than 5x outside are 0.9 per event, 0.24 % of findable.
+
+Scanning the three fixed windows by f = 1 / 1.4 / 1.8 / 2.5 at pT_min 0.5 and
+0.9 reproduced the efficiencies of the earlier window scan exactly. The missed
+fraction depends on f and pT only through f x pT: 12-13 % at f x pT ~ 1 GeV for
+every combination, ~2 % at 2 GeV, ~1.2 % at 3 GeV. That is the signature of
+multiple scattering against fixed windows. Above f x pT ~ 3.5 GeV it flattens
+at 0.3-0.9 %, about 0.7 %, and widening does not recover it. At pT_min 0.9 and
+f = 2.5 the 1.0 % left is 0.6 tracks per event failing the azimuth bands and
+3.3 per event outside the widened windows by a median 1.5-1.9x of them. The
+plots are slides 145-146 of the deck.
+
 Also fixed: the `K4 pre-filter hits` counter summed over repetitions. It is
 0.0573 per doublet (47859 per event against 47282 triplets, 98.8 % pure).
 
