@@ -108,6 +108,20 @@ kink, which the curvature estimate places at too high a pT. Not measured: the
 fake rate binned in pT_est, which would show where the fakes are. Raw logs in the
 working report's prep/res-2026-09-26/s-*.log.
 
+**Seed purity against pT_est, `seedfind --truth` (2026-09-26).** The truth
+report now bins the quads in pT_est, from the circle through a, b, c, and splits
+the consistent-rule fakes by whether a, b, c carry one label. 100 events, current
+defaults, fake among decidable: 0.13 at 0.7-0.9 GeV, 0.16-0.18 at 0.9-2, 0.23 at
+2-3, 0.37 at 3-5, **0.58 at 5-10 and 0.72 above 10 GeV**. Only 3.2 % of fakes are
+a true triplet with a wrong d (2.2 % with the true quad also in the list), so
+choosing the best d per triplet would remove about 2 % of fakes. The scaled
+4th-hit windows with fixed windows below 1.2 GeV cut the fakes above 5 GeV:
+f 2.0, floor 0.8 mrad / 100 um gives 0.35 / 0.46 at unchanged efficiency;
+f 1.5, floor 0.3 mrad / 50 um gives 0.12 / 0.10, but costs 2-4 points of
+efficiency above 1.2 GeV true pT (20 events: 0.961 / 0.963 / 0.951 at 1.2-2 /
+2-5 / >5 against 0.979 / 0.992 / 0.992). Logs in the working report's
+prep/res-2026-09-26/pe-*.log.
+
 ## Acceptance: the quad list, not the physics numbers
 
 The reference is the prototype in cover mode (`sg_cover(true)`,

@@ -59,7 +59,15 @@ namespace mkfit::seeding {
     // loose, 3-of-4 matching
     double found3[kNb] = {}, dup3_extra[kNb] = {}, q_true3[kNb] = {}, q_fake3[kNb] = {}, q_undec3[kNb] = {};
     double den3w[kNb] = {}, found3w[kNb] = {};
-    double q_fake4c[kNb] = {}, q_undec4c[kNb] = {};  // strict, with the consistent rule  // tracks with >= 3 of 4 layers, and found by a 3-of-4 quad
+    double q_fake4c[kNb] = {}, q_undec4c[kNb] = {};
+    // the same quads binned in pT_est, from the circle through a, b, c; and the
+    // consistent-rule fakes split by their triplet: a, b, c carrying one valid
+    // label (a true triplet with a wrong d), and of those the ones whose
+    // triplet also has a true quad in the list
+    static constexpr int kNpe = 11;
+    static constexpr double kPeEdge[kNpe + 1] = {0, 0.5, 0.7, 0.9, 1.0, 1.2, 1.5, 2.0, 3.0, 5.0, 10.0, 1e9};
+    double pe_all[kNpe] = {}, pe_true[kNpe] = {}, pe_fake4c[kNpe] = {}, pe_undec4c[kNpe] = {};
+    double pe_fake_trip[kNpe] = {}, pe_fake_trip_sib[kNpe] = {};  // strict, with the consistent rule  // tracks with >= 3 of 4 layers, and found by a 3-of-4 quad
 
     static int bin(double aeta) {
       const int b = (int)(aeta / kEtaMax * kNb);
@@ -109,8 +117,31 @@ namespace mkfit::seeding {
           miss_more += 1;
       }
 
+      // triplets (a, b, c) that carry a true quad
+      auto tkey = [](const Quad &q) {
+        return (unsigned long long)q[0] | (unsigned long long)q[1] << 21 | (unsigned long long)q[2] << 42;
+      };
+      std::unordered_map<unsigned long long, bool> trip_true;
+      for (const auto &q : quads) {
+        const int l0 = label((*L[0])[q[0]]);
+        const bool t = l0 >= 0 && l0 == label((*L[1])[q[1]]) && l0 == label((*L[2])[q[2]]) && l0 == label((*L[3])[q[3]]);
+        bool &v = trip_true[tkey(q)];
+        v = v || t;
+      }
       for (const auto &q : quads) {
         const Hit &ha = (*L[0])[q[0]], &hd = (*L[3])[q[3]];
+        int pb = -1;
+        {
+          const Hit &hb = (*L[1])[q[1]], &hc = (*L[2])[q[2]];
+          const double dx1 = hb.x() - ha.x(), dy1 = hb.y() - ha.y(), dx2 = hc.x() - hb.x(), dy2 = hc.y() - hb.y();
+          const double dx3 = hc.x() - ha.x(), dy3 = hc.y() - ha.y();
+          const double k = 2 * std::abs(dx1 * dy2 - dy1 * dx2) /
+                           (std::hypot(dx1, dy1) * std::hypot(dx2, dy2) * std::hypot(dx3, dy3));
+          const double pte = k > 0 ? 0.0114 / k : 1e9;
+          pb = 0;
+          while (pb < kNpe - 1 && pte >= kPeEdge[pb + 1])
+            ++pb;
+        }
         const double cot = (hd.z() - ha.z()) / (hd.r() - ha.r());
         const int b = bin(std::abs(std::asinh(cot)));
         const int l0 = label(ha), l1 = label((*L[1])[q[1]]), l2 = label((*L[2])[q[2]]), l3 = label(hd);
@@ -144,6 +175,20 @@ namespace mkfit::seeding {
               q_fake4c[b] += 1;
             else
               q_undec4c[b] += 1;
+          }
+          if (b >= 0) {
+            pe_all[pb] += 1;
+            if (tru)
+              pe_true[pb] += 1;
+            else if (maxc + nun < 4) {
+              pe_fake4c[pb] += 1;
+              if (l0 >= 0 && l0 == l1 && l0 == l2) {
+                pe_fake_trip[pb] += 1;
+                if (trip_true[tkey(q)])
+                  pe_fake_trip_sib[pb] += 1;
+              }
+            } else
+              pe_undec4c[pb] += 1;
           }
           if (b >= 0) {
             if (l3of4 >= 0)
@@ -244,6 +289,26 @@ namespace mkfit::seeding {
              miss_one[0] / ne, miss_one[1] / ne, miss_one[2] / ne, miss_one[3] / ne, miss_more / ne);
       printf("   truth: true quads of non-findable tracks %.1f /ev: below pT_min %.1f, produced beyond D0_max %.1f\n",
              (TL + TD) / ne, TL / ne, TD / ne);
+      printf("   truth by pT_est (circle through a, b, c), consistent rule; 'true trip' = a, b, c one label, d wrong;\n"
+             "   'sib' = that triplet also has a true quad in the list\n");
+      printf("   %-11s %8s %6s %6s %6s %8s | %9s %9s\n", "pT_est", "quads/ev", "true", "fake", "undec", "fake/dec",
+             "true trip", "+ sib");
+      double sa = 0, st = 0, sf = 0, su = 0, s3 = 0, ss = 0;
+      for (int i = 0; i < kNpe; ++i) {
+        sa += pe_all[i], st += pe_true[i], sf += pe_fake4c[i], su += pe_undec4c[i], s3 += pe_fake_trip[i],
+            ss += pe_fake_trip_sib[i];
+        if (pe_all[i] == 0)
+          continue;
+        char nm[32];
+        snprintf(nm, sizeof nm, "%g-%g", kPeEdge[i], kPeEdge[i + 1] > 1e8 ? 99 : kPeEdge[i + 1]);
+        const double a = pe_all[i];
+        printf("   %-11s %8.1f %6.3f %6.3f %6.3f %8.3f | %9.3f %9.3f\n", nm, a / ne, pe_true[i] / a, pe_fake4c[i] / a,
+               pe_undec4c[i] / a, pe_fake4c[i] / std::max(1.0, pe_true[i] + pe_fake4c[i]),
+               pe_fake_trip[i] / std::max(1.0, pe_fake4c[i]), pe_fake_trip_sib[i] / std::max(1.0, pe_fake4c[i]));
+      }
+      printf("   %-11s %8.1f %6.3f %6.3f %6.3f %8.3f | %9.3f %9.3f\n", "all", sa / ne, st / std::max(1.0, sa),
+             sf / std::max(1.0, sa), su / std::max(1.0, sa), sf / std::max(1.0, st + sf), s3 / std::max(1.0, sf),
+             ss / std::max(1.0, sf));
     }
   };
 
