@@ -55,7 +55,8 @@ namespace mkfit::seeding {
     std::vector<unsigned int> l_kc;
     std::vector<unsigned int> l_bk;
     std::vector<float> s_sc, s_tc;              // the list sorted into slope buckets, padded
-    std::vector<unsigned int> s_kc, bk_start, bk_cur;
+    std::vector<unsigned int> s_kc, bk_start;
+    std::vector<unsigned int> l_rk;             // K3: rank of each list entry within its bucket
     std::vector<unsigned int> h_d, h_j;         // K4 phase 1: (doublet, first list slot) of a nonzero mask
     std::vector<unsigned char> h_m;             //             and the mask
     bool brute = false;
@@ -128,10 +129,15 @@ namespace mkfit::seeding {
 
     // K3's counting sort of the c-list into slope buckets: bs[k] becomes the
     // first slot of bucket k (bs[nb] = nl), and the three streams are scattered
-    // bucket by bucket.  A function of its own, with __restrict parameters, so
-    // the compiler may load all three sources before the scattered stores:
-    // inlined, it loaded l_tc only after the store to s_sc, whose address comes
-    // from the cursor, and the load waited on it.
+    // bucket by bucket, stable within a bucket.  The histogram pass records each
+    // entry's rank within its bucket, so the scatter computes its slot as
+    // bs[bucket] + rank from loads alone.  With a running cursor per bucket
+    // instead, the samples sat on the cursor load and store, and separate
+    // counter sets per entry did not help: most likely the core held each
+    // cursor load until the older scattered stores had their addresses, so
+    // the scatter ran as one chain.  With the rank K3 fell 4.45 -> 3.94 ms/ev.
+    // A function of its own, with __restrict parameters, so the compiler may
+    // load all three sources before the scattered stores.
     __attribute__((noinline)) inline void bucket_sort(unsigned int nl,
                                                       unsigned int nb,
                                                       const unsigned int *__restrict lbk,
@@ -139,7 +145,7 @@ namespace mkfit::seeding {
                                                       const float *__restrict ltc,
                                                       const unsigned int *__restrict lkc,
                                                       unsigned int *__restrict bs,
-                                                      unsigned int *__restrict cur,
+                                                      unsigned int *__restrict rk,
                                                       float *__restrict ssc,
                                                       float *__restrict stc,
                                                       unsigned int *__restrict skc) {
@@ -148,21 +154,20 @@ namespace mkfit::seeding {
       unsigned int bmin = nb, bmax = 0;
       for (unsigned int j = 0; j < nl; ++j) {
         const unsigned int b = lbk[j];
-        ++bs[b + 1];
+        rk[j] = bs[b + 1]++;
         bmin = std::min(bmin, b);
         bmax = std::max(bmax, b);
       }
       if (nl == 0)
         bmin = bmax = 0;
       // the prefix sum over the occupied buckets only
-      for (unsigned int k = bmin; k <= bmax; ++k) {
+      for (unsigned int k = bmin; k <= bmax; ++k)
         bs[k + 1] += bs[k];
-        cur[k] = bs[k];
-      }
       for (unsigned int k = bmax + 2; k <= nb; ++k)
         bs[k] = nl;
+      // the scatter reads bs and rk and never writes them
       for (unsigned int j = 0; j < nl; ++j) {
-        const unsigned int pos = cur[lbk[j]]++;
+        const unsigned int pos = bs[lbk[j]] + rk[j];
         const float sc = lsc[j], tc = ltc[j];
         const unsigned int kc = lkc[j];
         ssc[pos] = sc;
@@ -320,7 +325,6 @@ namespace mkfit::seeding {
     constexpr unsigned int kNb = (unsigned int)(2 * kSMax / kBw);
     const float t_max = qwin / std::max(0.1f, (float)(gc.rlo_ - gb.rhi_)) + kSlopeSlack;
     TW.bk_start.resize(kNb + 1);
-    TW.bk_cur.resize(kNb);
 
     // [begin, end) runs of a phi window over all q: one, or two at the wrap
     auto runs = [](const auto &L, auto p, unsigned int r[4]) -> int {
@@ -455,7 +459,8 @@ namespace mkfit::seeding {
         unsigned int *__restrict skc = TW.s_kc.data();
         unsigned int *__restrict bs = TW.bk_start.data();
         if (!TW.brute) {
-          bucket_sort(nl, kNb, TW.l_bk.data(), TW.l_sc.data(), TW.l_tc.data(), TW.l_kc.data(), bs, TW.bk_cur.data(),
+          StagedWork::fit(TW.l_rk, nl + 8);
+          bucket_sort(nl, kNb, TW.l_bk.data(), TW.l_sc.data(), TW.l_tc.data(), TW.l_kc.data(), bs, TW.l_rk.data(),
                       ssc, stc, skc);
         } else {
           std::copy(TW.l_sc.begin(), TW.l_sc.begin() + nl, ssc);

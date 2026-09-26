@@ -553,6 +553,28 @@ stream 32 bits wide, a doublet's two 16-bit bucket indices are one word,
 with the phi cut and in brute mode. Black, one session, fastest of 3 passes: K1
 4.31 -> 2.91 ms per event, K3 4.91 -> 4.40, search 18.11 -> 16.06.
 
+**K3's counting sort with ranks, 2026-09-26.** Per event the sort sees 7325
+b-hits with lists of 68 entries on average (all between 32 and 127) spread over
+19 of the 64 slope buckets, and it took ~350 ns per list. It is already a radix
+sort with one 6-bit digit, so more digits would only add passes. In the profile
+the samples sat on the scatter's running cursor per bucket. The histogram pass
+now records each entry's rank within its bucket, and the scatter computes its
+slot as bucket start + rank, from loads alone. Black, one session, fastest of
+3 passes, load 2.4-2.5: K3 4.45 -> 3.94 ms per event, search 16.15 -> 15.56.
+The 50-event list is identical, in the same order, by default and with the phi
+cut.
+
+Tried and not kept, same session and machine:
+- Two, four or eight counter sets, entry j using set j mod S, to break the
+  chain of increments on one counter: no gain with cursors (K3 4.33-4.70
+  against 4.44), and a loss with ranks (4.23 / 4.30 against 3.93). The time is
+  not the chained increment itself. Most likely the core held each cursor load
+  until the older scattered stores had their addresses.
+- Dropping the per-entry slope tolerance t_c, i.e. one stream less in K3 and
+  the sort, with K4's pre-filter using the layer-wide t_max instead: the list is
+  identical, K3 falls 0.25-0.4 ms, but 32 % more pre-filter hits (64330 against
+  48870 per event) reach the exact test and K4 rises 0.35-0.8 ms.
+
 **The doublet-slope phi cut in the tile finder, 2026-09-26.** `--phi-lin 2 M`
 now works with `--tile`. It cuts the layer-c hit on its phi predicted linearly in
 r from the doublet's own phi slope, |phi_c - phi_b - s_phi (r_c - r_b)| <=
