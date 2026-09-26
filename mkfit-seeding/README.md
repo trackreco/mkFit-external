@@ -517,6 +517,36 @@ so none is a finder or fetch loss. By pT: 15.1 / 6.5 / 1.1 / 0.05 per event
 below 1.2 / 1.2-2 / 2-5 / above 5 GeV: multiple scattering at the lowest
 momenta, typically 1.2-1.4x outside the fixed windows.
 
+**K4's 19 cycles per doublet, explained, 2026-09-26.** The disassembly of
+phase 1 (the per-doublet slope step) showed about 40 instructions per doublet,
+with the loop counter kept on the stack (`addl $1,-0xc0(%rbp)` every iteration)
+and the array pointers reloaded from `TileWork` every iteration. The byte store
+to `h_m` may alias `TileWork`'s members, and the in-loop `StagedWork::fit` calls
+of the long-range branch added register pressure. Phase 1 is now
+`detail::k4_phase1<Brute>`, with every array a `__restrict` argument, the output
+arrays sized once per b-hit, and the long-range steps in a cold helper. In
+bucket mode the first step needs no lane mask, because the slots past the range
+end hold higher slope buckets and cannot pass. The entries are stored only when
+the mask is nonzero. Black, 20 events, fastest of 5 reps, 3 interleaved passes,
+same session, K4 stage / whole search in ms per event:
+
+| phase 1 form | K4 | search |
+|---|---|---|
+| before (inlined, spilled, stores every doublet) | 5.47 | 19.70 |
+| own function, registers only, stores every doublet | 4.30 | 18.51 |
+| ... and no lane mask (26 instructions per doublet) | 4.23 | 18.50 |
+| **... and stores only for a nonzero mask** | **3.64** | **17.90** |
+| diagnostic: the test kept, nothing stored (wrong results) | 2.32 | |
+
+Removing 14 instructions bought ~1 %, so the loop was not instruction bound.
+Storing at slot `nh` for every doublet made each store address wait for the
+previous doublet's mask, the end of the longest chain in the loop. That cost
+~0.6 ms, and the branch on the mask is cheaper. The quad list is identical on
+50 events (41226 quads), in bucket and brute mode. At 3.2 GHz the phase-1 step
+went from ~19 to ~12 cycles per doublet; the test alone is ~7 (two dependent
+index loads, then two unaligned 8-wide loads). The reference timing set
+predates this and was not re-measured.
+
 **`--why-missed` extended, 2026-09-25.** The report now also gives the missed
 fraction per pT bin with its own findable denominator, and for the three
 fixed-window cuts the |residual| / window of the first failing cut (median,

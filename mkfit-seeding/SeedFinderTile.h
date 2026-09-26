@@ -61,6 +61,115 @@ namespace mkfit::seeding {
     // slope slack of the K4 pre-filter [dimensionless]: float rounding of s_a,
     // s_c and t_c is ~1e-6 at |s| ~ 20; the exact test decides after it
     constexpr float kSlopeSlack = 1e-4f;
+
+    // One masked 8-wide slope step over list slots [j, j + 8): bit k is set if
+    // |sa - s_c| <= t_c for slot j + k; lanes at or past `end` are cleared.
+    inline unsigned int k4_step(const float *__restrict ssc,
+                                const float *__restrict stc,
+                                float sa,
+                                unsigned int j,
+                                unsigned int end) {
+      const unsigned int left = std::min(end - j, 8u);
+#if defined(__AVX__)
+      const __m256 vabs = _mm256_castsi256_ps(_mm256_set1_epi32(0x7fffffff));
+      const __m256 diff = _mm256_and_ps(_mm256_sub_ps(_mm256_set1_ps(sa), _mm256_loadu_ps(ssc + j)), vabs);
+      const unsigned int m = _mm256_movemask_ps(_mm256_cmp_ps(diff, _mm256_loadu_ps(stc + j), _CMP_LE_OQ));
+#else
+      unsigned int m = 0;
+      for (unsigned int k = 0; k < 8; ++k)
+        m |= (unsigned int)(std::abs(sa - ssc[j + k]) <= stc[j + k]) << k;
+#endif
+      return m & (0xffu >> (8 - left));
+    }
+
+    // The same step without the lane mask, for the first step of a doublet in
+    // bucket mode.  The mask is not needed there: the slots past the range
+    // end hold higher slope buckets, whose slopes exceed sa + t_max >= sa + t_c
+    // (the bucket map is monotone), and past the list end come 8 padding
+    // entries that never pass.  So those lanes are false anyway.  The slope
+    // is broadcast straight from memory.
+    inline unsigned int k4_step_unmasked(const float *__restrict ssc,
+                                         const float *__restrict stc,
+                                         const float *sa,
+                                         unsigned int j) {
+#if defined(__AVX__)
+      const __m256 vabs = _mm256_castsi256_ps(_mm256_set1_epi32(0x7fffffff));
+      const __m256 diff = _mm256_and_ps(_mm256_sub_ps(_mm256_broadcast_ss(sa), _mm256_loadu_ps(ssc + j)), vabs);
+      return _mm256_movemask_ps(_mm256_cmp_ps(diff, _mm256_loadu_ps(stc + j), _CMP_LE_OQ));
+#else
+      unsigned int m = 0;
+      for (unsigned int k = 0; k < 8; ++k)
+        m |= (unsigned int)(std::abs(*sa - ssc[j + k]) <= stc[j + k]) << k;
+      return m;
+#endif
+    }
+
+    // The steps after the first, for a range longer than 8 slots.  Rare in
+    // bucket mode, so it lives out of line and its values do not compete for
+    // registers with the hot loop.
+    __attribute__((noinline, cold)) inline unsigned int k4_more_steps(const float *__restrict ssc,
+                                                                      const float *__restrict stc,
+                                                                      float sa,
+                                                                      unsigned int d,
+                                                                      unsigned int j,
+                                                                      unsigned int i1,
+                                                                      unsigned int *__restrict hd,
+                                                                      unsigned int *__restrict hj,
+                                                                      unsigned char *__restrict hm,
+                                                                      unsigned int nh) {
+      for (; j < i1; j += 8) {
+        const unsigned int m = k4_step(ssc, stc, sa, j, i1);
+        hd[nh] = d;
+        hj[nh] = j;
+        hm[nh] = (unsigned char)m;
+        nh += m != 0;
+      }
+      return nh;
+    }
+
+    // K4 phase 1 over the doublets [db, de) of one b-hit: per doublet, one
+    // masked 8-wide slope test over its list range, [bs[blo], bs[bhi]) with
+    // slope buckets or the whole list [0, nl) for the brute tile.  Records
+    // (doublet, first slot, mask) where the mask is nonzero and returns how
+    // many; hd/hj/hm must hold (de - db) * ((nl + 7) / 8 + 1) entries.
+    //
+    // A function of its own, with every array a __restrict argument and every
+    // counter a local.  Inlined into find_quads_tile, the byte store to hm may
+    // alias TileWork's members, so GCC reloaded every array pointer from
+    // TileWork per doublet and kept the loop counter on the stack.
+    template <bool Brute>
+    __attribute__((noinline)) unsigned int k4_phase1(unsigned int db,
+                                                     unsigned int de,
+                                                     unsigned int nl,
+                                                     const unsigned int *__restrict bs,
+                                                     const unsigned short *__restrict blo,
+                                                     const unsigned short *__restrict bhi,
+                                                     const float *__restrict dsa,
+                                                     const float *__restrict ssc,
+                                                     const float *__restrict stc,
+                                                     unsigned int *__restrict hd,
+                                                     unsigned int *__restrict hj,
+                                                     unsigned char *__restrict hm) {
+      unsigned int nh = 0;
+      for (unsigned int d = db; d < de; ++d) {
+        const unsigned int i0 = Brute ? 0 : bs[blo[d]];
+        const unsigned int i1 = Brute ? nl : bs[bhi[d]];
+        const float sa = dsa[d];
+        const unsigned int m = Brute ? k4_step(ssc, stc, sa, i0, i1) : k4_step_unmasked(ssc, stc, dsa + d, i0);
+        // Stored only where the mask is nonzero, 5.9 % of doublets.  Storing
+        // always, at slot nh, made every store address wait for the previous
+        // doublet's mask, at the end of the longest chain in the loop.
+        if (m) {
+          hd[nh] = d;
+          hj[nh] = i0;
+          hm[nh] = (unsigned char)m;
+          ++nh;
+        }
+        if (__builtin_expect(i0 + 8 < i1, 0))
+          nh = k4_more_steps(ssc, stc, sa, d, i0 + 8, i1, hd, hj, hm, nh);
+      }
+      return nh;
+    }
   }  // namespace detail
 
   template <class A = ArithFastK, typename LA, typename LB, typename LC, typename LD>
@@ -303,63 +412,15 @@ namespace mkfit::seeding {
           W.t_kc[nt] = kc;
           ++nt;
         };
-        // one 8-wide step over [j, j + 8): the mask of candidates, lanes at or
-        // past `end` cleared.  Branch-free.
-        auto step_mask = [&](float sa, unsigned int j, unsigned int end) -> unsigned int {
-          const unsigned int left = std::min(end - j, 8u);
-#if defined(__AVX__)
-          const __m256 vabs = _mm256_castsi256_ps(_mm256_set1_epi32(0x7fffffff));
-          const __m256 diff = _mm256_and_ps(_mm256_sub_ps(_mm256_set1_ps(sa), _mm256_loadu_ps(ssc + j)), vabs);
-          const unsigned int m = _mm256_movemask_ps(_mm256_cmp_ps(diff, _mm256_loadu_ps(stc + j), _CMP_LE_OQ));
-#else
-          unsigned int m = 0;
-          for (unsigned int k = 0; k < 8; ++k)
-            m |= (unsigned int)(std::abs(sa - ssc[j + k]) <= stc[j + k]) << k;
-#endif
-          return m & (0xffu >> (8 - left));
-        };
         // phase 1: per doublet, record (d, j, mask) only where the mask is nonzero
-        unsigned int nh = 0;
-        StagedWork::fit(TW.h_d, de - db);
-        StagedWork::fit(TW.h_j, de - db);
-        StagedWork::fit(TW.h_m, de - db);
-        {
-          unsigned int *__restrict hd = TW.h_d.data();
-          unsigned int *__restrict hj = TW.h_j.data();
-          unsigned char *__restrict hm = TW.h_m.data();
-          for (unsigned int d = db; d < de; ++d) {
-            unsigned int i0, i1;
-            if (!TW.brute) {
-              i0 = bs[TW.d_blo[d]];
-              i1 = bs[TW.d_bhi[d]];
-            } else {
-              i0 = 0;
-              i1 = nl;
-            }
-            const float sa = TW.d_sa[d];
-            const unsigned int m = step_mask(sa, i0, i1);
-            hd[nh] = d;
-            hj[nh] = i0;
-            hm[nh] = m;
-            nh += m != 0;
-            // rare in bucket mode: a range longer than one step
-            for (unsigned int j = i0 + 8; j < i1; j += 8) {
-              const unsigned int mm = step_mask(sa, j, i1);
-              if (mm) {
-                StagedWork::fit(TW.h_d, nh + 1 + (de - d));
-                StagedWork::fit(TW.h_j, nh + 1 + (de - d));
-                StagedWork::fit(TW.h_m, nh + 1 + (de - d));
-                hd = TW.h_d.data();
-                hj = TW.h_j.data();
-                hm = TW.h_m.data();
-                hd[nh] = d;
-                hj[nh] = j;
-                hm[nh] = mm;
-                ++nh;
-              }
-            }
-          }
-        }
+        const unsigned int hcap = (de - db) * ((nl + 7) / 8 + 1);
+        StagedWork::fit(TW.h_d, hcap);
+        StagedWork::fit(TW.h_j, hcap);
+        StagedWork::fit(TW.h_m, hcap);
+        const unsigned int nh =
+            (TW.brute ? k4_phase1<true> : k4_phase1<false>)(db, de, nl, bs, TW.d_blo.data(), TW.d_bhi.data(),
+                                                             TW.d_sa.data(), ssc, stc, TW.h_d.data(),
+                                                             TW.h_j.data(), TW.h_m.data());
         // phase 2: the exact z test on each candidate
         for (unsigned int h = 0; h < nh; ++h) {
           unsigned int m = TW.h_m[h];
