@@ -543,6 +543,14 @@ at 2 mrad. K4 costs 0.51 ms more, the confirm step now evaluating the phi cut on
 49000 candidates per event. The circle and fourth-layer stages save 3.29 ms,
 since 64 % fewer triplets reach them. The default stays off.
 
+Spent on wider windows (all three fixed windows x f), the saving buys
+efficiency. At pT_min 0.9 with the cut at 2 mrad: f = 1.4 gives efficiency 0.972
+at fake rate 0.21 in 16.5 ms per event, against 0.940 / 0.19 / 17.9 today;
+f = 1.8 gives 0.981 / 0.34 / 18.0. Without the cut f = 1.4 costs 20.6 ms at
+fake rate 0.37. At pT_min 0.5 with windows x 1.8: efficiency 0.9449 -> 0.9430,
+fake rate 0.594 -> 0.318, triplets per event 195703 -> 50158, search 43.9 ->
+29.0 ms per event.
+
 **K4's 19 cycles per doublet, explained, 2026-09-26.** The disassembly of
 phase 1 (the per-doublet slope step) showed about 40 instructions per doublet,
 with the loop counter kept on the stack (`addl $1,-0xc0(%rbp)` every iteration)
