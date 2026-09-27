@@ -1570,7 +1570,8 @@ against the reference list, and for the cleaning the union truth row on events
 | 87ec7f0 | stage d prediction as lanes | 339.8 | 297.6 |
 | d7e144a | stage c and d fetch ranges in float | 333.4 | -- |
 | 61837b8 | stage c one hit at a time, q first | 318.5 | -- |
-| 29ca69d | layer extents over the hits, 2048 phi bins | **295.5** | **258.6** |
+| 29ca69d | layer extents over the hits, 2048 phi bins | 295.5 | 258.6 |
+| f3440c2 | stage d q pre-filter, exact prediction for its survivors | **286.5** | **253.8** |
 
 - **A cot range per start pair.** At set-up, `scan_starts()` scans r-z lines
   over the beam region with the flush's and `route()`'s own crossing tests. Each
@@ -1596,6 +1597,15 @@ against the reference list, and for the cleaning the union truth row on events
   2048 bins (3.07 mrad) take 20 ms off stages c and d. Physics, events 40-99:
   1431.5 -> 1433.9 found tracks per event and fake 0.343 -> 0.346 with the cuts
   off; 1417.3 -> 1419.7 and 0.083 -> 0.084 with them on.
+- **Stage d q pre-filter.** Stage d spent ~490 cycles per triplet in the fetch
+  and mask for ~4.3 hits. It now also predicts q at the target's middle qbar and
+  takes q as a quadratic in qbar through the three predictions, which K2c
+  measured within 2 % of the window. A hit off it by more than 1.1 x the window
+  + 20 um is skipped; the others get the exact prediction and cut, one at a
+  time. The truth rows are unchanged.
+- **The cleaning** (`seedsurf.cc`, outside the chain's time) computed each
+  quad's tier inside the sort comparator: 6 % of the job's branch mispredicts.
+  Computed once per quad, the job takes 1.0 s less per 60 events (c102f12).
 - **The reference list** is regenerated with the double chain as
   `ref-quads-2.txt` in the working report (`prep/chain-kernels-2026-09-27/`),
   1518676 quads. The double chain at 256 and at 2048 bins differs there by 1
@@ -1608,11 +1618,16 @@ Tried and not kept:
   loop, so their loads overlap: 5 ms per event slower.
 - The fake-cut tests inside the vector loops: +30 ms per event with the cuts
   off. They run on the survivors of the box cuts.
+- Stage c's q test over a run without a branch, with the passing hits compacted
+  first: 17 ms per event slower than the plain q-first loop.
 
 Where the time is now (cuts off): start doublets ~116 ms, of which the flush
 (holes, states, routing, queueing of 2.6 M lanes per event, ~63 cycles each) is
-~41 %; stage c ~120 ms over 1.43 M candidates; stage d ~60 ms over 216 k
-triplets. Each is now roughly proportional to the number of doublets the
-configuration makes. Next: b-major stage c (share a c-hit list per b hit, as
-the barrel finder's K3/K4). The chain's crossing envelopes (`SurfOwnership`)
+~41 %; stage c ~120 ms over 1.43 M candidates (~290 cycles each); stage d ~51 ms
+over 216 k triplets. Each is roughly proportional to the number of doublets the
+configuration makes. Next: b-major stage c, a c-hit list per b hit sorted by
+slope, as the barrel finder's K3/K4. Measured for it: 14.6 stage c candidates
+per (b hit, target) on average, but the queues are ordered by start pair and a
+hit, not by b. So it needs either a b-major stage b or a sort of the stage c
+queues, ~1.4 M candidates per event. The chain's crossing envelopes (`SurfOwnership`)
 also take the barrel extents from `LayerInfo`, and are not changed yet.
