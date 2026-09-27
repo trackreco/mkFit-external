@@ -61,6 +61,13 @@ namespace mkfit::seeding {
       }
     }
 
+    // surf::phi_bins and surf::q_bins in float, for the per-candidate fetches
+    inline auto phi_bins(const SurfLayer &S, float c, float w) {
+      w = std::min(w, 0.9f * kPi);
+      return S.sl.phi_range(c - w, c + w);
+    }
+    inline auto q_bins(const SurfLayer &S, float lo, float hi) { return S.sl.q_range(lo - 1e-4f, hi + 1e-4f); }
+
     // The helix at hit c, from the circle through a, b, c (as surf::Helix, in float).
     struct HelixF {
       float k = 0, tx = 0, ty = 0, cx = 0, cy = 0, cz = 0, cot = 0;
@@ -869,7 +876,7 @@ namespace mkfit::seeding {
                 const float ufar = far0 ? u0 : u1, tfar = far0 ? t0_ : t1_;
                 const float rfar = std::max(0.5f, disc ? qa + (qb - qa) * tfar : ufar);
                 const float wcphi = d0_max * std::abs(1 / rfar - (ia + (ib - ia) * tfar)) + w.phi_c;
-                const auto qc = surf::q_bins(*T, std::min(cq0, cq1) - w.q_c, std::max(cq0, cq1) + w.q_c);
+                const auto qc = surfb::q_bins(*T, std::min(cq0, cq1) - w.q_c, std::max(cq0, cq1) + w.q_c);
                 const float dcp = wrap(cp1 - cp0), cmid = cp0 + 0.5f * dcp, chalf = 0.5f * std::abs(dcp);
                 const float qcw = w.q_c, pcw = w.phi_c, dqab = qb - qa, dib = ib - ia, iqcw = 1.0f / qcw;
                 // the shape band of hit c, on the a-b line (barrel pixels only)
@@ -878,7 +885,7 @@ namespace mkfit::seeding {
                   const int sb = shT->bin(std::abs(dqab * idu));
                   slo = shT->lo[sb], shi = shT->hi[sb];
                 }
-                T->sl.for_each_run(surf::phi_bins(*T, cmid, chalf + wcphi + 1e-6f), qc, [&](unsigned int b, unsigned int e) {
+                T->sl.for_each_run(surfb::phi_bins(*T, cmid, chalf + wcphi + 1e-6f), qc, [&](unsigned int b, unsigned int e) {
                   for (unsigned int i0 = b; i0 < e; i0 += 64) {
                     const unsigned int nk = std::min(64u, e - i0);
                     unsigned char msk[64];
@@ -1016,7 +1023,7 @@ namespace mkfit::seeding {
                 const float isr = w.sref > 0 ? 1.0f / w.sref : 0.0f;
                 const float smax = std::max(s0, s1), lmax = isr > 0 && smax > 0 ? smax * isr : 1.0f;
                 const float wpd = aphi + lmax * bphi * ipt, wqd = aq + lmax * bq * ipt;
-                const auto qd = surf::q_bins(*T, std::min(q0, q1) - wqd, std::max(q0, q1) + wqd);
+                const auto qd = surfb::q_bins(*T, std::min(q0, q1) - wqd, std::max(q0, q1) + wqd);
                 const float dpp = wrap(p1 - p0), dmid = p0 + 0.5f * dpp, dhalf = 0.5f * std::abs(dpp);
                 const float bqi = bq * ipt, bpi = bphi * ipt;
                 const float sw = std::sin(wpd), sw2 = sw * sw;
@@ -1027,7 +1034,7 @@ namespace mkfit::seeding {
                   const int sb = shT->bin(std::abs(c.cot));
                   slo = shT->lo[sb], shi = shT->hi[sb];
                 }
-                T->sl.for_each_run(surf::phi_bins(*T, dmid, dhalf + wpd + 1e-6f), qd, [&](unsigned int b, unsigned int e) {
+                T->sl.for_each_run(surfb::phi_bins(*T, dmid, dhalf + wpd + 1e-6f), qd, [&](unsigned int b, unsigned int e) {
                   for (unsigned int i0 = b; i0 < e; i0 += 64) {
                     const unsigned int nk = std::min(64u, e - i0);
                     unsigned char msk[64];
