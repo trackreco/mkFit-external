@@ -396,7 +396,7 @@ namespace mkfit::seeding {
       return valid * cls(e, e.plo * ic + zr, e.phi * ic + zr);
     }
     // The cot range of the lines each start pair can use: a scan of lines over the beam region (z0 in
-    // steps of zv / 100, eta in steps of 0.001 up to 5) with the tests the flush and route() apply to a
+    // steps of zv / 50, eta in steps of 0.002 up to 5) with the tests the flush and route() apply to a
     // doublet -- a and b crossed, the holes before b, lead-only, and a pixel position after b crossed.
     // The interval over the accepted lines is widened by 0.02 in eta; a range reaching eta 0 or 5 is
     // open there. A start pair no line can use gets an empty range and is skipped.
@@ -406,8 +406,8 @@ namespace mkfit::seeding {
       std::vector<float> elo(ns, 1e30f), ehi(ns, -1e30f);
       std::vector<int> st(n);
       const float zlo = c.P.bs_z - c.P.zv, zhi = c.P.bs_z + c.P.zv;
-      constexpr int kNz = 200, kNe = 5000;
-      constexpr float kDe = 0.001f, kWiden = 0.02f;
+      constexpr int kNz = 100, kNe = 2500;
+      constexpr float kDe = 0.002f, kWiden = 0.02f;
       for (int iz = 0; iz <= kNz; ++iz) {
         const float z0 = zlo + (zhi - zlo) * iz / kNz;
         for (int ie = 0; ie <= kNe; ++ie) {
