@@ -1064,26 +1064,60 @@ fall in the transition, 1273 -> 917 per event at |eta| 1.0-1.2 and 1585 -> 1159
 at 1.2-1.4, and are unchanged above 1.8. Any window table for the chain should
 be fitted on the inner = 0 rows.
 
-**No phi dependence in the residuals, at 15 degrees.** `--resid` rows now carry
-the azimuth of the d hit and of the track. `prep/ms-phi.py` divides each residual
-by its pattern's `a + b / pT` and takes the q95 of that ratio in 24 bins of the d
-hit's azimuth, for pT < 1.5 GeV where scattering dominates. For each pattern the
-max/min over the 24 bins was compared with the same number after shuffling the
-azimuths (200 shuffles). Every pattern lies inside the shuffled spread: e.g.
-B1 B2 B3 B4 1.20 against a shuffled median of 1.21 (q95 1.30), B1 B2 F1 + OT1-P
-1.48 / 1.60 (phi / z) against 1.41 / 1.47 (q95 1.57 / 1.63). So any azimuthal
-modulation of the 95 % containment is below about 10-15 % at this binning.
-This does not exclude structure finer than 15 degrees (ladders, modules,
-service pipes), which bins this wide average away, and above 3 GeV there are
-too few tracks per bin to say anything.
+**The material scan (geo-stuff-9d, `/baz/matevz/root-dev/geo-stuff/seedscan.txt`).**
+Straight lines from (0, 0, z0), z0 uniform in +-5 cm, phi uniform, 400 per |eta|
+point. Each line is integrated from the third layer C (its envelope included) to
+the OT1-P sensor mid-plane, or to ITLayer4 as the reference. M0 is the
+path-integrated x/X0 and M2 = integral of (s_d - s)^2 dX. The scan was
+cross-checked line by line against geo-stuff-7a's independent implementation.
+At |eta| 2.0, TFPX1 -> OT1-P crosses TFPX2-4 and their service sheets unused, and
+those carry 0.10 of an M0 of 0.31.
 
-Material: geo-stuff-9d is scanning x/X0 and its lever-arm moment from the third
-layer to the OT1-P sensor as a function of |eta|, and the phi structure, to see
-whether Highland reproduces the rise of b. Pending.
+**Highland on the scan reproduces the |eta| shape of b_z.** The prediction is
+sigma_perp = 0.0136 GeV / p sqrt(<M2>) (1 + 0.038 ln M0), with p = pT cosh(eta). On
+a barrel target at fixed r, dz = sigma_perp cosh(eta) and r dphi = sigma_perp,
+and q95 = 1.96 sigma. That gives b_z = 1.96 * 0.0136 sqrt(<M2>) H and b_phi =
+b_z / (cosh(eta) r_d) per GeV of pT. `prep/ms-highland.py` compares them with b
+fitted in 0.1 bins of |eta|; the output is `prep/ms-eta-2026-09-27/ms-highland.txt`:
+- measured / predicted b_z is 1.2-1.7 and flat in |eta| for B1 B2 B3 + OT1-P
+  (|eta| 0.1-1.6), B1 B2 F1 + OT1-P (1.0-2.0), B1 F1 F2 + OT1-P (1.3-2.4), and
+  the pixel-only B1 B2 B3 B4 against IT3 -> IT4. Over those ranges the prediction
+  itself grows by a factor of 3-6. So the material explains the rise, up to a
+  factor of ~1.45 that is the same everywhere. The low-statistics edges
+  (|eta| > 2 for B1 B2 F1, n < 700) run to 2-2.5.
+- measured / predicted b_phi is 2-3.5. The azimuthal residual also carries the
+  triplet's curvature error from scattering before C, which the step from C to
+  the target does not include.
+
+**phi: the material has a 40 degree structure, and it shows in one pattern.**
+The scan's M0 at |eta| 0.2 on IT3 -> OT1-P varies by a factor 2.2 in phi. Every
+significant harmonic is a multiple of 9: a 40 degree period with a sharp comb,
+strongest at 13.33 degrees (n = 27, 20 % of the mean) and n = 9 at 12 %, phase
++10.2 degrees. A first check in 24 absolute bins of 15 degrees saw nothing, and
+that was aliasing: the bin width nearly equals the 13.33 degree period. `--resid`
+rows now carry the d hit's and the track's azimuth. `prep/ms-phifold.py` folds
+residual / (a + b/pT) modulo the period in 9 bins, pT < 1.5, and compares the
+first harmonic of the per-bin q95 with 200 azimuth shuffles. The azimuth where
+the track crosses radius r is interpolated between the vertex momentum phi and
+the d hit's phi. Output: `prep/ms-eta-2026-09-27/ms-phifold.txt`.
+- B1 B2 B3 + OT1-P, |eta| < 1, modulo 40: amplitude 0.075-0.093 in z and
+  0.047-0.095 in phi (depending on the radius phi is taken at), against a
+  shuffled q95 of 0.04-0.046. The phase is +9 to +11 degrees, matching the
+  scan's +10.2.
+- modulo 13.33: nothing above the shuffles, plausibly because the 1-3 degree
+  uncertainty in where a curving pT < 1.5 track crosses the material washes the
+  comb out.
+- B1 B2 B3 B4 and the forward OT1-P patterns: nothing. So the source is not in
+  IT3 or IT4. It lies between the IT4 envelope (r 15.6) and the OT1-P sensor.
+  geo-stuff-9d has been asked to localize it in r.
+
+A 9 % modulation of the 95 % containment in one pattern is worth a few percent
+of its window area at most; it is recorded, not acted on.
 
 Next, in order:
-1. **The material scan against b(|eta|)**, and phi structure finer than 15
-   degrees if the scan shows any.
+1. **d windows as a function of |eta|.** Either the per-|eta| (a, b) fitted on
+   the chain's rows, or b_z = k Highland(|eta|) on the scan with one k per
+   pattern (k ~ 1.45 for z; phi needs its own).
 2. **Kernels.** The chain on `SeedLayer` and the tile kernels in float, as the
    barrel finder was done, with the scalar chain as the reference list.
 3. Iterations and larger D0.
