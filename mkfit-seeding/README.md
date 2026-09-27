@@ -1278,7 +1278,7 @@ the crossing tests on each doublet's line (~11 %), building P3s from five
 arrays (5 %) and the line construction (2 %). What remains is structural.
 
 Next, in order (agreed 2026-09-27):
-1. **A batched float finder in its own file**, next to `SurfChain`, as
+1. **Done: see "The batched float finder" below.** A batched float finder in its own file, next to `SurfChain`, as
    `SeedFinderTile.h` sits next to the scalar barrel port. It keeps the same
    chain logic, with candidates as structure-of-arrays batches per target
    layer. `SurfChain` stays, in double, as the reference. Accepted by `--margins`
@@ -1298,8 +1298,83 @@ Next, in order (agreed 2026-09-27):
      edges clamp) with the fallback `surf_stage_d_fast` already has.
    - The mini-propagators use uniform B, as the helix does.
    - The one-point mode is 16x worse and not enough for the 15-30 cm c->d steps.
-3. **Crossing tests vectorized over the batch.** Add the crossing margin (the
+3. **Done in the batched finder.** Crossing tests vectorized over the batch. Add the crossing margin (the
    line's distance to the layer envelope edge) to `--margins` first, so a flipped
    crossing is classified instead of labelled structural.
 4. Stage c with the fetch shared per b hit (b-major, as the barrel's K3/K4).
 5. Iterations and larger D0.
+
+### The batched float finder (2026-09-27)
+
+`SeedSurfBatch.h`, run with `seedsurf --chain-batch`. `SurfChainBatch` takes a
+set-up `SurfChain` for everything that is configuration: the chain order, the
+start pairs, the window tables and the crossing envelopes. `SurfChain` stays the
+double reference. What the batch finder changes:
+- A queued candidate is 28 bytes: three hit indices, three chain positions, its
+  holes, the target's crossing state, and its r-z line (z0, cot) in float.
+- Each stage takes the candidates of one target layer in blocks of 256. The
+  crossing tests run over the block as lanes, one layer at a time. They cover
+  the holes before b, the start layers' own states, and the next crossed layer
+  after b or c. Each line is kept as (z0, cot) for a barrel crossing and as
+  (1/cot, -z0/cot) for a disc crossing, so the lane loops have no division and
+  no branch. The work arrays are float and int32, which GCC vectorizes with
+  `-mavx`. The same loops over `unsigned char` arrays stayed scalar.
+- Stage b is `surf_stage_b_fast`'s float loop. The side test and the doublet's
+  line are computed inside it, and the survivors are compacted without a branch.
+  A phi-major copy of the b layers, which makes each fetch one run instead of
+  one per q bin, was tried and dropped: it touched 46.9 M hits per event against
+  12.6 M.
+- Stage c is `surf_stage_c` in float. The phi residual is taken relative to
+  hit a, `wrap(wrap(phi - phi_a) - dphi_ab t)`, so no phi of order pi enters a
+  difference at the 0.5 mrad scale of `phi_c`.
+- Stage d predicts at each hit's own qbar from one point, the helix at hit c
+  (curvature k, point c, tangent at c), with no double confirm:
+  - barrel, |P| = r: the radical line of |P| = r and the helix circle,
+    multiplied through by k: P.(k c + n) = k (r^2 + |c|^2) / 2 + c.n, with n the
+    left normal of the tangent. Every term is O(1) for any k, and the helix
+    centre, 1/k away, never appears. Of the two points, the one ahead of c with
+    the shorter chord L is taken. The arc is L asin(|k| L / 2) / (|k| L / 2),
+    and z = z_c + cot * arc.
+  - disc, z = u: the arc is (u - z_c) / cot, and the point is c plus the chord
+    along the tangent turned by half the turning angle.
+  - The phi cut |dphi| < w is taken as dot > 0 and cross^2 < sin^2(w) |P|^2
+    |h|^2, on the hit's own x, y, so there is no atan2 per hit.
+- `--margins` now also reports a crossing margin. It is the smallest distance
+  of any envelope crossing of the a-b or a-c line to a crossing-state
+  threshold, over the 0.2 cm crossing margin. A flipped crossing is then
+  labelled `crossing` instead of structural.
+
+**Accepted: 6 of 1516437 quads differ from `ref-quads.txt`**, 4 only in the
+reference and 2 only in the batch run. All 6 are at a cut threshold: 5 at d_q
+within 5.5e-5 of the window, 1 at c_phi at 4.0e-6. The doublet, triplet,
+forwarded and dropped counts are those of the reference. With truth (events
+40-99, `--bind 0.05`) the union row is unchanged to the printed digit: 1431.5
+found tracks per event, 27468 quads, fake 0.3433, for K2c and for the batch
+finder.
+
+**Stage d precision** (`--chain-fast-check`, 20 events, 18.4 M fetched hits):
+the float single-point prediction against surf::Helix::predict in double gives
+max |dq| 2.9e-5 cm and max |dphi| 3.0e-7 rad. That is at most 2.1e-4 of the q
+window and 7.6e-5 of the phi window. There are 0 hits where only one of the two
+predictions succeeds.
+
+| | ms / ev | vs scalar |
+|---|---|---|
+| scalar chain (3d10608) | 1884.7 | -- |
+| K2c, `--chain-fast` | 520.7 | x3.62 |
+| batch, `--chain-batch` | 385.5 | x4.89 |
+
+(Fastest of 3 interleaved passes, K2c and batch only, load 1.3-1.8;
+`prep/chain-kernels-2026-09-27/ab-b1.txt`.) Phases of the batch run
+(`--chain-phases`): start doublets 180 ms, forward pass 210 ms, of which stage c
+71 % over 1.43 M doublets and stage d 29 % over 216 k triplets.
+
+Where the start doublets go (6 events, cycle counters since removed):
+- stage b runs and mask, 1.36 M runs of ~9 hits: ~300 Mcyc per event;
+- the flush of 3.3 M lanes: lines, holes and states 63 Mcyc, compaction 37,
+  routing 62, queueing 105 (a 28-byte store per candidate into queues larger
+  than the caches).
+
+The three barrel start pairs (B1 B2, B2 B3, B3 B4) cost 102 Mcyc per side and
+are fetched once for each side, so fetching them once for both sides would save
+~30 ms per event.

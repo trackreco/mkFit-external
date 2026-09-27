@@ -571,6 +571,9 @@ namespace mkfit::seeding {
     bool on = false;
     long nodes = 0, cands = 0, node_fail_mismatch = 0;
     double max_node_dq = 0, max_node_dphi = 0, max_rel_q = 0, max_rel_phi = 0;
+    // the batched float finder (SeedSurfBatch.h): its stage d prediction at every fetched hit
+    long b_cands = 0, b_fail_mismatch = 0;
+    double b_max_dq = 0, b_max_dphi = 0, b_max_rel_q = 0, b_max_rel_phi = 0;
   };
   inline SurfFastCheck g_surf_fast_check;
 

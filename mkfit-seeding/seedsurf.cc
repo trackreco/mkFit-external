@@ -18,8 +18,9 @@
 //                      better = fewer outer-tracker layers in the pattern, then smaller
 //                      (dq_c/q_c)^2 + (dphi_d/w_phi_d)^2 + (dq_d/w_q_d)^2
 //        [--bind CM]   labels bound to geometry: needs SimHitStates in the sample
-//        [--chain H] [--chain-holes-ot K] [--chain-hole-always] [--chain-any] [--chain-start-holes K] [--chain-lead-only] [--chain-fast] [--chain-fast-check] [--chain-phases]   the feed-forward chain (SurfChain) in
-//                      place of the pattern list; the patterns then give window tables and the denominator
+//        [--chain H] [--chain-holes-ot K] [--chain-hole-always] [--chain-any] [--chain-start-holes K] [--chain-lead-only] [--chain-fast] [--chain-batch] [--chain-fast-check] [--chain-phases]   the feed-forward chain (SurfChain) in
+//                      place of the pattern list; the patterns then give window tables and the denominator;
+//                      --chain-batch runs the batched float finder (SeedSurfBatch.h) on the same configuration
 //        [--truth OUT.txt] [--resid OUT.txt] [--dump quads.txt] [--eta-max E]
 //        [--margins REF.txt] [--margins-print N]   chain only: per event, the symmetric difference of the
 //                      chain's quads (before cleaning) against REF, a --dump of a run with the same pattern
@@ -40,6 +41,7 @@
 //   azimuth of the d hit and of the track, and the d hit's radius.
 
 #include "SeedSurf.h"
+#include "SeedSurfBatch.h"
 
 #include "RecoTracker/MkFitCore/interface/Config.h"
 #include "RecoTracker/MkFitCore/interface/TrackerInfo.h"
@@ -129,6 +131,7 @@ int main(int argc, char *argv[]) {
   int chain_holes = -1;    // >= 0: the feed-forward chain (SurfChain) instead of the patterns, this many holes
   int chain_hole_always = 0, chain_holes_ot = 0, chain_any = 0, chain_start_holes = -1, chain_lead_only = 0;
   int chain_fast = 0;  // --chain-fast: the float kernels (K2) in the chain
+  int chain_batch = 0; // --chain-batch: the batched float finder (SurfChainBatch)
   int chain_phases = 0;  // --chain-phases: time the chain's phases
   int dedup_n = 0;         // > 0: over all patterns, drop a quad sharing >= N hits with a better kept one
   std::string margins_ref;  // --margins: the reference quad list
@@ -242,6 +245,8 @@ int main(int argc, char *argv[]) {
       chain_lead_only = 1;
     else if (a == "--chain-fast")
       chain_fast = 1;
+    else if (a == "--chain-batch")
+      chain_batch = 1;
     else if (a == "--chain-fast-check")
       g_surf_fast_check.on = true;
     else if (a == "--chain-phases")
@@ -451,6 +456,11 @@ int main(int argc, char *argv[]) {
     fclose(fm);
   }
 
+  SurfChainBatch CB[2];
+  if (chain_holes >= 0 && chain_batch)
+    for (int sd = 0; sd < 2; ++sd)
+      CB[sd].setup(CH[sd]);
+
   std::vector<Stats> S(pats.size());
   Stats SU;  // the union
   Stats SC;  // the chain's own counters and time
@@ -522,8 +532,13 @@ int main(int argc, char *argv[]) {
       std::map<int, const SurfLayer *> LM;
       for (auto &kv : layers)
         LM[kv.first] = kv.second.get();
-      CH[0].run(LM, cq, cnt);
-      CH[1].run(LM, cq, cnt);
+      if (chain_batch) {
+        CB[0].run(LM, cq, cnt);
+        CB[1].run(LM, cq, cnt);
+      } else {
+        CH[0].run(LM, cq, cnt);
+        CH[1].run(LM, cq, cnt);
+      }
       SC.t_find += secs(s0, clk::now());
       SC.quads += cnt.quads, SC.doublets += cnt.doublets, SC.triplets += cnt.triplets;
       SC.c_touched += cnt.c_touched, SC.d_touched += cnt.d_touched;
@@ -587,7 +602,29 @@ int main(int argc, char *argv[]) {
               {"c_q", (Qm.q_c - std::abs(e.dq_c)) / Qm.q_c},
               {"d_phi", (wpd - std::abs(e.dphi_d)) / wpd},
               {"d_q", (wqd - std::abs(e.dq_d)) / wqd}};
+          // the crossing tests: the chain routes on the a-b line (holes before b, the layer after b) and
+          // on the a-c line (the layer after c). The smallest distance of any envelope crossing of either
+          // line to a state threshold, over the crossing margin.
+          double xm = 1e30;
+          for (int ln = 0; ln < 2; ++ln) {
+            const SurfChain::LineRZ L(h[0], h[ln ? 2 : 1]);
+            for (const auto &en : OWN.env) {
+              double x1, x2;
+              if (!en.disc)
+                x1 = L.z0 + L.cot * en.pos_lo, x2 = L.z0 + L.cot * en.pos_hi;
+              else {
+                if (std::abs(L.cot) < 1e-9 || (en.pos - L.z0) / L.cot <= 0)
+                  continue;
+                x1 = (en.pos_lo - L.z0) / L.cot, x2 = (en.pos_hi - L.z0) / L.cot;
+              }
+              const double xl = std::min(x1, x2), xh = std::max(x1, x2), dl = OWN.delta;
+              for (double d : {xl - (en.lo + dl), xh - (en.hi - dl), xh - (en.lo - dl), xl - (en.hi + dl)})
+                xm = std::min(xm, std::abs(d));
+            }
+          }
           MarginRow r{iev, ip, side, q, 1e30, "structural"};
+          if (xm / OWN.delta < 1e-2)
+            r.rel = xm / OWN.delta, r.cut = "crossing";
           for (const auto &c : m) {
             if (!std::isfinite(c.second)) {
               r.rel = NAN, r.cut = "not evaluable";
@@ -856,21 +893,35 @@ int main(int argc, char *argv[]) {
   if (bind_cm > 0)
     printf("[seedsurf] --bind %.3f cm: %.1f label lookups per event dropped (the sim hit farther than that)\n", bind_cm,
            n_unbound / ne);
+  // the chain's own counters, from whichever finder ran
+  const double ch_fwd = chain_batch ? CB[0].n_forwarded + CB[1].n_forwarded : CH[0].n_forwarded + CH[1].n_forwarded;
+  const double ch_drop = chain_batch ? CB[0].n_dropped + CB[1].n_dropped : CH[0].n_dropped + CH[1].n_dropped;
+  const double ch_tst = chain_batch ? CB[0].t_start + CB[1].t_start : CH[0].t_start + CH[1].t_start;
+  const double ch_cc = chain_batch ? CB[0].cyc_c + CB[1].cyc_c : CH[0].cyc_c + CH[1].cyc_c;
+  const double ch_cd = chain_batch ? CB[0].cyc_d + CB[1].cyc_d : CH[0].cyc_d + CH[1].cyc_d;
+  const double ch_nc = chain_batch ? CB[0].n_c_cand + CB[1].n_c_cand : CH[0].n_c_cand + CH[1].n_c_cand;
+  const double ch_nd = chain_batch ? CB[0].n_d_cand + CB[1].n_d_cand : CH[0].n_d_cand + CH[1].n_d_cand;
   if (chain_holes >= 0)
-    printf("[seedsurf] CHAIN: %.0f doublets, %.0f triplets, %.1f quads per event, %.3f ms/ev; forwarded %.1f, dropped %.1f per event\n",
-           SC.doublets / ne, SC.triplets / ne, SC.quads / ne, 1e3 * SC.t_find / ne,
-           (CH[0].n_forwarded + CH[1].n_forwarded) / ne, (CH[0].n_dropped + CH[1].n_dropped) / ne);
+    printf("[seedsurf] CHAIN%s: %.0f doublets, %.0f triplets, %.1f quads per event, %.3f ms/ev; forwarded %.1f, dropped %.1f per event\n",
+           chain_batch ? " (batch)" : "", SC.doublets / ne, SC.triplets / ne, SC.quads / ne, 1e3 * SC.t_find / ne,
+           ch_fwd / ne, ch_drop / ne);
   if (chain_holes >= 0 && chain_phases) {
     // the phases: start doublets by wall clock; stage c and d by cycles, scaled to the rest
-    const double ts = (CH[0].t_start + CH[1].t_start) / ne, tr = SC.t_find / ne - ts;
-    const double cc = CH[0].cyc_c + CH[1].cyc_c, cd = CH[0].cyc_d + CH[1].cyc_d;
+    const double ts = ch_tst / ne, tr = SC.t_find / ne - ts;
+    const double cc = ch_cc, cd = ch_cd;
     printf("[seedsurf] CHAIN phases per event: start doublets %.1f ms; forward pass %.1f ms, of it stage c %.0f %% "
            "(%.0f candidates) and stage d %.0f %% (%.0f candidates)\n",
-           1e3 * ts, 1e3 * tr, 100 * cc / std::max(1.0, cc + cd) * 1.0, (CH[0].n_c_cand + CH[1].n_c_cand) / ne,
-           100 * cd / std::max(1.0, cc + cd), (CH[0].n_d_cand + CH[1].n_d_cand) / ne);
+           1e3 * ts, 1e3 * tr, 100 * cc / std::max(1.0, cc + cd) * 1.0, ch_nc / ne, 100 * cd / std::max(1.0, cc + cd),
+           ch_nd / ne);
     printf("[seedsurf] CHAIN hits touched per event: stage c %.0f, stage d %.0f\n", SC.c_touched / ne, SC.d_touched / ne);
+  }
+  if (chain_holes >= 0 && g_surf_fast_check.on) {
     const SurfFastCheck &CK = g_surf_fast_check;
-    if (CK.on)
+    if (chain_batch)
+      printf("[seedsurf] FAST CHECK (batch): %ld fetched hits, float single-point prediction vs double Newton: max |dq| %.3g cm,"
+             " max |dphi| %.3g rad; max error / window: q %.3g, phi %.3g; %ld hits where only one of them succeeds\n",
+             CK.b_cands, CK.b_max_dq, CK.b_max_dphi, CK.b_max_rel_q, CK.b_max_rel_phi, CK.b_fail_mismatch);
+    else
       printf("[seedsurf] FAST CHECK: %ld nodes, closed form vs Newton max |dq| %.3g cm, max |dphi| %.3g rad (%ld Newton"
              " failures where the closed form succeeded); %ld candidates, quadratic vs exact max error / window:"
              " q %.3g, phi %.3g\n", CK.nodes, CK.max_node_dq, CK.max_node_dphi, CK.node_fail_mismatch, CK.cands,
