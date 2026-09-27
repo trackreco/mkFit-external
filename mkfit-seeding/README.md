@@ -1422,3 +1422,60 @@ for each of 216 k triplets, of which the per-hit predictions for ~4.3 fetched
 hits are a small part. The rest is the gathers of nine hit coordinates from
 three layers, the helix set-up, the edge predictions, the fetch and the
 forwarding of misses.
+
+### Fakes: where they are and what removes them (2026-09-27)
+
+`seedsurf --quad-dump F` writes one row per quad kept after the cleaning. Each
+row carries:
+- its truth class, |eta| (a-d line) and pT_est;
+- the transverse distance of the (a, b, c) and (a, c, d) circles from the beam
+  spot;
+- the stage c and d residuals over their windows;
+- the four hits' cluster spans;
+- the label composition;
+- the best hit on the next outer P layer for the helix through b, c, d, with
+  its residuals and label: OT1-P after a pixel d, OT2-P after an OT1-P d.
+
+Analysis scripts are in the working report, `prep/fakes-2026-09-27/`. The chain
+configuration is `seedsurf-chain.sh --chain-batch`, D121 PU200 events 40-69.
+Tables are fitted on the first 15 events and applied to the last 15. "Tracks
+lost" is findable tracks that lose every true quad, over all findable tracks.
+
+Fake / decidable by the quad's |eta|: 0.47 (0-0.8), **0.81 (0.8-1.6)**, 0.55
+(1.6-2.4), 0.12 (2.4-4). The fakes are not near-misses. In the barrel and
+transition 91-95 % have every labelled hit from a different particle, and 20-23 %
+have two unlabelled hits. At |eta| 0.8-1.6 the quads with OT1-P as the fourth
+hit, which bridge the pixel gap, are 93 % fakes, 64.7 k of them in 30 events.
+Quads with a pixel fourth hit are 61 % fakes.
+
+What separates them:
+- **Residual score**, the sum of the squared stage c and d residuals over their
+  windows: median 0.09-0.18 for true quads, 1.1-1.6 for fakes. A cut at 1
+  takes the regions to 0.17 / 0.57 / 0.28 / 0.06 for 0.37 % of tracks.
+- **Cluster length along z in the barrel pixels.** `spanCols()` grows with
+  |cot theta|: median 1 column at |cot| < 0.3, 8 at 4-12. A hit of another track
+  has its own track's length. Keeping 99.5 % of true hits per layer and |cot|
+  bin (0.1) takes the regions to 0.32 / 0.66 / 0.45 / 0.12 for 0.62 %. On the
+  discs both spans are 1-2 and carry nothing.
+- **OT2-P after an OT1-P fourth hit.** The window was fitted on true quads (q97,
+  a + b / pT): 6.2 / pT mrad in phi and 2.5 + 1.5 / pT mm in z. At x1.5, 93 %
+  of true quads in OT2 acceptance pass and 13 % of fakes.
+- Weak or not usable:
+  - OT1-P after a pixel fourth hit: the window is 1.4 + 11.3 / pT mrad and
+    2.0 + 3.6 / pT mm; 93 % of true pass and 43 % of fakes. It stays
+    information on the seed, not a cut.
+  - The circle's d0: stage b already bounds D0, so barrel fakes have small d0
+    too.
+
+| cuts, last 15 events | tracks lost | quads / ev | fake: 0-0.8 | 0.8-1.6 | 1.6-2.4 | 2.4-4 | all |
+|---|---|---|---|---|---|---|---|
+| none | -- | 28746 | 0.47 | 0.81 | 0.55 | 0.12 | 0.353 |
+| score < 1.5, OT2-P, shape | 0.95 % | 21901 | 0.17 | 0.32 | 0.33 | 0.08 | 0.157 |
+| score < 1, OT2-P, shape | 1.17 % | 19998 | 0.10 | 0.21 | 0.22 | 0.05 | 0.098 |
+
+Caveats:
+- The cluster-shape tables come from simulated clusters.
+- The score cut is a tighter window in disguise: an ellipse instead of the box
+  of the q95 windows.
+- The track loss is small partly because most found tracks have more than one
+  true quad.

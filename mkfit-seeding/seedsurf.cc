@@ -22,7 +22,7 @@
 //                      place of the pattern list; the patterns then give window tables and the denominator;
 //                      --chain-batch runs the batched float finder (SeedSurfBatch.h) on the same configuration;
 //                      --chain-batch-d N its stage d prediction: 0 direct from hit c, 1 one-point cubic, 2 two-point Hermite
-//        [--truth OUT.txt] [--resid OUT.txt] [--dump quads.txt] [--eta-max E]
+//        [--truth OUT.txt] [--resid OUT.txt] [--dump quads.txt] [--quad-dump OUT.txt] [--eta-max E]
 //        [--margins REF.txt] [--margins-print N]   chain only: per event, the symmetric difference of the
 //                      chain's quads (before cleaning) against REF, a --dump of a run with the same pattern
 //                      options and events; each differing quad's cuts evaluated in double, with margins
@@ -120,7 +120,7 @@ namespace {
 }  // namespace
 
 int main(int argc, char *argv[]) {
-  std::string input, geom = "CMS-phase2", truth_out, resid_out, dump_out;
+  std::string input, geom = "CMS-phase2", truth_out, resid_out, dump_out, qdump_out;
   int n_events = 10, first_event = 0;
   double eta_max = 4.0;
   double win_scale = 1.0;  // multiplies every c and d window
@@ -237,6 +237,8 @@ int main(int argc, char *argv[]) {
       resid_out = next();
     else if (a == "--dump")
       dump_out = next();
+    else if (a == "--quad-dump")
+      qdump_out = next();
     else if (a == "--own")
       own_delta = atof(next());
     else if (a == "--chain")
@@ -432,6 +434,16 @@ int main(int argc, char *argv[]) {
     RO.delta = 0.2;
   }
   FILE *fd = dump_out.empty() ? nullptr : fopen(dump_out.c_str(), "w");
+  FILE *fq = qdump_out.empty() ? nullptr : fopen(qdump_out.c_str(), "w");
+  if (fq)
+    fprintf(fq, "# seedsurf --quad-dump: per event 'E ev n_findable'; per quad kept after the cleaning\n"
+                "# Q ip l0 l1 l2 l3  tru fake findable lab  eta pte  d0_abc d0_acd  rc_q rc_phi rd_phi rd_q"
+                "  rows0 cols0 rows1 cols1 rows2 cols2 rows3 cols3  ot1 dphi dz n3 same  otz maxc nun\n"
+                "# rc_*, rd_*: the c and d residuals over their windows (signed); ot1: -1 not predicted, 0 no hit in the"
+                " fetch, 1 best OT1-P hit given, 2 the quad's d is OT1-P; dphi, dz: its residuals to the b-c-d helix;"
+                " n3: hits within score 9; same: its label is the quad's; otz: the helix's z at OT1 (mid of the two edges);"
+                " maxc: most hits from one sim track, nun: unlabelled hits. The checked layer is OT2-P (6) for a quad whose d is"
+                " OT1-P, else OT1-P (4)\n");
 
   // --margins: the reference list, per event: (pattern index, hits)
   std::map<int, std::set<std::pair<int, Quad>>> mref;
@@ -464,6 +476,12 @@ int main(int argc, char *argv[]) {
   if (chain_holes >= 0 && chain_batch)
     for (int sd = 0; sd < 2; ++sd)
       CB[sd].setup(CH[sd]), CB[sd].d_mode = chain_batch_d;
+
+  // --quad-dump: the next outer layer a quad's helix is checked against, OT1-P (4) or OT2-P (6)
+  if (!qdump_out.empty())
+    for (int l : {4, 6})
+      if (!layers.count(l))
+        layers[l] = std::make_unique<SurfLayer>(l, ti[l], 2.0);
 
   std::vector<Stats> S(pats.size());
   Stats SU;  // the union
@@ -886,11 +904,106 @@ int main(int argc, char *argv[]) {
         su.multi[b] += fd_pat[l].size() > 1;
       }
     }
+    // --quad-dump: one row per quad kept after the cleaning, with what a fake-rejection cut could use
+    if (fq) {
+      fprintf(fq, "E %d %zu\n", iev, fb_any.size());
+      // the next outer P layer: OT1-P after a pixel d, OT2-P after an OT1-P d
+      const SurfLayer *LP4 = layers[4].get(), *LP6 = layers[6].get();
+      const double bx = ev.beamSpot_.x, by = ev.beamSpot_.y;
+      auto p3of = [&](int l, unsigned int k) {
+        const Hit &h = ev.layerHits_[l][k];
+        const float r = h.r(), ph = h.phi();
+        return surf::P3(r * std::cos(ph), r * std::sin(ph), h.z());
+      };
+      // transverse distance of the helix circle from the beam spot
+      auto d0of = [&](const surf::Helix &hx) -> double {
+        if (!hx.ok)
+          return NAN;
+        if (std::abs(hx.k) < 1e-9)
+          return std::abs(hx.tx * (hx.c.y - by) - hx.ty * (hx.c.x - bx));
+        const double Cx = hx.c.x - hx.ty / hx.k, Cy = hx.c.y + hx.tx / hx.k;
+        return std::abs(std::hypot(Cx - bx, Cy - by) - 1 / std::abs(hx.k));
+      };
+      for (int i = 0; i < (int)cands.size(); ++i) {
+        if (!keep_c[i])
+          continue;
+        const Cand &c = cands[i];
+        const auto &ll = pats[c.ip].l;
+        surf::P3 h[4];
+        for (int k = 0; k < 4; ++k)
+          h[k] = p3of(ll[k], c.q[k]);
+        const surf::Helix abc(h[0], h[1], h[2]), acd(h[0], h[2], h[3]), bcd(h[1], h[2], h[3]);
+        const double eta = std::asinh((h[3].z - h[0].z) / (h[3].r() - h[0].r()));
+        const SurfParams Q = params_of(pats[c.ip]);
+        const SurfLayer *Ls[4] = {layers[ll[0]].get(), layers[ll[1]].get(), layers[ll[2]].get(), layers[ll[3]].get()};
+        SurfEval e;
+        surf_eval(Q, Ls, h, e);
+        const double wc = e.wd0_c + Q.phi_c, wpd = Q.wphi_d(e.pte), wqd = Q.wq_d(e.pte);
+        int ot = -1, n3 = 0, same = 0;
+        double bdp = NAN, bdz = NAN, otz = NAN;
+        const int elay = ll[3] == 4 ? 6 : 4;
+        const SurfLayer *LP = elay == 6 ? LP6 : LP4;
+        const HitVec &hp4 = ev.layerHits_[elay];
+        if (!SurfOwnership::is_pix(ll[3]) && ll[3] != 4)
+          ot = 2;
+        else if (LP && bcd.ok) {
+          double q0, p0, q1, p1;
+          const bool ok0 = bcd.predict(false, LP->qbar_lo, q0, p0), ok1 = bcd.predict(false, LP->qbar_hi, q1, p1);
+          if (ok0 || ok1) {
+            if (!ok0)
+              q0 = q1, p0 = p1;
+            if (!ok1)
+              q1 = q0, p1 = p0;
+            ot = 0;
+            otz = 0.5 * (q0 + q1);
+            const double pte = std::max(0.5, e.pte), sphi = 0.0005 + 3.2e-3 / pte, sz = 0.075 + 0.0316 / pte;
+            const double dm = p0 + 0.5 * surf::wrap(p1 - p0), dh = 0.5 * std::abs(surf::wrap(p1 - p0));
+            double best = 1e30;
+            LP->sl.for_each_in(surf::phi_bins(*LP, dm, dh + 10 * sphi),
+                               surf::q_bins(*LP, std::min(q0, q1) - 10 * sz, std::max(q0, q1) + 10 * sz),
+                               [&](unsigned int kk) {
+                                 double qp, pp;
+                                 if (!bcd.predict(false, LP->qbar(kk), qp, pp))
+                                   return;
+                                 const double dp = surf::wrap(LP->sl.phi_[kk] - pp), dz = LP->sl.z_[kk] - qp;
+                                 const double sc = (dp / sphi) * (dp / sphi) + (dz / sz) * (dz / sz);
+                                 n3 += sc < 9;
+                                 if (sc < best) {
+                                   best = sc, bdp = dp, bdz = dz, ot = 1;
+                                   same = c.lab >= 0 && label_l(hp4[LP->sl.orig_[kk]], elay) == c.lab;
+                                 }
+                               });
+          }
+        }
+        // label composition: the largest number of hits from one sim track, and unlabelled hits
+        int ls[4], maxc = 0, nun = 0;
+        for (int k = 0; k < 4; ++k)
+          ls[k] = label_l(ev.layerHits_[ll[k]][c.q[k]], ll[k]);
+        for (int u = 0; u < 4; ++u) {
+          nun += ls[u] < 0;
+          int cc = 0;
+          for (int w = 0; w < 4; ++w)
+            cc += ls[u] >= 0 && ls[w] == ls[u];
+          maxc = std::max(maxc, cc);
+        }
+        int sp[8];
+        for (int k = 0; k < 4; ++k) {
+          const Hit &hh = ev.layerHits_[ll[k]][c.q[k]];
+          sp[2 * k] = hh.spanRows(), sp[2 * k + 1] = hh.spanCols();
+        }
+        fprintf(fq, "Q %d %d %d %d %d  %d %d %d %d  %.4f %.4f  %.5f %.5f  %.4f %.4f %.4f %.4f  %d %d %d %d %d %d %d %d  %d %.6f %.5f %d %d  %.3f %d %d\n",
+                c.ip, ll[0], ll[1], ll[2], ll[3], c.tru, c.fake, c.tru && fb_any.count(c.lab), c.lab, eta, e.pte,
+                d0of(abc), d0of(acd), e.dq_c / Q.q_c, e.dphi_c / wc, e.dphi_d / wpd, e.dq_d / wqd, sp[0], sp[1], sp[2],
+                sp[3], sp[4], sp[5], sp[6], sp[7], ot, bdp, bdz, n3, same, otz, maxc, nun);
+      }
+    }
   }
   if (fr)
     fclose(fr);
   if (fd)
     fclose(fd);
+  if (fq)
+    fclose(fq);
 
   const double ne = n_events;
   printf("[seedsurf] %d events; layer fill %.3f ms/ev\n", n_events, 1e3 * t_fill / ne);
