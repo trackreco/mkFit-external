@@ -1168,7 +1168,53 @@ statistics of 40 events. Together with the lever-arm null, this says the d
 windows fitted on the chain's rows are as good as a window table gets here. The
 scattering term is left as a + b / pT, with pt_min as the knob.
 
+### Making the chain fast (2026-09-27)
+
+**Timing rule for this section.** `SurfChain::run`'s own time (the `CHAIN ...
+ms/ev` line: the search only, no fill, no cleaning, no truth), D121 PU200
+events 40-59, single thread, black, the chosen configuration without `--bind`;
+the fastest of 3 interleaved passes. Raw output in the working report's
+`prep/chain-kernels-2026-09-27/`.
+
+**Acceptance: `seedsurf --margins REF`.** REF is a `--dump` of a run with the
+same pattern options and events. Per event the tool compares the chain's quads
+before cleaning with REF, as (pattern, hits). Each quad in the symmetric
+difference is evaluated in double, with the windows the chain uses for its
+layer combination: b (r order, phi bound, z0), c (phi, q), d (phi, q). The tool
+reports the smallest |margin| / window over the cuts, so a flip at a threshold
+can be told from a bug. A quad with no cut near a threshold is labelled
+structural: a crossing or queue decision. The reference list for this section
+is `ref-quads.txt`, from the scalar chain at 3d10608: 1516437 quads in 20
+events. Run against itself, the tool
+reports 0 differences.
+
+**Profile of the scalar chain** (perf, 6 events): `SurfChain::run` 34 % self,
+`atan2` 15 % from inside it, and `hypot` 25 % from `main` (the cleaning's
+residuals, outside the chain's timer). Every use of a hit recomputed its r and
+phi from x, y in double.
+
+**K1, bit-identical: 1866.9 -> 708.7 ms per event, x2.63, the same 1516437
+quads.**
+- `surf::P3` computes r and phi once at construction. `SurfLayer` caches them per
+  hit in double, from the layer's float x, y, with the same expressions, so
+  `surf_p3` returns identical numbers (-42 %).
+- The chain keeps each candidate's r-z line, which the crossing test takes. The
+  line is rebuilt only when a hit is added, not on every test.
+- The chain resolves the window parameters once per chain-position combination,
+  at its first run, into a table indexed by position. Before, each queued
+  candidate did a `std::map` lookup and a `SurfParams` copy.
+- The per-layer queues persist across events, and a candidate is copied only
+  when it is forwarded.
+
+Per doublet that is 162 ns, against 17-23 ns for the barrel tile finder. After
+K1 the profile is spread out: stage b about 15 % (building the P3, the phi bound
+with two divisions, z0 with one), the crossing tests about 9 %, the binnor run
+loop 4 %, vector construction 4 %. That is where float kernels on structure of
+arrays come in (K2), and they change the arithmetic: accept them by
+`--margins` against `ref-quads.txt`, not by list identity.
+
 Next, in order:
-1. **Kernels.** The chain on `SeedLayer` and the tile kernels in float, as the
-   barrel finder was done, with the scalar chain as the reference list.
+1. **K2: float kernels.** Stage b per a-hit over the fetched b runs, and the
+   crossing test on the cached line, in float on the SeedLayer arrays; then c
+   and d batched per target layer.
 2. Iterations and larger D0.

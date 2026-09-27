@@ -21,6 +21,9 @@
 //        [--chain H] [--chain-holes-ot K] [--chain-hole-always] [--chain-any] [--chain-start-holes K] [--chain-lead-only]   the feed-forward chain (SurfChain) in
 //                      place of the pattern list; the patterns then give window tables and the denominator
 //        [--truth OUT.txt] [--resid OUT.txt] [--dump quads.txt] [--eta-max E]
+//        [--margins REF.txt] [--margins-print N]   chain only: per event, the symmetric difference of the
+//                      chain's quads (before cleaning) against REF, a --dump of a run with the same pattern
+//                      options and events; each differing quad's cuts evaluated in double, with margins
 //
 // --truth: per pattern and for the union of all patterns, by |eta| of the sim
 //   track: findable (a hit labelled with the track in each of the pattern's
@@ -43,6 +46,7 @@
 #include "RecoTracker/MkFitCore/standalone/ConfigStandalone.h"
 #include "RecoTracker/MkFitCore/standalone/Event.h"
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
@@ -125,6 +129,8 @@ int main(int argc, char *argv[]) {
   int chain_holes = -1;    // >= 0: the feed-forward chain (SurfChain) instead of the patterns, this many holes
   int chain_hole_always = 0, chain_holes_ot = 0, chain_any = 0, chain_start_holes = -1, chain_lead_only = 0;
   int dedup_n = 0;         // > 0: over all patterns, drop a quad sharing >= N hits with a better kept one
+  std::string margins_ref;  // --margins: the reference quad list
+  int margins_print = 10;
   SurfParams P;
   std::vector<Pattern> pats;
 
@@ -246,6 +252,10 @@ int main(int argc, char *argv[]) {
       own_skip_ot = atoi(next());
     else if (a == "--dedup")
       dedup_n = atoi(next());
+    else if (a == "--margins")
+      margins_ref = next();
+    else if (a == "--margins-print")
+      margins_print = atoi(next());
     else if (a == "--bind") {
       // truth BOUND to geometry: a hit keeps its label only if its sim hit (SimHitStates) is within
       // CM of it (pixels; outer tracker: 2.6 cm, the longest strip half-length)
@@ -404,6 +414,33 @@ int main(int argc, char *argv[]) {
   }
   FILE *fd = dump_out.empty() ? nullptr : fopen(dump_out.c_str(), "w");
 
+  // --margins: the reference list, per event: (pattern index, hits)
+  std::map<int, std::set<std::pair<int, Quad>>> mref;
+  struct MarginRow {
+    int iev, ip, side;  // side: +1 only in this run, -1 only in the reference
+    Quad q;
+    double rel;         // the smallest |margin| / window over the cuts; NaN: a stage not evaluable
+    const char *cut;
+  };
+  std::vector<MarginRow> mrows;
+  long m_same = 0;
+  if (!margins_ref.empty()) {
+    if (chain_holes < 0) {
+      printf("--margins needs --chain\n");
+      return 1;
+    }
+    FILE *fm = fopen(margins_ref.c_str(), "r");
+    if (!fm) {
+      printf("cannot open %s\n", margins_ref.c_str());
+      return 1;
+    }
+    int e, ip;
+    Quad q;
+    while (fscanf(fm, "%d %d %u %u %u %u", &e, &ip, &q[0], &q[1], &q[2], &q[3]) == 6)
+      mref[e].insert({ip, q});
+    fclose(fm);
+  }
+
   std::vector<Stats> S(pats.size());
   Stats SU;  // the union
   Stats SC;  // the chain's own counters and time
@@ -503,6 +540,62 @@ int main(int argc, char *argv[]) {
       }
       chain_q.resize(pats.size());
       npat = pats.size();
+
+      if (!margins_ref.empty()) {
+        std::set<std::pair<int, Quad>> cur;
+        for (int ip = 0; ip < (int)chain_q.size(); ++ip)
+          for (const auto &q : chain_q[ip])
+            cur.insert({ip, q});
+        const auto &ref = mref[iev];
+        // every cut of one quad in double, with the windows the chain uses for its layers
+        auto evaluate = [&](int ip, const Quad &q, int side) {
+          const auto &l = pats[ip].l;
+          const SurfLayer *Ls[4];
+          surf::P3 h[4];
+          for (int k = 0; k < 4; ++k) {
+            Ls[k] = layers[l[k]].get();
+            const Hit &hh = ev.layerHits_[l[k]][q[k]];
+            h[k] = {hh.x(), hh.y(), hh.z()};
+          }
+          SurfParams Qm = CH[0].P;
+          if (auto it = CH[0].win_c.find({l[0], l[1], l[2]}); it != CH[0].win_c.end())
+            Qm.phi_c = it->second.first, Qm.q_c = it->second.second;
+          if (auto it = CH[0].win_d.find({l[0], l[1], l[2], l[3]}); it != CH[0].win_d.end())
+            Qm.phi_d = it->second.aphi, Qm.b_phi_d = it->second.bphi, Qm.q_d = it->second.aq, Qm.b_q_d = it->second.bq,
+            Qm.s_ref = it->second.sref;
+          SurfEval e;
+          surf_eval(Qm, Ls, h, e);
+          const double ra = h[0].r(), rb = h[1].r();
+          const double wb = e.w_b + Qm.marg_b, wc = e.wd0_c + Qm.phi_c;
+          const double wpd = Qm.wphi_d(e.pte, e.s_cd), wqd = Qm.wq_d(e.pte, e.s_cd);
+          const std::pair<const char *, double> m[] = {
+              {"b_r", (rb - ra - 0.1) / 1.0},
+              {"b_phi", (wb - std::abs(e.dphi_b)) / wb},
+              {"b_z0", std::min(e.z0 - (Qm.bs_z - Qm.zv), Qm.bs_z + Qm.zv - e.z0) / Qm.zv},
+              {"c_phi", (wc - std::abs(e.dphi_c)) / wc},
+              {"c_q", (Qm.q_c - std::abs(e.dq_c)) / Qm.q_c},
+              {"d_phi", (wpd - std::abs(e.dphi_d)) / wpd},
+              {"d_q", (wqd - std::abs(e.dq_d)) / wqd}};
+          MarginRow r{iev, ip, side, q, 1e30, "structural"};
+          for (const auto &c : m) {
+            if (!std::isfinite(c.second)) {
+              r.rel = NAN, r.cut = "not evaluable";
+              break;
+            }
+            if (std::abs(c.second) < std::abs(r.rel))
+              r.rel = c.second, r.cut = c.first;
+          }
+          mrows.push_back(r);
+        };
+        for (const auto &x : ref)
+          if (!cur.count(x))
+            evaluate(x.first, x.second, -1);
+          else
+            ++m_same;
+        for (const auto &x : cur)
+          if (!ref.count(x))
+            evaluate(x.first, x.second, +1);
+      }
     }
     for (int ip = 0; ip < npat; ++ip) {
       const Pattern &p = pats[ip];
@@ -756,6 +849,32 @@ int main(int argc, char *argv[]) {
     printf("[seedsurf] CHAIN: %.0f doublets, %.0f triplets, %.1f quads per event, %.3f ms/ev; forwarded %.1f, dropped %.1f per event\n",
            SC.doublets / ne, SC.triplets / ne, SC.quads / ne, 1e3 * SC.t_find / ne,
            (CH[0].n_forwarded + CH[1].n_forwarded) / ne, (CH[0].n_dropped + CH[1].n_dropped) / ne);
+  if (!margins_ref.empty()) {
+    long n_only[2] = {0, 0};
+    long hist[2][6] = {};  // |rel| < 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, larger or not evaluable
+    for (const auto &r : mrows) {
+      const int s = r.side > 0;
+      ++n_only[s];
+      const double a = std::abs(r.rel);
+      const int b = !std::isfinite(a) ? 5 : a < 1e-6 ? 0 : a < 1e-5 ? 1 : a < 1e-4 ? 2 : a < 1e-3 ? 3 : a < 1e-2 ? 4 : 5;
+      ++hist[s][b];
+    }
+    printf("[seedsurf] MARGINS vs %s: %ld quads in both, %ld only in the reference, %ld only in this run\n",
+           margins_ref.c_str(), m_same, n_only[0], n_only[1]);
+    printf("   closest cut |margin| / window:   < 1e-6   < 1e-5   < 1e-4   < 1e-3   < 1e-2   larger/NaN\n");
+    for (int s = 0; s < 2; ++s)
+      printf("   %-30s %8ld %8ld %8ld %8ld %8ld %8ld\n", s ? "only in this run" : "only in the reference", hist[s][0],
+             hist[s][1], hist[s][2], hist[s][3], hist[s][4], hist[s][5]);
+    std::vector<MarginRow> w = mrows;
+    std::sort(w.begin(), w.end(), [](const MarginRow &x, const MarginRow &y) {
+      const double ax = std::isfinite(x.rel) ? std::abs(x.rel) : 1e31, ay = std::isfinite(y.rel) ? std::abs(y.rel) : 1e31;
+      return ax > ay;
+    });
+    for (int i = 0; i < (int)w.size() && i < margins_print; ++i)
+      printf("   worst %2d: ev %d %s %s hits %u %u %u %u  closest cut %s at %.3g\n", i, w[i].iev,
+             pats[w[i].ip].name.c_str(), w[i].side > 0 ? "(new)" : "(ref)", w[i].q[0], w[i].q[1], w[i].q[2], w[i].q[3],
+             w[i].cut, w[i].rel);
+  }
   printf("   %-16s %10s %10s %10s %9s %9s  %s\n", "pattern", "doublets", "triplets", "quads", "ms/ev", "eff", "fake/dec");
   for (int ip = 0; ip < npat; ++ip) {
     const Stats &s = S[ip];

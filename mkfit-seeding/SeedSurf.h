@@ -113,7 +113,17 @@ namespace mkfit::seeding {
           sl((float)q_lo, (float)q_hi, nq(li.is_barrel() ? li.zmin() : li.rin(), li.is_barrel() ? li.zmax() : li.rout(), qbin),
              !li.is_barrel()) {}
 
-    void fill(const HitVec &hits) { sl.fill(hits); }
+    // r and phi of each hit as P3 computes them from the layer's float x, y, in double
+    std::vector<double> pr_, pphi_;
+    void fill(const HitVec &hits) {
+      sl.fill(hits);
+      pr_.resize(sl.n());
+      pphi_.resize(sl.n());
+      for (unsigned int k = 0; k < sl.n(); ++k) {
+        pr_[k] = std::hypot((double)sl.x_[k], (double)sl.y_[k]);
+        pphi_[k] = std::atan2((double)sl.y_[k], (double)sl.x_[k]);
+      }
+    }
     // the hit's own qbar and q
     double qbar(unsigned int k) const { return disc ? sl.z_[k] : sl.r_[k]; }
     double q(unsigned int k) const { return disc ? sl.r_[k] : sl.z_[k]; }
@@ -129,10 +139,20 @@ namespace mkfit::seeding {
       return d;
     }
 
+    // A point with its transverse radius and azimuth computed once, in double, at
+    // construction: r() and phi() are called many times per hit.
     struct P3 {
-      double x, y, z;
-      double r() const { return std::hypot(x, y); }
-      double phi() const { return std::atan2(y, x); }
+      double x = 0, y = 0, z = 0, rr = 0, pp = 0;
+      P3() = default;
+      P3(double x_, double y_, double z_) : x(x_), y(y_), z(z_), rr(std::hypot(x_, y_)), pp(std::atan2(y_, x_)) {}
+      // with r and phi already computed by the same expressions (SurfLayer's cache)
+      static P3 cached(double x_, double y_, double z_, double r_, double phi_) {
+        P3 p;
+        p.x = x_, p.y = y_, p.z = z_, p.rr = r_, p.pp = phi_;
+        return p;
+      }
+      double r() const { return rr; }
+      double phi() const { return pp; }
     };
 
     // The circle through a, b, c in the transverse plane: signed curvature k
@@ -272,7 +292,7 @@ namespace mkfit::seeding {
   }
 
   inline surf::P3 surf_p3(const SurfLayer &L, unsigned int k) {
-    return {L.sl.x_[k], L.sl.y_[k], L.sl.z_[k]};
+    return surf::P3::cached(L.sl.x_[k], L.sl.y_[k], L.sl.z_[k], L.pr_[k], L.pphi_[k]);
   }
 
   inline void surf_eval(const SurfParams &P, const SurfLayer *Ls[4], const surf::P3 h[4], SurfEval &e) {
@@ -659,13 +679,21 @@ namespace mkfit::seeding {
     }
 
     // crossing state of chain position p for the line through h1, h2
-    int state(int p, const surf::P3 &h1, const surf::P3 &h2) const {
+    // the r-z line through two hits, as the crossing test takes it
+    struct LineRZ {
+      double z0 = 0, cot = 0;
+      LineRZ() = default;
+      LineRZ(const surf::P3 &h1, const surf::P3 &h2) {
+        const double r1 = h1.r(), r2 = h2.r();
+        cot = (h2.z - h1.z) / (r2 - r1);
+        z0 = h1.z - cot * r1;
+      }
+    };
+    int state(int p, const LineRZ &l) const {
       if (env_of[p] < 0)
         return 0;
-      const double r1 = h1.r(), r2 = h2.r();
-      const double cot = (h2.z - h1.z) / (r2 - r1), z0 = h1.z - cot * r1;
       double sdum;
-      return own->cross(own->env[env_of[p]], z0, cot, sdum);
+      return own->cross(own->env[env_of[p]], l.z0, l.cot, sdum);
     }
 
     struct Cand {
@@ -673,7 +701,56 @@ namespace mkfit::seeding {
       int pos[4];
       unsigned int k[4];
       surf::P3 h[4];
+      LineRZ ln;  // through h[0] and h[nh - 1]
     };
+
+    // Window parameters per chain-position combination, resolved from win_c / win_d
+    // once (at the first run, after the tables are filled): an index into par_,
+    // -1 where the combination has no table; par_[0] is P.
+    std::vector<SurfParams> par_;
+    std::vector<int> idx_c_, idx_d_;  // (i, j, p) and (i, j, k, p), n positions each
+    bool par_built_ = false;
+    void build_params() {
+      const int n = order.size();
+      par_.assign(1, P);
+      idx_c_.assign(n * n * n, -1);
+      idx_d_.assign(n * n * n * n, -1);
+      for (int i = 0; i < n; ++i)
+        for (int j = 0; j < n; ++j)
+          for (int p = 0; p < n; ++p) {
+            auto it = win_c.find({order[i], order[j], order[p]});
+            if (it != win_c.end()) {
+              SurfParams Q = P;
+              Q.phi_c = it->second.first, Q.q_c = it->second.second;
+              par_.push_back(Q);
+              idx_c_[(i * n + j) * n + p] = par_.size() - 1;
+            }
+            for (int k = 0; k < n; ++k) {
+              auto jt = win_d.find({order[i], order[j], order[k], order[p]});
+              if (jt == win_d.end())
+                continue;
+              SurfParams Q = P;
+              Q.phi_d = jt->second.aphi, Q.b_phi_d = jt->second.bphi, Q.q_d = jt->second.aq, Q.b_q_d = jt->second.bq,
+              Q.s_ref = jt->second.sref;
+              for (const auto &w : jt->second.eta)
+                Q.add_eta_win(w);
+              par_.push_back(Q);
+              idx_d_[((i * n + j) * n + k) * n + p] = par_.size() - 1;
+            }
+          }
+      par_built_ = true;
+    }
+    int idx_c(const Cand &c, int p) const {
+      const int n = order.size();
+      return idx_c_[(c.pos[0] * n + c.pos[1]) * n + p];
+    }
+    int idx_d(const Cand &c, int p) const {
+      const int n = order.size();
+      return idx_d_[((c.pos[0] * n + c.pos[1]) * n + c.pos[2]) * n + p];
+    }
+    // the per-target-layer queues, kept across events for their capacity
+    std::vector<std::vector<Cand>> Qc_;
+    std::vector<std::vector<int>> Qst_;
 
     // the next chain position after p its line crosses, and its state; -1 if none
     int next(const Cand &c, int p, int &st) const {
@@ -681,38 +758,23 @@ namespace mkfit::seeding {
         // OT1-P only as a triplet's 4th hit
         if (!SurfOwnership::is_pix(order[q]) && (c.nh != 3 || c.holes > max_holes_ot))
           continue;
-        st = state(q, c.h[0], c.h[c.nh - 1]);
+        st = state(q, c.ln);
         if (st)
           return q;
       }
       return -1;
     }
 
-    SurfParams params_c(const Cand &c, int L) const {
-      SurfParams Q = P;
-      auto it = win_c.find({order[c.pos[0]], order[c.pos[1]], L});
-      if (it != win_c.end())
-        Q.phi_c = it->second.first, Q.q_c = it->second.second;
-      return Q;
-    }
-    SurfParams params_d(const Cand &c, int L) const {
-      SurfParams Q = P;
-      auto it = win_d.find({order[c.pos[0]], order[c.pos[1]], order[c.pos[2]], L});
-      if (it != win_d.end())
-        Q.phi_d = it->second.aphi, Q.b_phi_d = it->second.bphi, Q.q_d = it->second.aq, Q.b_q_d = it->second.bq,
-        Q.s_ref = it->second.sref;
-      if (it != win_d.end())
-        for (const auto &w : it->second.eta)
-          Q.add_eta_win(w);
-      return Q;
-    }
-
     // L: mkFit layer id -> filled layer.  out: (layer ids, original hit indices)
     void run(const std::map<int, const SurfLayer *> &L, std::vector<std::pair<std::array<int, 4>, Quad>> &out,
              SeedCounters &cnt) {
       const int n = order.size();
-      std::vector<std::vector<Cand>> Q(n);
-      std::vector<std::vector<int>> Qst(n);  // the target's crossing state, per queued candidate
+      if (!par_built_)
+        build_params();
+      Qc_.resize(n);
+      Qst_.resize(n);
+      auto &Q = Qc_;
+      auto &Qst = Qst_;  // the target's crossing state, per queued candidate
       auto layer = [&](int p) -> const SurfLayer * {
         auto it = L.find(order[p]);
         return it == L.end() ? nullptr : it->second;
@@ -739,15 +801,16 @@ namespace mkfit::seeding {
             if ((hb.z - ha.z) * side < 0 || (hb.z == ha.z && side < 0))
               return;
             // holes: definite crossings before b that the doublet does not use
+            const LineRZ lab(ha, hb);
             int holes = 0, between = 0;
             for (int q = 0; q < se.second && holes <= 8; ++q)
-              if (q != se.first && SurfOwnership::is_pix(order[q]) && state(q, ha, hb) == 2) {
+              if (q != se.first && SurfOwnership::is_pix(order[q]) && state(q, lab) == 2) {
                 ++holes;
                 between += q > se.first;
               }
             if (lead_only && between)
               return;
-            if (holes > (start_holes < 0 ? max_holes : start_holes) || !state(se.first, ha, hb) || !state(se.second, ha, hb))
+            if (holes > (start_holes < 0 ? max_holes : start_holes) || !state(se.first, lab) || !state(se.second, lab))
               return;
             Cand c;
             c.nh = 2;
@@ -755,6 +818,7 @@ namespace mkfit::seeding {
             c.pos[0] = se.first, c.pos[1] = se.second;
             c.k[0] = ka, c.k[1] = kb;
             c.h[0] = ha, c.h[1] = hb;
+            c.ln = lab;
             push_next(c, se.second);
           });
         }
@@ -764,25 +828,26 @@ namespace mkfit::seeding {
         const SurfLayer *T = layer(p);
         if (!T)
           continue;
+        // Q[p] is not appended to while it is walked: next() only queues at positions after p
         for (size_t i = 0; i < Q[p].size(); ++i) {
-          Cand c = Q[p][i];
+          const Cand &c = Q[p][i];
           const int st = Qst[p][i];
           bool found = false;
-          const bool known = !known_only ||
-                             (c.nh == 2 ? win_c.count({order[c.pos[0]], order[c.pos[1]], order[p]}) > 0
-                                        : win_d.count({order[c.pos[0]], order[c.pos[1]], order[c.pos[2]], order[p]}) > 0);
+          const int ix = c.nh == 2 ? idx_c(c, p) : idx_d(c, p);
+          const bool known = !known_only || ix >= 0;
           if (!known) {
             // no windows for this combination: not searched, the candidate moves on as after a miss
           } else if (c.nh == 2) {
-            const SurfParams Pc = params_c(c, order[p]);
+            const SurfParams &Pc = par_[ix >= 0 ? ix : 0];
             surf_stage_c(Pc, c.h[0], c.h[1], *T, cnt, [&](unsigned int kc, const surf::P3 &hc) {
               found = true;
               Cand t = c;
               t.nh = 3, t.pos[2] = p, t.k[2] = kc, t.h[2] = hc;
+              t.ln = LineRZ(t.h[0], t.h[2]);
               push_next(t, p);
             });
           } else if (c.nh == 3) {
-            const SurfParams Pd = params_d(c, order[p]);
+            const SurfParams &Pd = par_[ix >= 0 ? ix : 0];
             const surf::Helix hx(c.h[0], c.h[1], c.h[2]);
             surf_stage_d(Pd, hx, *T, cnt, [&](unsigned int kd, const surf::P3 &) {
               found = true;
@@ -792,10 +857,11 @@ namespace mkfit::seeding {
             });
           }
           if (!found || hole_always) {
-            c.holes += st == 2;
-            if (c.holes <= max_holes) {
+            if (c.holes + (st == 2) <= max_holes) {
+              Cand f = c;
+              f.holes += st == 2;
               ++n_forwarded;
-              push_next(c, p);
+              push_next(f, p);
             } else
               ++n_dropped;
           }

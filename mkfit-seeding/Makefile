@@ -52,11 +52,14 @@ $(OUT)/$(NAME): $(CURDIR)/seedfind.cc $(HDRS) $(BLD)/libMkFitCore.so | $(OUT)
 	@echo "[seedfind] ROOT: $(if $(ROOTLIB),$(ROOTLIB),none)"
 	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS)
 
-$(OUT)/seedsurf: $(CURDIR)/seedsurf.cc $(HDRS) $(BLD)/libMkFitCore.so | $(OUT)
+SNAME ?= seedsurf
+
+$(OUT)/$(SNAME): $(CURDIR)/seedsurf.cc $(HDRS) $(BLD)/libMkFitCore.so | $(OUT)
 	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS)
 
+# make seedsurf SNAME=seedsurf-g EXTRA="-g -fno-omit-frame-pointer"   a separate binary, e.g. for a profile
 .PHONY: seedsurf
-seedsurf: $(OUT)/seedsurf
+seedsurf: $(OUT)/$(SNAME)
 
 $(OUT):
 	mkdir -p $@
