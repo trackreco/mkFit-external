@@ -905,14 +905,16 @@ int main(int argc, char *argv[]) {
         ord[i] = i;
       // tier first (a pattern with an outer-tracker layer after every pure-pixel one: its windows are
       // several times wider, so its scores are not comparable), then the score
-      auto tier = [&](int i) {
+      // the tiers once per quad, not in the comparator
+      std::vector<int> tier(cands.size());
+      for (int i = 0; i < (int)cands.size(); ++i) {
         int t = 0;
         for (int l : pats[cands[i].ip].l)
           t += !SurfOwnership::is_pix(l);
-        return t;
-      };
+        tier[i] = t;
+      }
       std::sort(ord.begin(), ord.end(), [&](int x, int y) {
-        const int tx = tier(x), ty = tier(y);
+        const int tx = tier[x], ty = tier[y];
         return tx != ty ? tx < ty : cands[x].score < cands[y].score;
       });
       std::unordered_map<long, std::vector<int>> by_hit;  // (layer, hit) -> kept quads using it
