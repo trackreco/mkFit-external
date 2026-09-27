@@ -885,37 +885,29 @@ namespace mkfit::seeding {
                   const int sb = shT->bin(std::abs(dqab * idu));
                   slo = shT->lo[sb], shi = shT->hi[sb];
                 }
+                // a run is a few hits, most failing the q window: one hit at a time, q first
                 T->sl.for_each_run(surfb::phi_bins(*T, cmid, chalf + wcphi + 1e-6f), qc, [&](unsigned int b, unsigned int e) {
-                  for (unsigned int i0 = b; i0 < e; i0 += 64) {
-                    const unsigned int nk = std::min(64u, e - i0);
-                    unsigned char msk[64];
-                    for (unsigned int jj = 0; jj < nk; ++jj) {
-                      const unsigned int i = i0 + jj;
-                      const float t = (hu[i] - ua) * idu;
-                      const float dq = hq[i] - (qa + dqab * t);
-                      const float dph = wrap(wrap(hphi[i] - pa) - dp * t);
-                      const float d0t = std::abs(hir[i] - (ia + dib * t));
-                      msk[jj] = (t > 1) & (std::abs(dq) <= qcw) & (std::abs(dph) <= d0_max * d0t + pcw);
+                  n_ct += e - b;
+                  for (unsigned int i = b; i < e; ++i) {
+                    const float t = (hu[i] - ua) * idu;
+                    const float dq = hq[i] - (qa + dqab * t);
+                    if (!(t > 1) || !(std::abs(dq) <= qcw))
+                      continue;
+                    const float dph = wrap(wrap(hphi[i] - pa) - dp * t);
+                    const float wph = d0_max * std::abs(hir[i] - (ia + dib * t)) + pcw;
+                    if (!(std::abs(dph) <= wph))
+                      continue;
+                    // the fake cuts on the survivors: the score and the shape
+                    float sc = 0;
+                    if (fk_on) {
+                      const float rq = dq * iqcw, rp = dph / wph;
+                      sc = rq * rq + rp * rp;
+                      if (sc >= fks || hsp[i] < slo || hsp[i] > shi)
+                        continue;
                     }
-                    n_ct += nk;
-                    for (unsigned int jj = 0; jj < nk; ++jj)
-                      if (msk[jj]) {
-                        // the fake cuts on the survivors: the score, recomputed, and the shape
-                        const unsigned int i = i0 + jj;
-                        float sc = 0;
-                        if (fk_on) {
-                          const float t = (hu[i] - ua) * idu;
-                          const float rq = (hq[i] - (qa + dqab * t)) * iqcw;
-                          const float rp =
-                              wrap(wrap(hphi[i] - pa) - dp * t) / (d0_max * std::abs(hir[i] - (ia + dib * t)) + pcw);
-                          sc = rq * rq + rp * rp;
-                          if (sc >= fks || hsp[i] < slo || hsp[i] > shi)
-                            continue;
-                        }
-                        t_j.push_back(j), t_k.push_back(i), t_s.push_back(sc);
-                        found = true;
-                        ++n_tr;
-                      }
+                    t_j.push_back(j), t_k.push_back(i), t_s.push_back(sc);
+                    found = true;
+                    ++n_tr;
                   }
                 });
               }
