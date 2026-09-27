@@ -259,6 +259,7 @@ namespace mkfit::seeding {
     std::vector<ParF> par_;
     std::vector<SurfParams::EtaWin> etaw_;
     std::vector<std::vector<std::pair<int, int>>> hole_pos_;  // per start pair: (position, between a and b)
+    std::vector<std::pair<float, float>> start_cot_;           // per start pair: the cot range it can use; lo > hi: none
     std::vector<std::vector<Cand>> Q2_, Q3_;                  // doublets, triplets, per target position
 
     long n_forwarded = 0, n_dropped = 0, n_c_cand = 0, n_d_cand = 0;
@@ -330,6 +331,66 @@ namespace mkfit::seeding {
             hole_pos_[si].push_back({q, q > c.starts[si].first});
       Q2_.assign(n, {});
       Q3_.assign(n, {});
+      scan_starts();
+    }
+
+    // The crossing state of position e for one line, as states() computes it for a lane.
+    static int state_of(const EnvF &e, float z0, float cot) {
+      if (!e.disc)
+        return cls(e, z0 + cot * e.plo, z0 + cot * e.phi);
+      const float c = cot, cs = std::abs(c) >= 1e-9f ? c : 1.0f, ic = std::abs(c) >= 1e-9f ? 1.0f / cs : 0.0f;
+      const float zr = -z0 * ic;
+      const int valid = (ic != 0) & (e.pos * ic + zr > 0);
+      return valid * cls(e, e.plo * ic + zr, e.phi * ic + zr);
+    }
+    // The cot range of the lines each start pair can use: a scan of lines over the beam region (z0 in
+    // steps of zv / 100, eta in steps of 0.001 up to 5) with the tests the flush and route() apply to a
+    // doublet -- a and b crossed, the holes before b, lead-only, and a pixel position after b crossed.
+    // The interval over the accepted lines is widened by 0.02 in eta; a range reaching eta 0 or 5 is
+    // open there. A start pair no line can use gets an empty range and is skipped.
+    void scan_starts() {
+      const SurfChain &c = *C;
+      const int ns = c.starts.size(), hs = c.start_holes < 0 ? c.max_holes : c.start_holes;
+      std::vector<float> elo(ns, 1e30f), ehi(ns, -1e30f);
+      std::vector<int> st(n);
+      const float zlo = c.P.bs_z - c.P.zv, zhi = c.P.bs_z + c.P.zv;
+      constexpr int kNz = 200, kNe = 5000;
+      constexpr float kDe = 0.001f, kWiden = 0.02f;
+      for (int iz = 0; iz <= kNz; ++iz) {
+        const float z0 = zlo + (zhi - zlo) * iz / kNz;
+        for (int ie = 0; ie <= kNe; ++ie) {
+          const float eta = ie * kDe, cot = c.side * std::sinh(eta);
+          for (int p = 0; p < n; ++p)
+            st[p] = env_[p].ok ? state_of(env_[p], z0, cot) : 0;
+          // the first pixel position crossed after each position, for route()
+          for (int si = 0; si < ns; ++si) {
+            const int pa = c.starts[si].first, pb = c.starts[si].second;
+            if (st[pa] == 0 || st[pb] == 0)
+              continue;
+            int holes = 0, bt = 0;
+            for (const auto &h : hole_pos_[si]) {
+              const int d = st[h.first] == 2;
+              holes += d, bt |= d & h.second;
+            }
+            if ((c.lead_only && bt) || holes > hs)
+              continue;
+            bool next = false;
+            for (int q = pb + 1; q < n && !next; ++q)
+              next = env_[q].ok && env_[q].pix && st[q] > 0;
+            if (!next)
+              continue;
+            elo[si] = std::min(elo[si], eta), ehi[si] = std::max(ehi[si], eta);
+          }
+        }
+      }
+      start_cot_.assign(ns, {1e30f, -1e30f});
+      for (int si = 0; si < ns; ++si) {
+        if (elo[si] > ehi[si])
+          continue;
+        const float a = elo[si] - kWiden, b = ehi[si] + kWiden;
+        const float slo = a <= 0 ? -1e30f : std::sinh(a), shi = b >= kNe * kDe ? 1e30f : std::sinh(b);
+        start_cot_[si] = c.side > 0 ? std::make_pair(slo, shi) : std::make_pair(-shi, -slo);
+      }
     }
 
     // The work arrays of a block: one r-z line per lane, as (z0, cot) for a barrel
@@ -494,8 +555,12 @@ namespace mkfit::seeding {
       for (size_t si = 0; si < Ch.starts.size(); ++si) {
         const int pa_ = Ch.starts[si].first, pb_ = Ch.starts[si].second;
         const SurfLayer *A = lay[pa_], *B = lay[pb_];
-        if (!A || !B)
+        const float clo = start_cot_[si].first, chi = start_cot_[si].second;
+        if (!A || !B || clo > chi)
           continue;
+        // narrow the fetch by the cot range: a barrel B with both ends finite, a disc B with a range not
+        // containing 0 (1/cot finite at both ends up to 1e-30)
+        const bool cot_q = B->disc ? (clo > 0 || chi < 0) : (clo > -1e29f && chi < 1e29f);
         const auto &hp = hole_pos_[si];
         const ShapeTab *shA = shape_of(pa_), *shB = shape_of(pb_);
         int nb = 0;
@@ -563,6 +628,25 @@ namespace mkfit::seeding {
             continue;
           // the float cuts of surf_stage_b_fast, the side, and the survivors' line
           const float ra = ha.r(), pa = ha.phi(), za = ha.z, inva = 1.0f / ra;
+          // the q range the start pair's cot range allows on B over the qbar of its hits, 0.01 cm wider
+          if (cot_q) {
+            float lo, hi;
+            if (!B->disc) {
+              const float d0 = B->ubar_lo_ - ra, d1 = B->ubar_hi_ - ra;
+              const float e0 = clo * d0, e1 = clo * d1, e2 = chi * d0, e3 = chi * d1;
+              lo = za + std::min(std::min(e0, e1), std::min(e2, e3));
+              hi = za + std::max(std::max(e0, e1), std::max(e2, e3));
+            } else {
+              const float i0 = 1.0f / clo, i1 = 1.0f / chi, d0 = B->ubar_lo_ - za, d1 = B->ubar_hi_ - za;
+              const float e0 = i0 * d0, e1 = i0 * d1, e2 = i1 * d0, e3 = i1 * d1;
+              lo = ra + std::min(std::min(e0, e1), std::min(e2, e3));
+              hi = ra + std::max(std::max(e0, e1), std::max(e2, e3));
+            }
+            const auto nq = surf::q_bins(*B, lo - 0.01f, hi + 0.01f);
+            fe.q.begin = std::max(fe.q.begin, nq.begin), fe.q.end = std::min(fe.q.end, nq.end);
+            if (fe.q.begin >= fe.q.end)
+              continue;
+          }
           B->sl.for_each_run(fe.p, fe.q, [&](unsigned int b, unsigned int e) {
             for (unsigned int i0 = b; i0 < e; i0 += 64) {
               const unsigned int nk = std::min(64u, e - i0);
@@ -581,8 +665,10 @@ namespace mkfit::seeding {
                 const int cut = (dr > 0.1f) & (std::abs(dp) <= w) & (num >= zlo * dr) & (num <= zhi * dr);
                 // a doublet belongs to the side its line goes to
                 const int sd = !((dz * side < 0) | ((dz == 0) & (side < 0)));
-                msk[j] = cut + ((cut & sd) << 1);
                 const float cot = dz / (dr > 0.1f ? dr : 1.0f);
+                // and to a start pair only if its line is one the pair can use
+                const int inc = (cot >= clo) & (cot <= chi);
+                msk[j] = cut + ((cut & sd & inc) << 1);
                 lct[j] = cot, lz0[j] = za - cot * ra;
               }
               int nd = 0, g = nb;

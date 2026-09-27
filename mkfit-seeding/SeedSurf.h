@@ -118,15 +118,20 @@ namespace mkfit::seeding {
     std::vector<double> pr_, pphi_;
     // the cluster's length in columns (Hit::spanCols()): along z in the barrel pixels
     std::vector<int> span_;
+    // the qbar range of the layer and its hits together (a hit can sit slightly outside the nominal extent)
+    float ubar_lo_ = 0, ubar_hi_ = 0;
     void fill(const HitVec &hits) {
       sl.fill(hits);
       pr_.resize(sl.n());
       pphi_.resize(sl.n());
       span_.resize(sl.n());
+      ubar_lo_ = qbar_lo, ubar_hi_ = qbar_hi;
       for (unsigned int k = 0; k < sl.n(); ++k) {
         pr_[k] = std::hypot((double)sl.x_[k], (double)sl.y_[k]);
         pphi_[k] = std::atan2((double)sl.y_[k], (double)sl.x_[k]);
         span_[k] = hits[sl.orig_[k]].spanCols();
+        const float u = disc ? sl.z_[k] : sl.r_[k];
+        ubar_lo_ = std::min(ubar_lo_, u), ubar_hi_ = std::max(ubar_hi_, u);
       }
     }
     // the hit's own qbar and q
