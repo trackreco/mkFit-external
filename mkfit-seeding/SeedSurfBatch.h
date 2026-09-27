@@ -503,27 +503,264 @@ namespace mkfit::seeding {
       return kb;
     }
 
-    void run(const std::map<int, const SurfLayer *> &L, std::vector<std::pair<std::array<int, 4>, Quad>> &out,
-             SeedCounters &cnt) {
+    // the layers of the chain positions, and OT2-P, for this event
+    std::vector<const SurfLayer *> lay_;
+    const SurfLayer *lay_ot2_ = nullptr;
+    void prepare(const std::map<int, const SurfLayer *> &L) {
+      lay_.assign(n, nullptr);
+      for (int p = 0; p < n; ++p)
+        if (auto it = L.find(C->order[p]); it != L.end())
+          lay_[p] = it->second;
+      auto it = L.find(6);
+      lay_ot2_ = it == L.end() ? nullptr : it->second;
+    }
+    // the shape table of position p, or null
+    const ShapeTab *shape_of(int p) const {
+      const int l = C->order[p];
+      return fk_shape && l >= 0 && l < 4 && shape_[l].ok() ? &shape_[l] : nullptr;
+    }
+    // push the m lanes of the work arrays routed from p (w_nq, w_st from route()) onto the queues Q
+    template <class F>
+    void push_q(std::vector<std::vector<Cand>> &Q, int m, F &&make) {
+      for (int i = 0; i < m; ++i) {
+        const int q = w_nq[i];
+        if (q < 0 || !lay_[q]) {
+          ++n_dropped;
+          continue;
+        }
+        Cand c = make(i);
+        c.st = w_st[i];
+        Q[q].push_back(c);
+      }
+    }
+
+    // The barrel start pairs this side shares with the other z side: share_[si] is the other side's start
+    // pair with the same chain positions and layers, or -1; shared_[sj] marks the other side's pairs that
+    // this side fetches for it (run_both()).
+    std::vector<int> share_;
+    std::vector<char> shared_;
+    void link(SurfChainBatch &m) {
+      share_.assign(C->starts.size(), -1);
+      m.shared_.assign(m.C->starts.size(), 0);
+      for (size_t si = 0; si < C->starts.size(); ++si) {
+        const auto [pa, pb] = C->starts[si];
+        if (env_[pa].disc || env_[pb].disc || !env_[pa].ok || !env_[pb].ok)
+          continue;
+        for (size_t sj = 0; sj < m.C->starts.size(); ++sj)
+          if (m.C->starts[sj] == C->starts[si] && m.C->order[pa] == C->order[pa] && m.C->order[pb] == C->order[pb])
+            share_[si] = sj, m.shared_[sj] = 1;
+      }
+    }
+
+    // The stage b survivors of start pair si, m lanes: holes, the start layers' states, shape, then routed
+    // from b onto the queues.
+    void flush_start(int si, int m, const unsigned int *bka, const unsigned int *bkb, const float *bz0,
+                     const float *bct) {
+      if (!m)
+        return;
+      const SurfChain &Ch = *C;
+      const int pa_ = Ch.starts[si].first, pb_ = Ch.starts[si].second;
+      const SurfLayer *A = lay_[pa_], *B = lay_[pb_];
+      const ShapeTab *shA = shape_of(pa_), *shB = shape_of(pb_);
+      const int hs = Ch.start_holes < 0 ? Ch.max_holes : Ch.start_holes;
+      work(m);
+      std::copy(bz0, bz0 + m, w_z0.data());
+      std::copy(bct, bct + m, w_cot.data());
+      prep_lines(m);
+      int *__restrict holes = w_holes.data(), *__restrict bt = w_bt.data(), *__restrict s = w_s.data();
+      for (int i = 0; i < m; ++i)
+        holes[i] = 0, bt[i] = 0;
+      // holes: definite crossings before b that the doublet does not use
+      for (const auto &h : hole_pos_[si]) {
+        states(env_[h.first], m, s);
+        const int btw = h.second;
+        for (int i = 0; i < m; ++i) {
+          const int d = s[i] == 2;
+          holes[i] += d;
+          bt[i] |= d & btw;
+        }
+      }
+      states(env_[pa_], m, w_sa.data());
+      states(env_[pb_], m, w_sb.data());
+      const int lead_only = Ch.lead_only;
+      int *__restrict shp = w_bt.data();  // bt is consumed here, reuse it
+      for (int i = 0; i < m; ++i)
+        shp[i] = !(lead_only & bt[i]);
+      if (shA || shB) {
+        for (int i = 0; i < m; ++i) {
+          const float ac = std::abs(w_cot[i]);
+          const int ok = (!shA || shA->pass(A->span_[bka[i]], ac)) & (!shB || shB->pass(B->span_[bkb[i]], ac));
+          n_fk_shape += shp[i] & !ok;
+          shp[i] &= ok;
+        }
+      }
+      int g = 0;
+      for (int i = 0; i < m; ++i) {
+        const int good = shp[i] & (holes[i] <= hs) & (w_sa[i] > 0) & (w_sb[i] > 0);
+        // compact the good lanes in place (g <= i)
+        w_z0[g] = w_z0[i], w_cot[g] = w_cot[i], holes[g] = holes[i], w_allow[g] = 0;
+        w_i0[g] = bka[i], w_i1[g] = bkb[i];
+        g += good;
+      }
+      route(pb_, g);
+      push_q(Q2_, g, [&](int i) {
+        Cand c;
+        c.k[0] = w_i0[i], c.k[1] = w_i1[i], c.k[2] = 0;
+        c.pos[0] = pa_, c.pos[1] = pb_, c.pos[2] = 0;
+        c.holes = w_holes[i];
+        c.z0 = w_z0[i], c.cot = w_cot[i], c.sc = 0;
+        return c;
+      });
+    }
+
+    // The start doublets of every start pair, onto the stage c queues. With mirror (the other z side,
+    // linked by link()), a shared barrel pair is fetched once and each doublet goes to the side its line
+    // goes to; a pair this side's own shared_ marks was done by the other side and is skipped.
+    void start_doublets(SurfChainBatch *mirror, SeedCounters &cnt) {
       using namespace surfb;
       const SurfChain &Ch = *C;
-      std::vector<const SurfLayer *> lay(n);
-      for (int p = 0; p < n; ++p) {
-        auto it = L.find(Ch.order[p]);
-        lay[p] = it == L.end() ? nullptr : it->second;
+      using sclk = std::chrono::steady_clock;
+      const auto t0 = sclk::now();
+      // the stage b survivors of the current block, per side: hits, and their r-z line from the mask loop
+      static constexpr int kCap = kBlk + 64;
+      alignas(32) unsigned int bka[2][kCap], bkb[2][kCap];
+      alignas(32) float bz0[2][kCap], bct[2][kCap];
+      const SurfParams &P = Ch.P;
+      long n_doublets = 0;
+      for (size_t si = 0; si < Ch.starts.size(); ++si) {
+        if (!mirror && !shared_.empty() && shared_[si])
+          continue;
+        const int sj = mirror && !share_.empty() ? share_[si] : -1;
+        SurfChainBatch *sb[2] = {this, sj >= 0 ? mirror : nullptr};
+        const int ss[2] = {(int)si, sj};
+        const int pa_ = Ch.starts[si].first, pb_ = Ch.starts[si].second;
+        const SurfLayer *A = lay_[pa_], *B = lay_[pb_];
+        float clo[2] = {start_cot_[si].first, 1e30f}, chi[2] = {start_cot_[si].second, -1e30f};
+        if (sj >= 0)
+          clo[1] = mirror->start_cot_[sj].first, chi[1] = mirror->start_cot_[sj].second;
+        if (!A || !B || (clo[0] > chi[0] && clo[1] > chi[1]))
+          continue;
+        // the union of the (one or two) ranges, for the fetch
+        const float ulo = clo[1] > chi[1] ? clo[0] : clo[0] > chi[0] ? clo[1] : std::min(clo[0], clo[1]);
+        const float uhi = clo[1] > chi[1] ? chi[0] : clo[0] > chi[0] ? chi[1] : std::max(chi[0], chi[1]);
+        // narrow the fetch by the cot range: a barrel B with both ends finite, a disc B with a range not
+        // containing 0 (1/cot finite at both ends up to 1e-30)
+        const bool cot_q = B->disc ? (ulo > 0 || uhi < 0) : (ulo > -1e29f && uhi < 1e29f);
+        int nb[2] = {0, 0};
+        auto flush = [&](int k) {
+          sb[k]->flush_start(ss[k], nb[k], bka[k], bkb[k], bz0[k], bct[k]);
+          nb[k] = 0;
+        };
+        const float inv2R = 0.003f * 3.8f / (2.0f * P.pt_min), d0 = P.d0_max, marg = P.marg_b;
+        const float zlo = P.bs_z - P.zv, zhi = P.bs_z + P.zv, side = Ch.side;
+        const float clo0 = clo[0], chi0 = chi[0], clo1 = clo[1], chi1 = chi[1];
+        const float *bphi = B->sl.phi_.data(), *br = B->sl.r_.data(), *bz = B->sl.z_.data(), *bir = B->sl.invr_.data();
+        for (unsigned int ka = 0; ka < A->sl.n(); ++ka) {
+          const surf::P3 ha = surf_p3(*A, ka);
+          SurfFetch fe;
+          if (!surf_b_fetch(P, ha, *B, fe))
+            continue;
+          // the float cuts of surf_stage_b_fast, the side, and the survivors' line
+          const float ra = ha.r(), pa = ha.phi(), za = ha.z, inva = 1.0f / ra;
+          // the q range the start pair's cot range allows on B over the qbar of its hits, 0.01 cm wider
+          if (cot_q) {
+            float lo, hi;
+            if (!B->disc) {
+              const float d0 = B->ubar_lo_ - ra, d1 = B->ubar_hi_ - ra;
+              const float e0 = ulo * d0, e1 = ulo * d1, e2 = uhi * d0, e3 = uhi * d1;
+              lo = za + std::min(std::min(e0, e1), std::min(e2, e3));
+              hi = za + std::max(std::max(e0, e1), std::max(e2, e3));
+            } else {
+              const float i0 = 1.0f / ulo, i1 = 1.0f / uhi, d0 = B->ubar_lo_ - za, d1 = B->ubar_hi_ - za;
+              const float e0 = i0 * d0, e1 = i0 * d1, e2 = i1 * d0, e3 = i1 * d1;
+              lo = ra + std::min(std::min(e0, e1), std::min(e2, e3));
+              hi = ra + std::max(std::max(e0, e1), std::max(e2, e3));
+            }
+            const auto nq = surf::q_bins(*B, lo - 0.01f, hi + 0.01f);
+            fe.q.begin = std::max(fe.q.begin, nq.begin), fe.q.end = std::min(fe.q.end, nq.end);
+            if (fe.q.begin >= fe.q.end)
+              continue;
+            // on a disc the phi bound grows with r_b: take it at the largest r a usable line reaches,
+            // instead of the disc's outer edge (a hit beyond it fails the cot range)
+            if (B->disc && hi + 0.01f < B->q_hi)
+              fe.p = surf::phi_bins(*B, ha.phi(), surf_wb(P, ha.r(), hi + 0.01f) + P.marg_b);
+          }
+          B->sl.for_each_run(fe.p, fe.q, [&](unsigned int b, unsigned int e) {
+            for (unsigned int i0 = b; i0 < e; i0 += 64) {
+              const unsigned int nk = std::min(64u, e - i0);
+              if (nb[0] + (int)nk > kCap)
+                flush(0);
+              if (nb[1] + (int)nk > kCap)
+                flush(1);
+              alignas(32) int msk[64];
+              alignas(32) float lz0[64], lct[64];
+              for (unsigned int j = 0; j < nk; ++j) {
+                const unsigned int i = i0 + j;
+                const float dr = br[i] - ra, dz = bz[i] - za;
+                float dp = bphi[i] - pa;
+                dp = dp > kPi ? dp - k2Pi : dp;
+                dp = dp < -kPi ? dp + k2Pi : dp;
+                const float w = dr * inv2R + d0 * (inva - bir[i]) + marg;
+                const float num = za * dr - ra * dz;
+                const int cut = (dr > 0.1f) & (std::abs(dp) <= w) & (num >= zlo * dr) & (num <= zhi * dr);
+                // a doublet belongs to the side its line goes to: this one, or the mirror
+                const int sd = !((dz * side < 0) | ((dz == 0) & (side < 0)));
+                const float cot = dz / (dr > 0.1f ? dr : 1.0f);
+                // and to a start pair only if its line is one the pair can use
+                const int in0 = (cot >= clo0) & (cot <= chi0), in1 = (cot >= clo1) & (cot <= chi1);
+                msk[j] = cut + ((cut & sd & in0) << 1) + ((cut & !sd & in1) << 2);
+                lct[j] = cot, lz0[j] = za - cot * ra;
+              }
+              int nd = 0, g0 = nb[0], g1 = nb[1];
+              for (unsigned int j = 0; j < nk; ++j) {
+                nd += msk[j] & 1;
+                bka[0][g0] = ka, bkb[0][g0] = i0 + j, bz0[0][g0] = lz0[j], bct[0][g0] = lct[j];
+                g0 += (msk[j] >> 1) & 1;
+                bka[1][g1] = ka, bkb[1][g1] = i0 + j, bz0[1][g1] = lz0[j], bct[1][g1] = lct[j];
+                g1 += msk[j] >> 2;
+              }
+              nb[0] = g0, nb[1] = g1;
+              n_doublets += nd;
+            }
+          });
+        }
+        flush(0);
+        if (sb[1])
+          flush(1);
       }
+      cnt.doublets += n_doublets;
+      t_start += std::chrono::duration<double>(sclk::now() - t0).count();
+    }
+
+    void run(const std::map<int, const SurfLayer *> &L, std::vector<std::pair<std::array<int, 4>, Quad>> &out,
+             SeedCounters &cnt) {
+      prepare(L);
+      start_doublets(nullptr, cnt);
+      forward(out, cnt);
+    }
+    // Both z sides, with the barrel start pairs fetched once for both; the quads in the order of run()
+    // on a, then on b.
+    static void run_both(SurfChainBatch &a, SurfChainBatch &b, const std::map<int, const SurfLayer *> &L,
+                         std::vector<std::pair<std::array<int, 4>, Quad>> &out, SeedCounters &cnt) {
+      if (a.share_.empty())
+        a.link(b);
+      a.prepare(L), b.prepare(L);
+      a.start_doublets(&b, cnt);
+      b.start_doublets(nullptr, cnt);
+      a.forward(out, cnt);
+      b.forward(out, cnt);
+    }
+
+    // The forward pass over the chain positions: stage c on the doublets queued at each, stage d on the
+    // triplets.
+    void forward(std::vector<std::pair<std::array<int, 4>, Quad>> &out, SeedCounters &cnt) {
+      using namespace surfb;
+      const SurfChain &Ch = *C;
+      const std::vector<const SurfLayer *> &lay = lay_;
       const int max_holes = Ch.max_holes, max_holes_ot = Ch.max_holes_ot;
-      // the shape table of position p, or null
-      auto shape_of = [&](int p) -> const ShapeTab * {
-        const int l = Ch.order[p];
-        return fk_shape && l >= 0 && l < 4 && shape_[l].ok() ? &shape_[l] : nullptr;
-      };
       const float fks = fk_score > 0 ? fk_score : 1e30f;
       const bool fk_on = fk_score > 0 || fk_shape;
-      const SurfLayer *lay_ot2 = nullptr;
-      if (fk_ot2 > 0)
-        if (auto it = L.find(6); it != L.end())
-          lay_ot2 = it->second;
+      const SurfLayer *lay_ot2 = fk_ot2 > 0 ? lay_ot2_ : nullptr;
       const int nn = n;
       auto idx_c = [&](const Cand &c, int p) { return Ch.idx_c_[(c.pos[0] * nn + c.pos[1]) * nn + p]; };
       auto idx_d = [&](const Cand &c, int p) { return Ch.idx_d_[((c.pos[0] * nn + c.pos[1]) * nn + c.pos[2]) * nn + p]; };
@@ -540,152 +777,6 @@ namespace mkfit::seeding {
           Q[q].push_back(c);
         }
       };
-
-      using sclk = std::chrono::steady_clock;
-      const auto t0 = sclk::now();
-
-      // ---- start doublets
-      // the stage b survivors of the current block: hits, and their r-z line computed in the mask loop
-      static constexpr int kCap = kBlk + 64;
-      alignas(32) unsigned int bka[kCap], bkb[kCap];
-      alignas(32) float bz0[kCap], bct[kCap];
-      const SurfParams &P = Ch.P;
-      const int hs = Ch.start_holes < 0 ? max_holes : Ch.start_holes;
-      long n_doublets = 0;
-      for (size_t si = 0; si < Ch.starts.size(); ++si) {
-        const int pa_ = Ch.starts[si].first, pb_ = Ch.starts[si].second;
-        const SurfLayer *A = lay[pa_], *B = lay[pb_];
-        const float clo = start_cot_[si].first, chi = start_cot_[si].second;
-        if (!A || !B || clo > chi)
-          continue;
-        // narrow the fetch by the cot range: a barrel B with both ends finite, a disc B with a range not
-        // containing 0 (1/cot finite at both ends up to 1e-30)
-        const bool cot_q = B->disc ? (clo > 0 || chi < 0) : (clo > -1e29f && chi < 1e29f);
-        const auto &hp = hole_pos_[si];
-        const ShapeTab *shA = shape_of(pa_), *shB = shape_of(pb_);
-        int nb = 0;
-        auto flush = [&]() {
-          const int m = nb;
-          if (!m)
-            return;
-          work(m);
-          std::copy(bz0, bz0 + m, w_z0.data());
-          std::copy(bct, bct + m, w_cot.data());
-          prep_lines(m);
-          int *__restrict holes = w_holes.data(), *__restrict bt = w_bt.data(), *__restrict s = w_s.data();
-          for (int i = 0; i < m; ++i)
-            holes[i] = 0, bt[i] = 0;
-          // holes: definite crossings before b that the doublet does not use
-          for (const auto &h : hp) {
-            states(env_[h.first], m, s);
-            const int btw = h.second;
-            for (int i = 0; i < m; ++i) {
-              const int d = s[i] == 2;
-              holes[i] += d;
-              bt[i] |= d & btw;
-            }
-          }
-          states(env_[pa_], m, w_sa.data());
-          states(env_[pb_], m, w_sb.data());
-          const int lead_only = Ch.lead_only;
-          int *__restrict shp = w_bt.data();  // bt is consumed here, reuse it
-          for (int i = 0; i < m; ++i)
-            shp[i] = !(lead_only & bt[i]);
-          if (shA || shB) {
-            for (int i = 0; i < m; ++i) {
-              const float ac = std::abs(w_cot[i]);
-              const int ok = (!shA || shA->pass(A->span_[bka[i]], ac)) & (!shB || shB->pass(B->span_[bkb[i]], ac));
-              n_fk_shape += shp[i] & !ok;
-              shp[i] &= ok;
-            }
-          }
-          int g = 0;
-          for (int i = 0; i < m; ++i) {
-            const int good = shp[i] & (holes[i] <= hs) & (w_sa[i] > 0) & (w_sb[i] > 0);
-            // compact the good lanes in place (g <= i)
-            w_z0[g] = w_z0[i], w_cot[g] = w_cot[i], holes[g] = holes[i], w_allow[g] = 0;
-            w_i0[g] = bka[i], w_i1[g] = bkb[i];
-            g += good;
-          }
-          route(pb_, g);
-          push(Q2_, g, [&](int i) {
-            Cand c;
-            c.k[0] = w_i0[i], c.k[1] = w_i1[i], c.k[2] = 0;
-            c.pos[0] = pa_, c.pos[1] = pb_, c.pos[2] = 0;
-            c.holes = w_holes[i];
-            c.z0 = w_z0[i], c.cot = w_cot[i], c.sc = 0;
-            return c;
-          });
-          nb = 0;
-        };
-        const float inv2R = 0.003f * 3.8f / (2.0f * P.pt_min), d0 = P.d0_max, marg = P.marg_b;
-        const float zlo = P.bs_z - P.zv, zhi = P.bs_z + P.zv, side = Ch.side;
-        const float *bphi = B->sl.phi_.data(), *br = B->sl.r_.data(), *bz = B->sl.z_.data(), *bir = B->sl.invr_.data();
-        for (unsigned int ka = 0; ka < A->sl.n(); ++ka) {
-          const surf::P3 ha = surf_p3(*A, ka);
-          SurfFetch fe;
-          if (!surf_b_fetch(P, ha, *B, fe))
-            continue;
-          // the float cuts of surf_stage_b_fast, the side, and the survivors' line
-          const float ra = ha.r(), pa = ha.phi(), za = ha.z, inva = 1.0f / ra;
-          // the q range the start pair's cot range allows on B over the qbar of its hits, 0.01 cm wider
-          if (cot_q) {
-            float lo, hi;
-            if (!B->disc) {
-              const float d0 = B->ubar_lo_ - ra, d1 = B->ubar_hi_ - ra;
-              const float e0 = clo * d0, e1 = clo * d1, e2 = chi * d0, e3 = chi * d1;
-              lo = za + std::min(std::min(e0, e1), std::min(e2, e3));
-              hi = za + std::max(std::max(e0, e1), std::max(e2, e3));
-            } else {
-              const float i0 = 1.0f / clo, i1 = 1.0f / chi, d0 = B->ubar_lo_ - za, d1 = B->ubar_hi_ - za;
-              const float e0 = i0 * d0, e1 = i0 * d1, e2 = i1 * d0, e3 = i1 * d1;
-              lo = ra + std::min(std::min(e0, e1), std::min(e2, e3));
-              hi = ra + std::max(std::max(e0, e1), std::max(e2, e3));
-            }
-            const auto nq = surf::q_bins(*B, lo - 0.01f, hi + 0.01f);
-            fe.q.begin = std::max(fe.q.begin, nq.begin), fe.q.end = std::min(fe.q.end, nq.end);
-            if (fe.q.begin >= fe.q.end)
-              continue;
-          }
-          B->sl.for_each_run(fe.p, fe.q, [&](unsigned int b, unsigned int e) {
-            for (unsigned int i0 = b; i0 < e; i0 += 64) {
-              const unsigned int nk = std::min(64u, e - i0);
-              if (nb + (int)nk > kCap)
-                flush();
-              alignas(32) int msk[64];
-              alignas(32) float lz0[64], lct[64];
-              for (unsigned int j = 0; j < nk; ++j) {
-                const unsigned int i = i0 + j;
-                const float dr = br[i] - ra, dz = bz[i] - za;
-                float dp = bphi[i] - pa;
-                dp = dp > kPi ? dp - k2Pi : dp;
-                dp = dp < -kPi ? dp + k2Pi : dp;
-                const float w = dr * inv2R + d0 * (inva - bir[i]) + marg;
-                const float num = za * dr - ra * dz;
-                const int cut = (dr > 0.1f) & (std::abs(dp) <= w) & (num >= zlo * dr) & (num <= zhi * dr);
-                // a doublet belongs to the side its line goes to
-                const int sd = !((dz * side < 0) | ((dz == 0) & (side < 0)));
-                const float cot = dz / (dr > 0.1f ? dr : 1.0f);
-                // and to a start pair only if its line is one the pair can use
-                const int inc = (cot >= clo) & (cot <= chi);
-                msk[j] = cut + ((cut & sd & inc) << 1);
-                lct[j] = cot, lz0[j] = za - cot * ra;
-              }
-              int nd = 0, g = nb;
-              for (unsigned int j = 0; j < nk; ++j) {
-                nd += msk[j] & 1;
-                bka[g] = ka, bkb[g] = i0 + j, bz0[g] = lz0[j], bct[g] = lct[j];
-                g += msk[j] >> 1;
-              }
-              nb = g;
-              n_doublets += nd;
-            }
-          });
-        }
-        flush();
-      }
-      cnt.doublets += n_doublets;
-      t_start += std::chrono::duration<double>(sclk::now() - t0).count();
 
       // ---- the forward pass
       std::vector<unsigned int> t_j, t_k;  // stage c survivors: (candidate in block, hit)

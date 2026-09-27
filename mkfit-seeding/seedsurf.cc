@@ -617,10 +617,9 @@ int main(int argc, char *argv[]) {
       std::map<int, const SurfLayer *> LM;
       for (auto &kv : layers)
         LM[kv.first] = kv.second.get();
-      if (chain_batch) {
-        CB[0].run(LM, cq, cnt);
-        CB[1].run(LM, cq, cnt);
-      } else {
+      if (chain_batch)
+        SurfChainBatch::run_both(CB[0], CB[1], LM, cq, cnt);
+      else {
         CH[0].run(LM, cq, cnt);
         CH[1].run(LM, cq, cnt);
       }
