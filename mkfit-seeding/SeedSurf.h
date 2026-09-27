@@ -64,6 +64,27 @@ namespace mkfit::seeding {
     // (3D, cm) as s / s_ref -- the lever arm of the scattering between c and d.
     float s_ref = 0;
     double lever(double s) const { return s_ref > 0 && s > 0 ? s / s_ref : 1.0; }
+    // d windows per |eta| slice of the triplet's helix; a slice replaces phi_d, b_phi_d, q_d, b_q_d
+    struct EtaWin {
+      float lo, hi, aphi, bphi, aq, bq;
+    };
+    static constexpr int kMaxEtaWin = 8;
+    EtaWin eta_win[kMaxEtaWin];
+    int n_eta_win = 0;
+    void add_eta_win(const EtaWin &w) {
+      if (n_eta_win < kMaxEtaWin)
+        eta_win[n_eta_win++] = w;
+    }
+    // the d windows for a triplet at |eta| ae: this, or a copy with the slice's a and b
+    SurfParams for_eta(double ae) const {
+      SurfParams Q = *this;
+      for (int i = 0; i < n_eta_win; ++i)
+        if (ae >= eta_win[i].lo && ae < eta_win[i].hi) {
+          Q.phi_d = eta_win[i].aphi, Q.b_phi_d = eta_win[i].bphi, Q.q_d = eta_win[i].aq, Q.b_q_d = eta_win[i].bq;
+          break;
+        }
+      return Q;
+    }
     double wphi_d(double pte, double s = -1) const { return phi_d + lever(s) * b_phi_d / std::max((double)pt_min, pte); }
     double wq_d(double pte, double s = -1) const { return q_d + lever(s) * b_q_d / std::max((double)pt_min, pte); }
   };
@@ -374,10 +395,17 @@ namespace mkfit::seeding {
 
   // Stage d: every hit of layer D on the helix hx; windows P.wphi_d, P.wq_d.  f(kd, hd).
   template <typename F>
-  inline void surf_stage_d(const SurfParams &P, const surf::Helix &hx, const SurfLayer &D, SeedCounters &cnt, F &&f) {
+  inline void surf_stage_d(const SurfParams &P0, const surf::Helix &hx, const SurfLayer &D, SeedCounters &cnt, F &&f) {
     using namespace surf;
     if (!hx.ok)
       return;
+    SurfParams Pe;
+    const SurfParams *pp = &P0;
+    if (P0.n_eta_win > 0) {
+      Pe = P0.for_eta(std::asinh(std::abs(hx.cot)));
+      pp = &Pe;
+    }
+    const SurfParams &P = *pp;
     double dq0, dp0, dq1, dp1, s0 = -1, s1 = -1;
     const bool ok0 = hx.predict(D.disc, D.qbar_lo, dq0, dp0, &s0);
     const bool ok1 = hx.predict(D.disc, D.qbar_hi, dq1, dp1, &s1);
@@ -572,6 +600,7 @@ namespace mkfit::seeding {
   struct SurfChain {
     struct DW {
       float aphi, bphi, aq, bq, sref = 0;
+      std::vector<SurfParams::EtaWin> eta;
     };
     std::map<std::array<int, 3>, std::pair<float, float>> win_c;
     std::map<std::array<int, 4>, DW> win_d;
@@ -672,6 +701,9 @@ namespace mkfit::seeding {
       if (it != win_d.end())
         Q.phi_d = it->second.aphi, Q.b_phi_d = it->second.bphi, Q.q_d = it->second.aq, Q.b_q_d = it->second.bq,
         Q.s_ref = it->second.sref;
+      if (it != win_d.end())
+        for (const auto &w : it->second.eta)
+          Q.add_eta_win(w);
       return Q;
     }
 

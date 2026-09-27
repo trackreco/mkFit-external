@@ -1144,10 +1144,31 @@ Found tracks are identical in every |eta| bin. The quads move from short paths
 They do not fall. Without `--pattern-sref` the chain's truth report is identical
 to before in every line but the timings.
 
+**Per-|eta| d windows: built, measured, a null, off by default.**
+`--pattern-dwin-eta A B C D LO HI APHI BPHI AQ BQ` adds an |eta| slice to a listed
+pattern's d windows. The triplet's helix |eta| selects the slice; outside every
+slice the pattern's own windows apply. `prep/surf-resid-eta.py` fits four slices
+of equal count per pattern, on the inner = 0 rows, with the surf-resid envelope.
+A slice needs at least 3 pT bins, otherwise the pattern keeps its single window,
+which is what happens for B1 F1 F2 + OT1-P (911 tracks). B1 B2 B3 + OT1-P comes out
+monotonic in |eta| (b_z 0.058 / 0.087 / 0.109 / 0.157 cm GeV). B1 B2 F1 + OT1-P
+has one slice at 0.34 between neighbours at 0.08 and 0.20: an envelope that takes
+the max over pT bins of ~200 tracks is noise-limited per slice. Chain, events
+40-99 (`prep/ms-eta-2026-09-27/cmp-eta.txt`):
+
+| OT1-P d windows | found / ev | kept quads / ev | fake among decidable |
+|---|---|---|---|
+| one a, b per pattern (committed) | 1431.5 | 27 468 | 0.343 |
+| per-\|eta\| slices | 1431.5 | 27 705 | 0.349 |
+
+Quads fall 4-5 % at |eta| 0.6-1.0 (the clean B1 B2 B3 slices) and rise at 1.2-1.8
+(the noisy B1 B2 F1 slice). No bin moves in found tracks. The 5-20 % area gain
+estimated at fixed containment above does not survive the per-slice fit
+statistics of 40 events. Together with the lever-arm null, this says the d
+windows fitted on the chain's rows are as good as a window table gets here. The
+scattering term is left as a + b / pT, with pt_min as the knob.
+
 Next, in order:
-1. **d windows as a function of |eta|.** Either the per-|eta| (a, b) fitted on
-   the chain's rows, or b_z = k Highland(|eta|) on the scan with one k per
-   pattern (k ~ 1.45 for z; phi needs its own).
-2. **Kernels.** The chain on `SeedLayer` and the tile kernels in float, as the
+1. **Kernels.** The chain on `SeedLayer` and the tile kernels in float, as the
    barrel finder was done, with the scalar chain as the reference list.
-3. Iterations and larger D0.
+2. Iterations and larger D0.
