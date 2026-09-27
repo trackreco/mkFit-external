@@ -714,16 +714,16 @@ namespace mkfit::seeding {
             continue;
           // the float cuts of surf_stage_b_fast, the side, and the survivors' line
           const float ra = ha.r(), pa = ha.phi(), za = ha.z, inva = 1.0f / ra;
-          // the q range the start pair's cot range allows on B over the qbar of its hits, 0.01 cm wider
+          // the q range the start pair's cot range allows on B, 0.01 cm wider
           if (cot_q) {
             float lo, hi;
             if (!B->disc) {
-              const float d0 = B->ubar_lo_ - ra, d1 = B->ubar_hi_ - ra;
+              const float d0 = B->qbar_lo - ra, d1 = B->qbar_hi - ra;
               const float e0 = ulo * d0, e1 = ulo * d1, e2 = uhi * d0, e3 = uhi * d1;
               lo = za + std::min(std::min(e0, e1), std::min(e2, e3));
               hi = za + std::max(std::max(e0, e1), std::max(e2, e3));
             } else {
-              const float i0 = 1.0f / ulo, i1 = 1.0f / uhi, d0 = B->ubar_lo_ - za, d1 = B->ubar_hi_ - za;
+              const float i0 = 1.0f / ulo, i1 = 1.0f / uhi, d0 = B->qbar_lo - za, d1 = B->qbar_hi - za;
               const float e0 = i0 * d0, e1 = i0 * d1, e2 = i1 * d0, e3 = i1 * d1;
               lo = ra + std::min(std::min(e0, e1), std::min(e2, e3));
               hi = ra + std::max(std::max(e0, e1), std::max(e2, e3));

@@ -92,13 +92,22 @@ namespace mkfit::seeding {
 
   // A layer as the surface finder sees it.
   struct SurfLayer {
-    using AxPhi = axis_pow2_u1<float, unsigned short, 16, 8>;
+// phi N-bins per layer: 2^11 = 2048, 3.07 mrad (was 256; measured: 11 and 12 are equal, 10 slower)
+#ifndef SURF_PHI_NBITS
+#define SURF_PHI_NBITS 11
+#endif
+    using AxPhi = axis_pow2_u1<float, unsigned short, 16, SURF_PHI_NBITS>;
     using AxQ = axis<float, unsigned short, 16, 8>;
     using L = SeedLayer<AxPhi, AxQ>;
     int id = -1;
     bool disc = false;
-    double qbar_lo = 0, qbar_hi = 0;  // r range (barrel) or z range (disc)
-    double q_lo = 0, q_hi = 0;        // z range (barrel) or r range (disc)
+    // r range (barrel) or z range (disc), and z range (barrel) or r range (disc): the LayerInfo extent,
+    // widened in fill() to hold every hit of the event. The pixel barrel's LayerInfo::rin() lies inside
+    // its inner shell (layer 0: 2.868 cm, hits from 2.750), so ~half its hits have r below it, and a fetch
+    // over the nominal extent can miss them; coarse phi bins hid that.
+    double qbar_lo = 0, qbar_hi = 0;
+    double q_lo = 0, q_hi = 0;
+    double qbar_lo_nom = 0, qbar_hi_nom = 0, q_lo_nom = 0, q_hi_nom = 0;
     L sl;
 
     static unsigned int nq(double lo, double hi, double bin) {
@@ -111,6 +120,10 @@ namespace mkfit::seeding {
           qbar_hi(li.is_barrel() ? li.rout() : li.zmax()),
           q_lo(li.is_barrel() ? li.zmin() : li.rin()),
           q_hi(li.is_barrel() ? li.zmax() : li.rout()),
+          qbar_lo_nom(qbar_lo),
+          qbar_hi_nom(qbar_hi),
+          q_lo_nom(q_lo),
+          q_hi_nom(q_hi),
           sl((float)q_lo, (float)q_hi, nq(li.is_barrel() ? li.zmin() : li.rin(), li.is_barrel() ? li.zmax() : li.rout(), qbin),
              !li.is_barrel()) {}
 
@@ -118,20 +131,19 @@ namespace mkfit::seeding {
     std::vector<double> pr_, pphi_;
     // the cluster's length in columns (Hit::spanCols()): along z in the barrel pixels
     std::vector<int> span_;
-    // the qbar range of the layer and its hits together (a hit can sit slightly outside the nominal extent)
-    float ubar_lo_ = 0, ubar_hi_ = 0;
     void fill(const HitVec &hits) {
       sl.fill(hits);
       pr_.resize(sl.n());
       pphi_.resize(sl.n());
       span_.resize(sl.n());
-      ubar_lo_ = qbar_lo, ubar_hi_ = qbar_hi;
+      qbar_lo = qbar_lo_nom, qbar_hi = qbar_hi_nom, q_lo = q_lo_nom, q_hi = q_hi_nom;
       for (unsigned int k = 0; k < sl.n(); ++k) {
         pr_[k] = std::hypot((double)sl.x_[k], (double)sl.y_[k]);
         pphi_[k] = std::atan2((double)sl.y_[k], (double)sl.x_[k]);
         span_[k] = hits[sl.orig_[k]].spanCols();
-        const float u = disc ? sl.z_[k] : sl.r_[k];
-        ubar_lo_ = std::min(ubar_lo_, u), ubar_hi_ = std::max(ubar_hi_, u);
+        const double u = qbar(k), v = q(k);
+        qbar_lo = std::min(qbar_lo, u), qbar_hi = std::max(qbar_hi, u);
+        q_lo = std::min(q_lo, v), q_hi = std::max(q_hi, v);
       }
     }
     // the hit's own qbar and q
