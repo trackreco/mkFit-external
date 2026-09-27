@@ -28,15 +28,16 @@ namespace mkfit::seeding {
   public:
     using binnor_t = binnor<unsigned int, AxPhi, AxQ, 18, 14>;
 
-    SeedLayer(float qmin, float qmax, unsigned int nq)
-        : ax_phi_(-kPi, kPi), ax_q_(qmin, qmax, nq), binnor_(ax_phi_, ax_q_, true, false) {}
+    // q_is_r: bin and sort in (phi, r) instead of (phi, z) -- the q of a disc
+    SeedLayer(float qmin, float qmax, unsigned int nq, bool q_is_r = false)
+        : ax_phi_(-kPi, kPi), ax_q_(qmin, qmax, nq), binnor_(ax_phi_, ax_q_, true, false), q_is_r_(q_is_r) {}
 
     void fill(const HitVec &hits) {
       n_ = hits.size();
       binnor_.reset_contents();
       binnor_.begin_registration(n_);
       for (unsigned int i = 0; i < n_; ++i)
-        binnor_.register_entry_safe(hits[i].phi(), hits[i].z());
+        binnor_.register_entry_safe(hits[i].phi(), q_is_r_ ? hits[i].r() : hits[i].z());
       binnor_.finalize_registration();
 
       phi_.resize(n_);
@@ -146,6 +147,7 @@ namespace mkfit::seeding {
     binnor_t binnor_;
     std::vector<unsigned int> start_;
     unsigned int n_ = 0;
+    bool q_is_r_ = false;
   };
 
 }  // namespace mkfit::seeding

@@ -19,6 +19,10 @@ reproducing that prototype's output exactly, then made fast.
 | `seedfind.cc` | standalone driver: geometry plugin and events as `mkFit.cc` loads them, timers around the fill and the search only |
 | `SeedOT1.h` | `seedfind --ot1`: a compatible hit in OT1 (P or S) for every quad, with truth |
 | `SeedSeq.h` | `seedfind --sequences[-all]`: the layer sequence every sim track crosses, rec -> sim and sim -> rec |
+| `SeedSurf.h` | the surface finder: quads on any four layers, barrel or disc, double precision; `SurfChain`, the feed-forward chain over the layers in crossing order; `SurfOwnership`, the phase-space ownership test |
+| `seedsurf.cc` | its driver, with truth by pattern and for the union, residual dump, cleaning, ownership, `--bind`, `--chain` |
+| `windows-D121/` | the c and d windows per layer combination, as `seedsurf` options, one combination per line: `pixel.txt` (11 pixel patterns), `ot1p.txt` (3 triplet + OT1-P), `skip.txt` (29 combinations with a skipped layer) |
+| `seedsurf-chain.sh` | runs `seedsurf` in the chosen configuration, the chain with a late start |
 | `Makefile` | flags from the build's `make echo-aclic`, re-read on every build; ROOT only if `libMkFitCore.so` links it |
 
 ## Build and run
@@ -883,4 +887,134 @@ need is resolution, and fixed point gives it directly.
    the target layer's own (q, qbar).
 3. Mixed barrel/disc combinations in the transition region.
 4. Iterations and a larger D0_max, where starting further out is cheaper.
+
+## Beyond the pixel barrel: `seedsurf` (2026-09-26/27)
+
+`SeedSurf.h` is a scalar, double-precision reference finder for quads on any
+four surfaces, barrel layers or discs, and `seedsurf.cc` is its driver
+(`make BLD=... seedsurf`). It is written to be right, not fast; nothing of the
+tile finder's arithmetic is in it. Every hit is predicted at its own qbar in the
+target layer's (q, qbar): a barrel layer is parametrised by r and measures z, a
+disc by z and measures r.
+
+- b: the barrel finder's geometric phi bound, and the a-b line reaching r = 0
+  within `--zv` (25 cm) of the beam spot. The bound is loose everywhere: true
+  doublets sit 0.4-28 mrad inside it at q99.
+- c: the a-b line in (qbar, q) and (qbar, phi). For D0 = 0 a point's azimuth is
+  phi0 + s/2R and z is linear in s, so phi is exactly linear in z on a disc.
+  Tolerance: D0_max times the departure of 1/r from linear in qbar, plus a margin.
+- d: the circle through a, b, c in its curvature form (signed k, point and
+  tangent at c), z linear in arc length. On a disc the arc runs to the hit's z;
+  on a barrel layer Newton solves |P(s)| = r_hit.
+
+Windows are set per pattern from true-quad residuals (`--resid`, analysed by
+`prep/surf-resid.py` in the working report): fixed at the q99 of pT 0.9-1 GeV
+for pixel-only patterns, and a + b/pT_est for patterns ending in OT1-P, fitted
+as an envelope of the q95 per true-pT bin below 3 GeV. `--pattern-win` and
+`--pattern-dwin` take them; `--win-scale` scales all.
+
+**Which patterns, from the census** (`seedfind --sequences[-all]`, the pixel-layer
+crossing order of every sim track, 100 events, pT > 0.9): B1 B2 B3 B4 below
+|eta| 1.0, B1 B2 B3 F1 at 1.0-1.4, B1 B2 F1 F2 at 1.4-1.8, B1 F1 F2 F3 at
+1.8-2.6, sliding Fk..Fk+3 at 2.6-3.8, F6 F7 F8 E1 and F7 F8 E1 E2 above. At
+|eta| 1.0-1.4, 38 % of tracks with >= 3 pixel layers have exactly three (B1 B2 B3
+or B1 B2 F1): the gap between B4's end (|eta| 1.12) and F1's inner edge (1.24).
+90 % of them have an OT1-P hit, hence pixel triplet + OT1-P (0 1 2 4, 0 1 16 4,
+0 16 17 4). The phase-2 HLT covers this population with its HighPtTripletStep.
+
+**Overlaps are configurable.** A track leaves ~1.7 labelled hits per disc, so one
+disc pattern holds ~8 true quads per track and sliding patterns find it 3-4 times.
+- `--dedup N` drops a quad sharing >= N hits with a better kept one, over all
+  patterns; better = fewer outer-tracker layers in the pattern, then the smaller
+  sum of squared c and d residuals over the windows. Without the tier, fake OT1-P
+  quads outranked true B1 B2 B3 B4 quads.
+- `--own DELTA --own-skip K --own-skip-ot K`: a pattern keeps a quad only if its
+  layers can be the first four the quad's a-d line crosses, each layer tested over
+  its whole qbar slab; K definite layers may be skipped. Testing the mid-radius
+  alone rejected true hits at the z edge of B3 and B4.
+
+**Truth.** On the D121 PU200 sample (bestTkIdx arbitration fixed) true-quad
+residuals have a q99 ten times the q95: labels on off-trajectory hits. `--bind
+0.05` keeps a label only if the hit's SimHitState is within 500 um (2.6 cm in the
+outer tracker); the residuals then match the April sample's.
+
+**Result, D121 PU200, --bind 0.05, windows from events 0-39, measured on 40-99,
+pT > 0.9, cleaning N = 3** (`prep/endcap-2026-09-26/cmp-D121-E2.txt`):
+
+| configuration | found tracks / ev | quads / ev | fake among decidable |
+|---|---|---|---|
+| 11 pixel patterns (+ mirrors) | 1382 | 24.7k | 0.25 |
+| + 3 OT1-P patterns, no ownership | 1452 | 54.5k | 0.65 |
+| + OT1-P, own 0.2 skip 1, OT skip 0 | 1423 | 26.2k | 0.38 |
+| + OT1-P, own 0.2 skip 1, OT skip 1 | 1442 | 41.3k | 0.61 |
+| + OT1-P, own 0.2 skip 2, OT skip 0 | 1428 | 28.1k | 0.36 |
+
+At |eta| 1.0-1.2 and 1.2-1.4 the OT1-P patterns take found tracks from 47.8 and
+48.0 per event to 65.3 and 67.3 (last row). With OT skip 1 they also rescue
+barrel tracks that lost a pixel hit, +19 tracks per event for +15k quads. The
+OT1-P windows are wide at low pT (B1 B2 F1 + OT1-P: 1.8 mm + 3.6 mm GeV / pT in
+z), from multiple scattering over the step; that is the open transition problem.
+Timing is not measured: the finder is the scalar reference.
+
+### The feed-forward chain (`SurfChain`, `seedsurf --chain`)
+
+Maintainer's proposal: instead of a list of four-layer patterns, one pass over
+the layers of each z side in crossing order (B1..B4, the discs by |z|, then
+OT1-P). A doublet's layer sequence is determined by its own line: it is queued
+at the next layer its line crosses, and after a hit at the next one after that.
+A candidate that misses its target can be forwarded to the following crossed
+layer with a hole (a hole is charged only if the target was a definite crossing).
+Start pairs are derived at setup by scanning lines from the beam region, not
+listed. The per-pattern window tables are looked up by layer combination; a
+combination without one is not searched (`--chain-any` searches it with the
+default windows, and that produced 2k fake quads per event in single
+combinations). OT1-P is entered only without a charged hole (`--chain-holes-ot 0`).
+
+Measured on D121 PU200, --bind 0.05, events 40-99, cleaning N = 3
+(`prep/endcap-2026-09-26/cmp-chain*.txt`):
+
+| | found / ev | quads / ev | fake among decidable |
+|---|---|---|---|
+| pattern list, own 0.2 skip 2 | 1428.3 | 28.1k | 0.36 |
+| chain, no holes | 1403.6 | 22.1k | 0.48 |
+| chain, holes when extending (1 or 2) | 1405.4 | 36.0k | 0.68 |
+| chain, holes also in the start doublet | 1432.7 | 48.1k | 0.59 |
+| **chain, start up to 2 crossed layers late, no other holes** | **1430.8** | **29.0k** | **0.38** |
+
+Two readings. Holes during extension buy +2 tracks per event for +14k quads: a
+fake doublet always fails at its third layer, so forwarded candidates are
+almost all fakes getting a second chance. The recoverable tracks are lost at
+the START (no hit on the first or second crossed layer); a late start
+(`--chain-start-holes 2 --chain-lead-only`) recovers them for 8 % more doublets,
+and it needs neither the ownership test nor the sliding pattern list.
+
+**Decision (maintainer, 2026-09-27): the chain is the method from here.** The
+late-start chain finds as many tracks as the best pattern list, at the same quad
+count and fake fraction, with one mechanism: no ownership test, and no list of
+sliding patterns, since each doublet's own line decides its layer sequence. The
+pattern options stay, for two jobs: they carry the window tables (the chain
+looks its windows up by layer combination), and they define the truth
+denominator. Ownership and the plain pattern loop are kept as the comparison and
+are not developed further.
+
+`seedsurf-chain.sh` runs that configuration: `--chain 0 --chain-start-holes 2
+--chain-lead-only --dedup 3`, `--pt-min 0.9 --marg-b 0.001 --bind 0.05`, and the
+43 window lines in `windows-D121/`. These are the options of the measured
+chain row, with the tables copied from the working report's
+`prep/endcap-2026-09-26/patterns-D121-{px,ot-q0.95,skip}.txt`. Rerunning the
+script on events 40-99 gives a truth report identical to the recorded one
+(`truth-CHL2.txt`) in every line except the timings.
+
+**Chain counters for that run, per event:** 4.64 M doublets, 236 k triplets,
+82 k quads before cleaning, 29.0 k after. The scalar double-precision
+reference takes 2.07 s per event, which says nothing about a real
+implementation.
+
+Next, in order:
+1. **The transition windows.** The OT1-P windows are wide at low pT (for
+   B1 B2 F1 + OT1-P: 1.8 mm + 3.6 mm GeV / pT in z), from multiple scattering
+   over the step to the outer tracker.
+2. **Kernels.** The chain on `SeedLayer` and the tile kernels in float, as the
+   barrel finder was done, with the scalar chain as the reference list.
+3. Iterations and larger D0.
 

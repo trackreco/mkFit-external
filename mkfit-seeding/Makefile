@@ -52,6 +52,12 @@ $(OUT)/$(NAME): $(CURDIR)/seedfind.cc $(HDRS) $(BLD)/libMkFitCore.so | $(OUT)
 	@echo "[seedfind] ROOT: $(if $(ROOTLIB),$(ROOTLIB),none)"
 	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS)
 
+$(OUT)/seedsurf: $(CURDIR)/seedsurf.cc $(HDRS) $(BLD)/libMkFitCore.so | $(OUT)
+	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS)
+
+.PHONY: seedsurf
+seedsurf: $(OUT)/seedsurf
+
 $(OUT):
 	mkdir -p $@
 
