@@ -1206,6 +1206,12 @@ quads.**
 - The per-layer queues persist across events, and a candidate is copied only
   when it is forwarded.
 
+- A queued candidate holds its hits as (chain position, index in the layer),
+  not as four points. The points come back from the layer's cache, identical to
+  storing them, and the candidate shrinks from ~200 to ~56 bytes. It is copied
+  into a queue about 2.3 M times per event: 708.7 -> 661.7 ms (interleaved with
+  the step below).
+
 Per doublet that is 162 ns, against 17-23 ns for the barrel tile finder. After
 K1 the profile is spread out: stage b about 15 % (building the P3, the phi bound
 with two divisions, z0 with one), the crossing tests about 9 %, the binnor run
@@ -1213,8 +1219,28 @@ loop 4 %, vector construction 4 %. That is where float kernels on structure of
 arrays come in (K2), and they change the arithmetic: accept them by
 `--margins` against `ref-quads.txt`, not by list identity.
 
+**K2a, stage b in float (`--chain-fast`): 661.7 -> 611.3 ms per event, 0 of
+1516437 quads differ.** `surf_stage_b_fast()` uses the same fetch as
+`surf_stage_b()` (now `surf_b_fetch()`, shared). Per candidate b hit, it applies
+the same three cuts in float on the SeedLayer arrays, with no division: the phi
+bound from the cached 1/r, and z0 in [zlo, zhi] multiplied through by dr = r_b -
+r_a > 0. It runs in masked chunks of 64 over the binnor's contiguous runs. The
+doublet count is identical. Forwarded and dropped candidates move by 0.1 and 0.6
+per event, and none of those becomes a quad. Fastest of 3 interleaved passes:
+
+| | ms / ev | vs scalar |
+|---|---|---|
+| scalar chain (3d10608) | 1867.2 | -- |
+| K1 (P3 cache, line, parameter table, queues, slim candidate) | 661.7 | x2.82 |
+| + K2a (stage b in float) | 611.3 | x3.05 |
+
+Stage b was 15 % of the profile after K1 and the float loop takes 7.6 % off, so
+what remains is per candidate: the crossing tests on each doublet's line
+(before b for the holes, after it for the next target), the queueing, and stage
+c for ~2.2 M doublets per event that mostly find nothing.
+
 Next, in order:
-1. **K2: float kernels.** Stage b per a-hit over the fetched b runs, and the
-   crossing test on the cached line, in float on the SeedLayer arrays; then c
-   and d batched per target layer.
+1. **K2b: stage c batched.** Group the queued doublets by target layer and b
+   hit, and share the c fetch per b hit, as the barrel's b-major finder does.
+   Test the crossing on the cached line in float.
 2. Iterations and larger D0.
