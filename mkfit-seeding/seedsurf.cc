@@ -23,6 +23,16 @@
 //                      --chain-batch runs the batched float finder (SeedSurfBatch.h) on the same configuration;
 //                      --chain-batch-d N its stage d prediction: 0 direct from hit c, 1 one-point cubic, 2 two-point Hermite
 //        [--truth OUT.txt] [--resid OUT.txt] [--dump quads.txt] [--quad-dump OUT.txt] [--eta-max E]
+//        batch finder fake rejection (SurfChainBatch, README "Fakes in the finder"):
+//        [--fk-score S]   a quad's (dq_c/w)^2 + (dphi_c/w)^2 + (dphi_d/w)^2 + (dq_d/w)^2 below S
+//        [--shape-win L BINW N LO_0 HI_0 ... LO_N-1 HI_N-1]   barrel pixel layer L: the kept band of the
+//                      cluster length along z per |cot theta| bin of width BINW (windows-D121/shape.txt)
+//        [--fk-shape]     apply the shape bands
+//        [--fk-ot2 F] [--ot2-win APHI BPHI AQ BQ]   a quad with d on OT1-P needs an OT2-P hit within
+//                      F x (a + b / pT) in phi [rad] and z [cm] for the helix through b, c, d
+//        [--attach-ot1 F] [--ot1-win APHI BPHI AQ BQ]   after the cleaning, for each quad with a pixel d
+//                      in OT1's acceptance, the best OT1-P hit (SurfChainBatch::next_hit) if it is within
+//                      F x (a + b / pT) in phi and z, as information; with its truth and time
 //        [--margins REF.txt] [--margins-print N]   chain only: per event, the symmetric difference of the
 //                      chain's quads (before cleaning) against REF, a --dump of a run with the same pattern
 //                      options and events; each differing quad's cuts evaluated in double, with margins
@@ -135,6 +145,12 @@ int main(int argc, char *argv[]) {
   int chain_batch = 0; // --chain-batch: the batched float finder (SurfChainBatch)
   int chain_batch_d = 0; // --chain-batch-d: its stage d prediction (0 direct, 1 one-point cubic, 2 two-point Hermite)
   int chain_phases = 0;  // --chain-phases: time the chain's phases
+  float fk_score = 0, fk_ot2 = 0;
+  float ot2_win[4] = {-8.1e-4f, 5.92e-3f, 0.3084f, 0.0909f};  // q97 of true quads, events 0-39
+  float ot1_win[4] = {2.16e-3f, 9.99e-3f, 0.2318f, 0.3566f};  // q97 of true quads, events 0-39
+  float attach_ot1 = 0;
+  bool fk_shape = false;
+  SurfChainBatch::ShapeTab shape_tab[4];
   int dedup_n = 0;         // > 0: over all patterns, drop a quad sharing >= N hits with a better kept one
   std::string margins_ref;  // --margins: the reference quad list
   int margins_print = 10;
@@ -257,6 +273,34 @@ int main(int argc, char *argv[]) {
       g_surf_fast_check.on = true;
     else if (a == "--chain-phases")
       chain_phases = 1;
+    else if (a == "--fk-score")
+      fk_score = atof(next());
+    else if (a == "--fk-shape")
+      fk_shape = true;
+    else if (a == "--fk-ot2")
+      fk_ot2 = atof(next());
+    else if (a == "--ot2-win")
+      for (int k = 0; k < 4; ++k)
+        ot2_win[k] = atof(next());
+    else if (a == "--attach-ot1")
+      attach_ot1 = atof(next());
+    else if (a == "--ot1-win")
+      for (int k = 0; k < 4; ++k)
+        ot1_win[k] = atof(next());
+    else if (a == "--shape-win") {
+      const int l = atoi(next());
+      const float bw = atof(next());
+      const int nb = atoi(next());
+      if (l < 0 || l > 3 || bw <= 0 || nb < 1) {
+        printf("--shape-win: bad layer %d, bin width %g or bin count %d\n", l, bw, nb);
+        return 1;
+      }
+      SurfChainBatch::ShapeTab &T = shape_tab[l];
+      T.inv_bw = 1.0f / bw;
+      T.lo.resize(nb), T.hi.resize(nb);
+      for (int b = 0; b < nb; ++b)
+        T.lo[b] = atoi(next()), T.hi[b] = atoi(next());
+    }
     else if (a == "--chain-any")
       chain_any = 1;
     else if (a == "--chain-hole-always")
@@ -474,11 +518,26 @@ int main(int argc, char *argv[]) {
 
   SurfChainBatch CB[2];
   if (chain_holes >= 0 && chain_batch)
-    for (int sd = 0; sd < 2; ++sd)
-      CB[sd].setup(CH[sd]), CB[sd].d_mode = chain_batch_d;
+    for (int sd = 0; sd < 2; ++sd) {
+      SurfChainBatch &B = CB[sd];
+      B.setup(CH[sd]), B.d_mode = chain_batch_d;
+      B.fk_score = fk_score, B.fk_shape = fk_shape, B.fk_ot2 = fk_ot2;
+      B.ot2_aphi = ot2_win[0], B.ot2_bphi = ot2_win[1], B.ot2_aq = ot2_win[2], B.ot2_bq = ot2_win[3];
+      for (int l = 0; l < 4; ++l)
+        B.shape_[l] = shape_tab[l];
+    }
+  if ((fk_score > 0 || fk_shape || fk_ot2 > 0) && !chain_batch) {
+    printf("--fk-* need --chain-batch\n");
+    return 1;
+  }
+  if (fk_shape)
+    for (int l = 0; l < 4; ++l)
+      if (!shape_tab[l].ok())
+        printf("[seedsurf] --fk-shape: no --shape-win for layer %d, no shape cut there\n", l);
 
-  // --quad-dump: the next outer layer a quad's helix is checked against, OT1-P (4) or OT2-P (6)
-  if (!qdump_out.empty())
+  // --quad-dump: the next outer layer a quad's helix is checked against, OT1-P (4) or OT2-P (6);
+  // --fk-ot2 and --attach-ot1 need them too
+  if (!qdump_out.empty() || fk_ot2 > 0 || attach_ot1 > 0)
     for (int l : {4, 6})
       if (!layers.count(l))
         layers[l] = std::make_unique<SurfLayer>(l, ti[l], 2.0);
@@ -486,6 +545,10 @@ int main(int argc, char *argv[]) {
   std::vector<Stats> S(pats.size());
   Stats SU;  // the union
   Stats SC;  // the chain's own counters and time
+  // --attach-ot1: kept quads with a pixel d; the helix reaches OT1-P; an OT1-P hit attached; of the true
+  // quads that reach it: attached, and the attached hit carries the quad's label
+  long at_n = 0, at_reach = 0, at_att = 0, at_true = 0, at_true_att = 0, at_true_same = 0;
+  double t_attach = 0;
   double t_fill = 0;
   long n_unbound = 0;  // labels dropped by --bind
   int npat = pats.size();
@@ -876,6 +939,52 @@ int main(int argc, char *argv[]) {
           by_hit[hkey(ll[k], c.q[k])].push_back(i);
       }
     }
+    if (attach_ot1 > 0) {
+      const SurfLayer &LP = *layers[4];
+      const auto a0 = clk::now();
+      std::vector<int> att(cands.size(), -1);  // the attached OT1-P hit (index into layerHits_[4]), -1 none
+      auto fxyz = [&](int l, unsigned int k, float &x, float &y, float &z) {
+        const Hit &h = ev.layerHits_[l][k];
+        const float r = h.r(), ph = h.phi();
+        x = r * std::cos(ph), y = r * std::sin(ph), z = h.z();
+      };
+      for (int i = 0; i < (int)cands.size(); ++i) {
+        if (!keep_c[i])
+          continue;
+        const Cand &c = cands[i];
+        const auto &ll = pats[c.ip].l;
+        if (!SurfOwnership::is_pix(ll[3]))
+          continue;
+        ++at_n;
+        float x[4], y[4], z[4];
+        for (int k = 0; k < 4; ++k)
+          fxyz(ll[k], c.q[k], x[k], y[k], z[k]);
+        surfb::HelixF abc, bcd;
+        abc.make(x[0], y[0], z[0], x[1], y[1], z[1], x[2], y[2], z[2]);
+        bcd.make(x[1], y[1], z[1], x[2], y[2], z[2], x[3], y[3], z[3]);
+        float zm, dp, dz, sc;
+        const float pte = abc.ok ? abc.pt() : 1.0f, ip = 1.0f / std::max(0.9f, pte);
+        const float wp = attach_ot1 * (ot1_win[0] + ot1_win[1] * ip), wz = attach_ot1 * (ot1_win[2] + ot1_win[3] * ip);
+        const int kn = SurfChainBatch::next_hit(LP, bcd, pte, wp, wz, zm, dp, dz, sc);
+        // in OT1's acceptance, as for OT2-P in the finder
+        if (kn == -2 || std::abs(zm) >= LP.q_hi - 2) {
+          att[i] = -2;
+          continue;
+        }
+        ++at_reach;
+        if (kn >= 0 && std::abs(dp) < wp && std::abs(dz) < wz)
+          att[i] = LP.sl.orig_[kn], ++at_att;
+      }
+      t_attach += secs(a0, clk::now());
+      for (int i = 0; i < (int)cands.size(); ++i)
+        if (keep_c[i] && cands[i].tru && SurfOwnership::is_pix(pats[cands[i].ip].l[3]) && att[i] != -2) {
+          ++at_true;
+          if (att[i] >= 0) {
+            ++at_true_att;
+            at_true_same += label_l(ev.layerHits_[4][att[i]], 4) == cands[i].lab;
+          }
+        }
+    }
     Stats &su = SU;
     std::unordered_map<int, int> fd_any;
     std::unordered_map<int, std::set<int>> fd_pat;
@@ -1022,6 +1131,17 @@ int main(int argc, char *argv[]) {
     printf("[seedsurf] CHAIN%s: %.0f doublets, %.0f triplets, %.1f quads per event, %.3f ms/ev; forwarded %.1f, dropped %.1f per event\n",
            chain_batch ? " (batch)" : "", SC.doublets / ne, SC.triplets / ne, SC.quads / ne, 1e3 * SC.t_find / ne,
            ch_fwd / ne, ch_drop / ne);
+  if (chain_batch && (fk_score > 0 || fk_shape || fk_ot2 > 0))
+    printf("[seedsurf] FAKE CUTS (batch): score < %g, shape %s, OT2-P x%g; per event: %.1f doublets cut on shape,"
+           " %.1f OT1-P-d quads tested on OT2-P of which %.1f cut\n", fk_score, fk_shape ? "on" : "off", fk_ot2,
+           (CB[0].n_fk_shape + CB[1].n_fk_shape) / (double)n_events, (CB[0].n_ot2_tested + CB[1].n_ot2_tested) / (double)n_events,
+           (CB[0].n_fk_ot2 + CB[1].n_fk_ot2) / (double)n_events);
+  if (attach_ot1 > 0)
+    printf("[seedsurf] ATTACH OT1-P x%g: %.1f kept quads with a pixel d per event, %.1f in OT1-P acceptance, %.1f get a hit;"
+           " of %.1f true ones that reach it %.3f get one, and it is the track's own in %.3f; %.3f ms/ev\n",
+           attach_ot1, at_n / (double)n_events, at_reach / (double)n_events, at_att / (double)n_events, at_true / (double)n_events,
+           at_true_att / std::max(1.0, (double)at_true), at_true_same / std::max(1.0, (double)at_true_att),
+           1e3 * t_attach / n_events);
   if (chain_holes >= 0 && chain_phases) {
     // the phases: start doublets by wall clock; stage c and d by cycles, scaled to the rest
     const double ts = ch_tst / ne, tr = SC.t_find / ne - ts;

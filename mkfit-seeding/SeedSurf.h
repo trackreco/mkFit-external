@@ -116,13 +116,17 @@ namespace mkfit::seeding {
 
     // r and phi of each hit as P3 computes them from the layer's float x, y, in double
     std::vector<double> pr_, pphi_;
+    // the cluster's length in columns (Hit::spanCols()): along z in the barrel pixels
+    std::vector<int> span_;
     void fill(const HitVec &hits) {
       sl.fill(hits);
       pr_.resize(sl.n());
       pphi_.resize(sl.n());
+      span_.resize(sl.n());
       for (unsigned int k = 0; k < sl.n(); ++k) {
         pr_[k] = std::hypot((double)sl.x_[k], (double)sl.y_[k]);
         pphi_[k] = std::atan2((double)sl.y_[k], (double)sl.x_[k]);
+        span_[k] = hits[sl.orig_[k]].spanCols();
       }
     }
     // the hit's own qbar and q

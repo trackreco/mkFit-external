@@ -1479,3 +1479,70 @@ Caveats:
   of the q95 windows.
 - The track loss is small partly because most found tracks have more than one
   true quad.
+
+### Fakes in the finder (2026-09-27)
+
+The three cuts of the section above now run inside the batch finder
+(`--chain-batch`). Each is off by default:
+- `--fk-score S`: the residual score, (dq_c/w)^2 + (dphi_c/w)^2 + (dphi_d/w)^2 +
+  (dq_d/w)^2, each residual over its own window, below S. Stage c drops a
+  triplet whose c part alone reaches S and stores the c part in the candidate,
+  which grows from 28 to 32 bytes. Stage d adds the d part. The d phi term is
+  sin^2(dphi) / sin^2(w), from the cross and dot products the phi cut already
+  has.
+- `--fk-shape`: the cluster length along z (`Hit::spanCols()`, now cached per
+  hit in `SurfLayer::span_`) of every hit on a barrel pixel layer, within the
+  band of true hits for |cot theta|. Stage b tests hits a and b on the a-b
+  line. Stage c tests hit c on the a-b line, and stage d tests hit d on the a-c
+  line. The bands are `windows-D121/shape.txt` (`--shape-win`, read by
+  `seedsurf-chain.sh`): the central 99.5 % of true hits per layer and 0.1 bin of
+  |cot|, with no cut in a bin of fewer than 50 hits.
+- `--fk-ot2 F`: a quad whose d is on OT1-P needs an OT2-P hit for the helix
+  through b, c, d. `SurfChainBatch::next_hit()` takes the best hit by the score
+  of the offline study, among the hits within F x the window of the prediction.
+  That best hit must lie within F x (a + b / pT) in phi and z. A helix that
+  misses OT2-P, or reaches it outside |z| < zmax - 2 cm, passes. The window is
+  `--ot2-win`, default -0.81 + 5.92 / pT mrad and 3.08 + 0.91 / pT mm.
+- `--attach-ot1 F`: after the cleaning, each kept quad with a pixel d in OT1-P
+  acceptance gets its best OT1-P hit, if the hit is within F x (2.16 + 9.99 / pT
+  mrad, 2.32 + 3.57 / pT mm) (`--ot1-win`). This is information for the seed
+  and not a cut.
+
+The tables and windows were fitted on events 0-39 (q97 of true quads for the
+windows; the working report's `prep/fakecuts-2026-09-27/fit.py`). They were
+applied to events 40-99, which the numbers below come from. Union after the
+cleaning, `--bind 0.05`, with OT2-P at x1.5 throughout:
+
+| cuts | found / ev | tracks lost | quads / ev | fake: all | 0-0.8 | 0.8-1.6 | 1.6-2.4 | 2.4-4 |
+|---|---|---|---|---|---|---|---|---|
+| none | 1431.5 | -- | 27468 | 0.343 | 0.45 | 0.80 | 0.53 | 0.12 |
+| score < 0.75 | 1423.2 | 0.55 % | 19338 | 0.115 | 0.15 | 0.46 | 0.22 | 0.04 |
+| score < 0.75, OT2-P | 1421.2 | 0.69 % | 18890 | 0.094 | 0.13 | 0.28 | 0.21 | 0.04 |
+| score < 1, OT2-P, shape | 1421.7 | 0.66 % | 20024 | 0.121 | 0.14 | 0.33 | 0.26 | 0.06 |
+| **score < 0.75, OT2-P, shape** | 1417.3 | 0.95 % | 18653 | **0.083** | 0.09 | 0.23 | 0.18 | 0.04 |
+| score < 0.5, OT2-P, shape | 1407.3 | 1.62 % | 16933 | 0.050 | 0.05 | 0.14 | 0.11 | 0.03 |
+
+(Tracks lost: findable tracks no longer found, over all findable tracks.)
+Changing the OT2-P factor between x1 and x2 moves the transition by +-0.02 and
+the lost tracks by < 0.1 %.
+
+Inside the finder the cuts act before the cleaning, and the offline study
+applied them after it. At the same cuts (score < 1, OT2-P, shape) the finder
+keeps more tracks and more fakes: fake 0.121 for 0.66 % of tracks lost,
+against 0.098 for 1.17 % offline. A quad that the cleaning used to drop can
+survive once the better quad sharing its hits is cut. At score < 0.75 the
+finder does better than the offline cut at 1: fake 0.083 for 0.95 %.
+
+The OT1-P attach (x1.5): of the true quads with a pixel d that are in OT1-P
+acceptance, 92.9 % get a hit, and 89.2 % of those hits are the track's own. Of
+the ~19 k kept quads with a pixel d per event, ~4.2 k are in OT1-P
+acceptance. It costs ~12 ms per event (measured while other jobs ran).
+
+Time (the chain's own, events 40-59, fastest of 3 interleaved passes, black):
+389 ms per event before, 394 with the cuts off, and **350 with score < 0.75,
+OT2-P and shape**. That is less than with no cuts, because the stage c score
+cut removes 43 % of the stage d candidates (216 k to 123 k per event). All
+three tests run on the survivors of the existing box cuts, outside the vector
+loops. Written into the loops, the same tests cost +30 ms per event with the
+cuts off. With the cuts off, `--margins` against `ref-quads.txt` gives the same
+6 differing quads as before.

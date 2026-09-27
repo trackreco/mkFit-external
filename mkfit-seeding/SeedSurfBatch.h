@@ -239,6 +239,7 @@ namespace mkfit::seeding {
       unsigned int k[3];
       unsigned char pos[3], holes, st;
       float z0, cot;  // the r-z line through its first and last hit
+      float sc;       // a triplet: the stage c part of the residual score (fk_score)
     };
     // the crossing envelope of one chain position, thresholds with the margin folded in
     struct EnvF {
@@ -265,6 +266,34 @@ namespace mkfit::seeding {
     unsigned long long cyc_c = 0, cyc_d = 0;
     bool phases = false;
     int d_mode = 0;  // stage d prediction: 0 direct from c, 1 one-point cubic, 2 two-point Hermite across the slab
+
+    // Fake rejection (README "Fakes"), each off by default.
+    // fk_score > 0: a quad needs its residual score, (dq_c/w)^2 + (dphi_c/w)^2 + (dphi_d/w)^2 + (dq_d/w)^2
+    //   with each residual over its own window, below fk_score. Stage c drops a triplet whose c part
+    //   alone reaches it, and stage d adds the d part.
+    float fk_score = 0;
+    // fk_shape: the cluster length along z (Hit::spanCols()) of every hit on a barrel pixel layer (0-3)
+    //   within the band of true hits for the line's |cot theta|: at stage b on the a-b line, at c and d
+    //   on the line the candidate already has (a-b, a-c).
+    struct ShapeTab {
+      float inv_bw = 0;
+      std::vector<int> lo, hi;  // per |cot| bin
+      bool ok() const { return !lo.empty(); }
+      int bin(float acot) const { return std::min((int)(acot * inv_bw), (int)lo.size() - 1); }
+      int pass(int span, float acot) const {
+        const int b = bin(acot);
+        return (span >= lo[b]) & (span <= hi[b]);
+      }
+    };
+    ShapeTab shape_[4];
+    bool fk_shape = false;
+    // fk_ot2 > 0: a quad whose d is on OT1-P (layer 4) needs a hit on OT2-P (layer 6) for the helix through
+    //   b, c, d: the best hit by the score of next_hit() within fk_ot2 x (a + b / pT) in phi and z. Quads
+    //   whose helix does not reach OT2-P, or reaches it outside |z| < zmax - 2 cm, pass.
+    float fk_ot2 = 0;
+    // q97 of true quads, a + b / pT in rad and cm, events 0-39 (windows-D121 sample)
+    float ot2_aphi = -8.1e-4f, ot2_bphi = 5.92e-3f, ot2_aq = 0.3084f, ot2_bq = 0.0909f;
+    long n_fk_shape = 0, n_fk_ot2 = 0, n_ot2_tested = 0;
 
     static constexpr int kBlk = 256;
 
@@ -376,6 +405,43 @@ namespace mkfit::seeding {
       }
     }
 
+    // The hit on barrel layer LP closest to the helix H (through b, c, d), by the score
+    // (dphi / sphi)^2 + (dz / sz)^2 with sphi = 0.0005 + 3.2e-3 / pT and sz = 0.075 + 0.0316 / pT (pT >= 0.5),
+    // among the hits fetched within fphi and fz of the prediction at the layer's two edges. Returns the hit (in the
+    // layer's sorted order), -1 if none, -2 if H does not reach the layer or reaches it outside its z range; zmid: the helix's z at the middle
+    // of the two edges; dphi, dz, score: the best hit's.
+    static int next_hit(const SurfLayer &LP, const surfb::HelixF &H, float pte, float fphi, float fz, float &zmid,
+                        float &dphi, float &dz, float &score) {
+      using namespace surfb;
+      float x0, y0, q0, s0, x1, y1, q1, s1;
+      const bool ok0 = H.ok && H.at_r(LP.qbar_lo, x0, y0, q0, s0), ok1 = H.ok && H.at_r(LP.qbar_hi, x1, y1, q1, s1);
+      if (!ok0 && !ok1)
+        return -2;
+      if (!ok0)
+        x0 = x1, y0 = y1, q0 = q1;
+      if (!ok1)
+        x1 = x0, y1 = y0, q1 = q0;
+      zmid = 0.5f * (q0 + q1);
+      if (std::min(q0, q1) > LP.q_hi || std::max(q0, q1) < LP.q_lo)
+        return -2;  // outside the layer at both edges
+      const float pt = std::max(0.5f, pte), sphi = 0.0005f + 3.2e-3f / pt, sz = 0.075f + 0.0316f / pt;
+      const float p0 = std::atan2(y0, x0), p1 = std::atan2(y1, x1), dpp = wrap(p1 - p0);
+      float best = 1e30f;
+      int kb = -1;
+      LP.sl.for_each_in(surf::phi_bins(LP, p0 + 0.5f * dpp, 0.5f * std::abs(dpp) + fphi),
+                        surf::q_bins(LP, std::min(q0, q1) - fz, std::max(q0, q1) + fz), [&](unsigned int k) {
+                          float px, py, qp, s3;
+                          if (!H.at_r(LP.sl.r_[k], px, py, qp, s3))
+                            return;
+                          const float dp = wrap(LP.sl.phi_[k] - std::atan2(py, px)), dq = LP.sl.z_[k] - qp;
+                          const float sc = (dp / sphi) * (dp / sphi) + (dq / sz) * (dq / sz);
+                          if (sc < best)
+                            best = sc, kb = k, dphi = dp, dz = dq;
+                        });
+      score = best;
+      return kb;
+    }
+
     void run(const std::map<int, const SurfLayer *> &L, std::vector<std::pair<std::array<int, 4>, Quad>> &out,
              SeedCounters &cnt) {
       using namespace surfb;
@@ -386,6 +452,17 @@ namespace mkfit::seeding {
         lay[p] = it == L.end() ? nullptr : it->second;
       }
       const int max_holes = Ch.max_holes, max_holes_ot = Ch.max_holes_ot;
+      // the shape table of position p, or null
+      auto shape_of = [&](int p) -> const ShapeTab * {
+        const int l = Ch.order[p];
+        return fk_shape && l >= 0 && l < 4 && shape_[l].ok() ? &shape_[l] : nullptr;
+      };
+      const float fks = fk_score > 0 ? fk_score : 1e30f;
+      const bool fk_on = fk_score > 0 || fk_shape;
+      const SurfLayer *lay_ot2 = nullptr;
+      if (fk_ot2 > 0)
+        if (auto it = L.find(6); it != L.end())
+          lay_ot2 = it->second;
       const int nn = n;
       auto idx_c = [&](const Cand &c, int p) { return Ch.idx_c_[(c.pos[0] * nn + c.pos[1]) * nn + p]; };
       auto idx_d = [&](const Cand &c, int p) { return Ch.idx_d_[((c.pos[0] * nn + c.pos[1]) * nn + c.pos[2]) * nn + p]; };
@@ -420,6 +497,7 @@ namespace mkfit::seeding {
         if (!A || !B)
           continue;
         const auto &hp = hole_pos_[si];
+        const ShapeTab *shA = shape_of(pa_), *shB = shape_of(pb_);
         int nb = 0;
         auto flush = [&]() {
           const int m = nb;
@@ -445,9 +523,20 @@ namespace mkfit::seeding {
           states(env_[pa_], m, w_sa.data());
           states(env_[pb_], m, w_sb.data());
           const int lead_only = Ch.lead_only;
+          int *__restrict shp = w_bt.data();  // bt is consumed here, reuse it
+          for (int i = 0; i < m; ++i)
+            shp[i] = !(lead_only & bt[i]);
+          if (shA || shB) {
+            for (int i = 0; i < m; ++i) {
+              const float ac = std::abs(w_cot[i]);
+              const int ok = (!shA || shA->pass(A->span_[bka[i]], ac)) & (!shB || shB->pass(B->span_[bkb[i]], ac));
+              n_fk_shape += shp[i] & !ok;
+              shp[i] &= ok;
+            }
+          }
           int g = 0;
           for (int i = 0; i < m; ++i) {
-            const int good = !(lead_only & bt[i]) & (holes[i] <= hs) & (w_sa[i] > 0) & (w_sb[i] > 0);
+            const int good = shp[i] & (holes[i] <= hs) & (w_sa[i] > 0) & (w_sb[i] > 0);
             // compact the good lanes in place (g <= i)
             w_z0[g] = w_z0[i], w_cot[g] = w_cot[i], holes[g] = holes[i], w_allow[g] = 0;
             w_i0[g] = bka[i], w_i1[g] = bkb[i];
@@ -459,7 +548,7 @@ namespace mkfit::seeding {
             c.k[0] = w_i0[i], c.k[1] = w_i1[i], c.k[2] = 0;
             c.pos[0] = pa_, c.pos[1] = pb_, c.pos[2] = 0;
             c.holes = w_holes[i];
-            c.z0 = w_z0[i], c.cot = w_cot[i];
+            c.z0 = w_z0[i], c.cot = w_cot[i], c.sc = 0;
             return c;
           });
           nb = 0;
@@ -514,6 +603,7 @@ namespace mkfit::seeding {
 
       // ---- the forward pass
       std::vector<unsigned int> t_j, t_k;  // stage c survivors: (candidate in block, hit)
+      std::vector<float> t_s;              // ... and their stage c score
       std::vector<unsigned int> f_j;       // candidates forwarded as after a miss
       std::vector<HelixF> hx(kBlk);
       SurfFastCheck &CK = g_surf_fast_check;
@@ -527,13 +617,15 @@ namespace mkfit::seeding {
         const float *hx_ = T->sl.x_.data(), *hy_ = T->sl.y_.data();
         const float *hu = disc ? hz : hr, *hq = disc ? hr : hz;
         const float u0 = T->qbar_lo, u1 = T->qbar_hi;
+        const ShapeTab *shT = shape_of(p);
+        const int *hsp = T->span_.data();
 
         // -- stage c: the doublets queued at p
         auto &Qd = Q2_[p];
         for (size_t b0 = 0; b0 < Qd.size(); b0 += kBlk) {
           const unsigned long long tc0 = phases ? __builtin_ia32_rdtsc() : 0;
           const size_t b1 = std::min(Qd.size(), b0 + kBlk);
-          t_j.clear(), t_k.clear(), f_j.clear();
+          t_j.clear(), t_k.clear(), t_s.clear(), f_j.clear();
           for (size_t j = b0; j < b1; ++j) {
             const Cand &c = Qd[j];
             const int ix = idx_c(c, p);
@@ -557,7 +649,13 @@ namespace mkfit::seeding {
                 const float wcphi = d0_max * std::abs(1 / rfar - (ia + (ib - ia) * tfar)) + w.phi_c;
                 const auto qc = surf::q_bins(*T, std::min(cq0, cq1) - w.q_c, std::max(cq0, cq1) + w.q_c);
                 const float dcp = wrap(cp1 - cp0), cmid = cp0 + 0.5f * dcp, chalf = 0.5f * std::abs(dcp);
-                const float qcw = w.q_c, pcw = w.phi_c, dqab = qb - qa, dib = ib - ia;
+                const float qcw = w.q_c, pcw = w.phi_c, dqab = qb - qa, dib = ib - ia, iqcw = 1.0f / qcw;
+                // the shape band of hit c, on the a-b line (barrel pixels only)
+                int slo = 0, shi = 1 << 30;
+                if (shT) {
+                  const int sb = shT->bin(std::abs(dqab * idu));
+                  slo = shT->lo[sb], shi = shT->hi[sb];
+                }
                 T->sl.for_each_run(surf::phi_bins(*T, cmid, chalf + wcphi + 1e-6f), qc, [&](unsigned int b, unsigned int e) {
                   for (unsigned int i0 = b; i0 < e; i0 += 64) {
                     const unsigned int nk = std::min(64u, e - i0);
@@ -573,7 +671,19 @@ namespace mkfit::seeding {
                     n_ct += nk;
                     for (unsigned int jj = 0; jj < nk; ++jj)
                       if (msk[jj]) {
-                        t_j.push_back(j), t_k.push_back(i0 + jj);
+                        // the fake cuts on the survivors: the score, recomputed, and the shape
+                        const unsigned int i = i0 + jj;
+                        float sc = 0;
+                        if (fk_on) {
+                          const float t = (hu[i] - ua) * idu;
+                          const float rq = (hq[i] - (qa + dqab * t)) * iqcw;
+                          const float rp =
+                              wrap(wrap(hphi[i] - pa) - dp * t) / (d0_max * std::abs(hir[i] - (ia + dib * t)) + pcw);
+                          sc = rq * rq + rp * rp;
+                          if (sc >= fks || hsp[i] < slo || hsp[i] > shi)
+                            continue;
+                        }
+                        t_j.push_back(j), t_k.push_back(i), t_s.push_back(sc);
                         found = true;
                         ++n_tr;
                       }
@@ -605,7 +715,7 @@ namespace mkfit::seeding {
             push(Q3_, m, [&](int i) {
               Cand c = Qd[t_j[i]];
               c.k[2] = t_k[i], c.pos[2] = p;
-              c.z0 = w_z0[i], c.cot = w_cot[i];
+              c.z0 = w_z0[i], c.cot = w_cot[i], c.sc = t_s[i];
               return c;
             });
           }
@@ -688,10 +798,18 @@ namespace mkfit::seeding {
                 const float dpp = wrap(p1 - p0), dmid = p0 + 0.5f * dpp, dhalf = 0.5f * std::abs(dpp);
                 const float bqi = bq * ipt, bpi = bphi * ipt;
                 const float sw = std::sin(wpd), sw2 = sw * sw;
+                // the rest of the score, and the shape band of hit d on the a-c line
+                const float fkd = fks - c.sc;
+                int slo = 0, shi = 1 << 30;
+                if (shT) {
+                  const int sb = shT->bin(std::abs(c.cot));
+                  slo = shT->lo[sb], shi = shT->hi[sb];
+                }
                 T->sl.for_each_run(surf::phi_bins(*T, dmid, dhalf + wpd + 1e-6f), qd, [&](unsigned int b, unsigned int e) {
                   for (unsigned int i0 = b; i0 < e; i0 += 64) {
                     const unsigned int nk = std::min(64u, e - i0);
                     unsigned char msk[64];
+                    float dqv[64], wqv[64], c2v[64], snv[64];
                     for (unsigned int jj = 0; jj < nk; ++jj) {
                       const unsigned int i = i0 + jj;
                       float px, py, qp, s3 = -1;
@@ -704,13 +822,41 @@ namespace mkfit::seeding {
                       const float hxx = hx_[i], hyy = hy_[i];
                       const float cr = px * hyy - py * hxx, dt = px * hxx + py * hyy;
                       const float n2 = (px * px + py * py) * (hxx * hxx + hyy * hyy);
-                      msk[jj] = ok & (std::abs(hq[i] - qp) <= wq) & (dt > 0) & (cr * cr <= sp2 * n2);
+                      const float dq = hq[i] - qp, c2 = cr * cr, sn = sp2 * n2;
+                      msk[jj] = ok & (std::abs(dq) <= wq) & (dt > 0) & (c2 <= sn);
+                      // for the score of the survivors: (dq / wq)^2 + sin^2(dphi) / sin^2(wp)
+                      dqv[jj] = dq, wqv[jj] = wq, c2v[jj] = c2, snv[jj] = sn;
                       if (CK.on)
                         check_d(Qt[j], lay, disc, hu[i], ok, px, py, qp, wq, isr > 0 ? std::asin(std::sqrt(sp2)) : wpd, CK);
                     }
                     n_dt += nk;
                     for (unsigned int jj = 0; jj < nk; ++jj)
                       if (msk[jj]) {
+                        if (fk_on) {
+                          const float rq = dqv[jj] / wqv[jj];
+                          if (rq * rq + c2v[jj] / snv[jj] >= fkd || hsp[i0 + jj] < slo || hsp[i0 + jj] > shi)
+                            continue;
+                        }
+                        if (lay_ot2 && Ch.order[p] == 4) {
+                          // OT2-P for the helix through b, c, d
+                          const SurfLayer &Lb = *lay[c.pos[1]], &Lc = *lay[c.pos[2]];
+                          const unsigned kb = c.k[1], kc = c.k[2], kd = i0 + jj;
+                          HelixF H3;
+                          H3.make(Lb.sl.x_[kb], Lb.sl.y_[kb], Lb.sl.z_[kb], Lc.sl.x_[kc], Lc.sl.y_[kc], Lc.sl.z_[kc],
+                                  hx_[kd], hy_[kd], hz[kd]);
+                          float zm = 0, dpb = 0, dzb = 0, scb = 0;
+                          const float ip2 = 1.0f / std::max(0.9f, pte);
+                          const float wp2 = fk_ot2 * (ot2_aphi + ot2_bphi * ip2), wz2 = fk_ot2 * (ot2_aq + ot2_bq * ip2);
+                          const int kn = next_hit(*lay_ot2, H3, pte, wp2, wz2, zm, dpb, dzb, scb);
+                          if (kn != -2 && std::abs(zm) < lay_ot2->q_hi - 2) {
+                            ++n_ot2_tested;
+                            const bool pass = kn >= 0 && std::abs(dpb) < wp2 && std::abs(dzb) < wz2;
+                            if (!pass) {
+                              ++n_fk_ot2;
+                              continue;
+                            }
+                          }
+                        }
                         found = true;
                         ++n_qd;
                         const std::array<int, 4> ids{Ch.order[c.pos[0]], Ch.order[c.pos[1]], Ch.order[c.pos[2]], Ch.order[p]};
