@@ -135,6 +135,51 @@ namespace mkfit::seeding {
       bool at(bool disc, float u, float &px, float &py, float &q, float &s3) const {
         return disc ? at_z(u, px, py, q, s3) : at_r(u, px, py, q, s3);
       }
+      // at() for nk lanes at qbar u[], with no branch, so the loop vectorizes: the series of asin_ox and
+      // sinc_cs for every lane, and a scalar at() for all nk lanes if any lane is past the series' range
+      // (x^2 >= 0.04, rare for a c-d step). ok[]: at()'s return value.
+      void at_lanes(bool disc, const float *__restrict u, int nk, float *__restrict px, float *__restrict py,
+                    float *__restrict q, float *__restrict s3, int *__restrict ok) const {
+        int fix = 0;
+        const float sq = std::sqrt(1 + cot * cot), ak = std::abs(k);
+        if (!disc) {
+          for (int j = 0; j < nk; ++j) {
+            const float r = u[j], A = (0.5f * k * (r * r + c2) + cn) * im, g2 = r * r - A * A;
+            const float g = std::sqrt(std::max(g2, 0.0f));
+            const float p1x = A * ux - g * uy, p1y = A * uy + g * ux, p2x = A * ux + g * uy, p2y = A * uy - g * ux;
+            const float d1x = p1x - cx, d1y = p1y - cy, d2x = p2x - cx, d2y = p2y - cy;
+            const int a1 = d1x * tx + d1y * ty > 0, a2 = d2x * tx + d2y * ty > 0;
+            const float L1 = d1x * d1x + d1y * d1y, L2 = d2x * d2x + d2y * d2y;
+            const int c1 = a1 & (!a2 | (L1 <= L2));
+            px[j] = c1 ? p1x : p2x, py[j] = c1 ? p1y : p2y;
+            const float L = std::sqrt(c1 ? L1 : L2), x = std::min(1.0f, 0.5f * ak * L), x2 = x * x;
+            const float s = L * (1 + x2 * (1.f / 6 + x2 * (3.f / 40 + x2 * (5.f / 112 + x2 * (35.f / 1152 + x2 * (63.f / 2816))))));
+            q[j] = cz + cot * s, s3[j] = s * sq;
+            ok[j] = (g2 >= 0) & (a1 | a2) & (s > 0);
+            fix |= x2 >= 0.04f;
+          }
+        } else {
+          if (std::abs(cot) < 1e-9f) {
+            for (int j = 0; j < nk; ++j)
+              ok[j] = 0;
+            return;
+          }
+          for (int j = 0; j < nk; ++j) {
+            const float ds = (u[j] - cz) / cot, h = 0.5f * k * ds, h2 = h * h;
+            const float sc = 1 - h2 * (1.f / 6 - h2 * (1.f / 120 - h2 * (1.f / 5040)));
+            const float ch = 1 - h2 * (0.5f - h2 * (1.f / 24 - h2 * (1.f / 720 - h2 * (1.f / 40320))));
+            const float sh = h * sc, f = ds * sc;
+            const float xx = cx + f * (ch * tx - sh * ty), yy = cy + f * (sh * tx + ch * ty);
+            px[j] = xx, py[j] = yy;
+            q[j] = std::sqrt(xx * xx + yy * yy), s3[j] = ds * sq;
+            ok[j] = ds > 0;
+            fix |= h2 >= 0.04f;
+          }
+        }
+        if (fix)
+          for (int j = 0; j < nk; ++j)
+            ok[j] = at(disc, u[j], px[j], py[j], q[j], s3[j]);
+      }
 
       // --chain-batch-d 1: Hermite3D's one-point mode, the Taylor cubic of the
       // helix about c in the transverse arc s,
@@ -986,26 +1031,40 @@ namespace mkfit::seeding {
                   for (unsigned int i0 = b; i0 < e; i0 += 64) {
                     const unsigned int nk = std::min(64u, e - i0);
                     unsigned char msk[64];
-                    float dqv[64], wqv[64], c2v[64], snv[64];
+                    alignas(32) float dqv[64], wqv[64], c2v[64], snv[64];
+                    alignas(32) float PX[64], PY[64], QP[64], S3[64], WQ[64], SP2[64];
+                    alignas(32) int OK[64];
+                    // the prediction at each hit's qbar: lanes in the direct mode, else one at a time
+                    if (d_mode == 0)
+                      H.at_lanes(disc, hu + i0, nk, PX, PY, QP, S3, OK);
+                    else
+                      for (unsigned int jj = 0; jj < nk; ++jj) {
+                        S3[jj] = -1;
+                        OK[jj] = pred(hu[i0 + jj], PX[jj], PY[jj], QP[jj], S3[jj]);
+                      }
+                    if (isr > 0)
+                      for (unsigned int jj = 0; jj < nk; ++jj) {
+                        const float lv = S3[jj] > 0 ? S3[jj] * isr : 1.0f, wp = aphi + lv * bpi, sp = std::sin(wp);
+                        WQ[jj] = aq + lv * bqi, SP2[jj] = sp * sp;
+                      }
+                    else
+                      for (unsigned int jj = 0; jj < nk; ++jj)
+                        WQ[jj] = wqd, SP2[jj] = sw2;
                     for (unsigned int jj = 0; jj < nk; ++jj) {
                       const unsigned int i = i0 + jj;
-                      float px, py, qp, s3 = -1;
-                      bool ok = pred(hu[i], px, py, qp, s3);
-                      float wq = wqd, sp2 = sw2;
-                      if (isr > 0) {
-                        const float lv = s3 > 0 ? s3 * isr : 1.0f, wp = aphi + lv * bpi, sp = std::sin(wp);
-                        wq = aq + lv * bqi, sp2 = sp * sp;
-                      }
+                      const float px = PX[jj], py = PY[jj], wq = WQ[jj];
                       const float hxx = hx_[i], hyy = hy_[i];
                       const float cr = px * hyy - py * hxx, dt = px * hxx + py * hyy;
                       const float n2 = (px * px + py * py) * (hxx * hxx + hyy * hyy);
-                      const float dq = hq[i] - qp, c2 = cr * cr, sn = sp2 * n2;
-                      msk[jj] = ok & (std::abs(dq) <= wq) & (dt > 0) & (c2 <= sn);
+                      const float dq = hq[i] - QP[jj], c2 = cr * cr, sn = SP2[jj] * n2;
+                      msk[jj] = OK[jj] & (std::abs(dq) <= wq) & (dt > 0) & (c2 <= sn);
                       // for the score of the survivors: (dq / wq)^2 + sin^2(dphi) / sin^2(wp)
                       dqv[jj] = dq, wqv[jj] = wq, c2v[jj] = c2, snv[jj] = sn;
-                      if (CK.on)
-                        check_d(Qt[j], lay, disc, hu[i], ok, px, py, qp, wq, isr > 0 ? std::asin(std::sqrt(sp2)) : wpd, CK);
                     }
+                    if (CK.on)
+                      for (unsigned int jj = 0; jj < nk; ++jj)
+                        check_d(Qt[j], lay, disc, hu[i0 + jj], OK[jj], PX[jj], PY[jj], QP[jj], WQ[jj],
+                                isr > 0 ? std::asin(std::sqrt(SP2[jj])) : wpd, CK);
                     n_dt += nk;
                     for (unsigned int jj = 0; jj < nk; ++jj)
                       if (msk[jj]) {
