@@ -1026,7 +1026,70 @@ namespace mkfit::seeding {
                   const int sb = shT->bin(std::abs(c.cot));
                   slo = shT->lo[sb], shi = shT->hi[sb];
                 }
+                // a hit that passed the cuts: the fake cuts, OT2-P, then the quad
+                auto take = [&](unsigned int kd, float dq, float wq, float c2, float sn) {
+                  if (fk_on) {
+                    const float rq = dq / wq;
+                    if (rq * rq + c2 / sn >= fkd || hsp[kd] < slo || hsp[kd] > shi)
+                      return;
+                  }
+                  if (lay_ot2 && Ch.order[p] == 4) {
+                    // OT2-P for the helix through b, c, d
+                    const SurfLayer &Lb = *lay[c.pos[1]], &Lc = *lay[c.pos[2]];
+                    const unsigned kb = c.k[1], kc = c.k[2];
+                    HelixF H3;
+                    H3.make(Lb.sl.x_[kb], Lb.sl.y_[kb], Lb.sl.z_[kb], Lc.sl.x_[kc], Lc.sl.y_[kc], Lc.sl.z_[kc],
+                            hx_[kd], hy_[kd], hz[kd]);
+                    float zm = 0, dpb = 0, dzb = 0, scb = 0;
+                    const float ip2 = 1.0f / std::max(0.9f, pte);
+                    const float wp2 = fk_ot2 * (ot2_aphi + ot2_bphi * ip2), wz2 = fk_ot2 * (ot2_aq + ot2_bq * ip2);
+                    const int kn = next_hit(*lay_ot2, H3, pte, wp2, wz2, zm, dpb, dzb, scb);
+                    if (kn != -2 && std::abs(zm) < lay_ot2->q_hi - 2) {
+                      ++n_ot2_tested;
+                      const bool pass = kn >= 0 && std::abs(dpb) < wp2 && std::abs(dzb) < wz2;
+                      if (!pass) {
+                        ++n_fk_ot2;
+                        return;
+                      }
+                    }
+                  }
+                  found = true;
+                  ++n_qd;
+                  const std::array<int, 4> ids{Ch.order[c.pos[0]], Ch.order[c.pos[1]], Ch.order[c.pos[2]], Ch.order[p]};
+                  out.push_back({ids,
+                                 {lay[c.pos[0]]->sl.orig_[c.k[0]], lay[c.pos[1]]->sl.orig_[c.k[1]],
+                                  lay[c.pos[2]]->sl.orig_[c.k[2]], T->sl.orig_[kd]}});
+                };
+                // the q pre-filter (direct mode): q as a quadratic in qbar through the predictions at the two
+                // edges and the middle, which K2c measured within 2 % of the window; a hit off it by more than
+                // 1.1 x the window + 20 um is skipped, the others get the exact prediction, one at a time
+                float xm, ym, qm = 0, sm = -1;
+                const float um = 0.5f * (u0 + u1), ihh = 2.0f / (u1 - u0);
+                const bool pre = d_mode == 0 && !CK.on && ok0 && ok1 && pred(um, xm, ym, qm, sm);
+                const float qa1 = 0.5f * (q1 - q0), qa2 = 0.5f * (q0 + q1) - qm, wq_pre = 1.1f * wqd + 0.002f;
                 T->sl.for_each_run(surfb::phi_bins(*T, dmid, dhalf + wpd + 1e-6f), qd, [&](unsigned int b, unsigned int e) {
+                  if (pre) {
+                    n_dt += e - b;
+                    for (unsigned int i = b; i < e; ++i) {
+                      const float t = (hu[i] - um) * ihh;
+                      if (std::abs(hq[i] - (qm + t * (qa1 + t * qa2))) > wq_pre)
+                        continue;
+                      float px, py, qp, s3 = -1;
+                      const bool ok = H.at(disc, hu[i], px, py, qp, s3);
+                      float wq = wqd, sp2 = sw2;
+                      if (isr > 0) {
+                        const float lv = s3 > 0 ? s3 * isr : 1.0f, wp = aphi + lv * bpi, sp = std::sin(wp);
+                        wq = aq + lv * bqi, sp2 = sp * sp;
+                      }
+                      const float hxx = hx_[i], hyy = hy_[i];
+                      const float cr = px * hyy - py * hxx, dt = px * hxx + py * hyy;
+                      const float n2 = (px * px + py * py) * (hxx * hxx + hyy * hyy);
+                      const float dq = hq[i] - qp, c2 = cr * cr, sn = sp2 * n2;
+                      if (ok && std::abs(dq) <= wq && dt > 0 && c2 <= sn)
+                        take(i, dq, wq, c2, sn);
+                    }
+                    return;
+                  }
                   for (unsigned int i0 = b; i0 < e; i0 += 64) {
                     const unsigned int nk = std::min(64u, e - i0);
                     unsigned char msk[64];
@@ -1066,39 +1129,8 @@ namespace mkfit::seeding {
                                 isr > 0 ? std::asin(std::sqrt(SP2[jj])) : wpd, CK);
                     n_dt += nk;
                     for (unsigned int jj = 0; jj < nk; ++jj)
-                      if (msk[jj]) {
-                        if (fk_on) {
-                          const float rq = dqv[jj] / wqv[jj];
-                          if (rq * rq + c2v[jj] / snv[jj] >= fkd || hsp[i0 + jj] < slo || hsp[i0 + jj] > shi)
-                            continue;
-                        }
-                        if (lay_ot2 && Ch.order[p] == 4) {
-                          // OT2-P for the helix through b, c, d
-                          const SurfLayer &Lb = *lay[c.pos[1]], &Lc = *lay[c.pos[2]];
-                          const unsigned kb = c.k[1], kc = c.k[2], kd = i0 + jj;
-                          HelixF H3;
-                          H3.make(Lb.sl.x_[kb], Lb.sl.y_[kb], Lb.sl.z_[kb], Lc.sl.x_[kc], Lc.sl.y_[kc], Lc.sl.z_[kc],
-                                  hx_[kd], hy_[kd], hz[kd]);
-                          float zm = 0, dpb = 0, dzb = 0, scb = 0;
-                          const float ip2 = 1.0f / std::max(0.9f, pte);
-                          const float wp2 = fk_ot2 * (ot2_aphi + ot2_bphi * ip2), wz2 = fk_ot2 * (ot2_aq + ot2_bq * ip2);
-                          const int kn = next_hit(*lay_ot2, H3, pte, wp2, wz2, zm, dpb, dzb, scb);
-                          if (kn != -2 && std::abs(zm) < lay_ot2->q_hi - 2) {
-                            ++n_ot2_tested;
-                            const bool pass = kn >= 0 && std::abs(dpb) < wp2 && std::abs(dzb) < wz2;
-                            if (!pass) {
-                              ++n_fk_ot2;
-                              continue;
-                            }
-                          }
-                        }
-                        found = true;
-                        ++n_qd;
-                        const std::array<int, 4> ids{Ch.order[c.pos[0]], Ch.order[c.pos[1]], Ch.order[c.pos[2]], Ch.order[p]};
-                        out.push_back({ids,
-                                       {lay[c.pos[0]]->sl.orig_[c.k[0]], lay[c.pos[1]]->sl.orig_[c.k[1]],
-                                        lay[c.pos[2]]->sl.orig_[c.k[2]], T->sl.orig_[i0 + jj]}});
-                      }
+                      if (msk[jj])
+                        take(i0 + jj, dqv[jj], wqv[jj], c2v[jj], snv[jj]);
                   }
                 });
               }
