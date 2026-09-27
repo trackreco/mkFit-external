@@ -1538,6 +1538,11 @@ acceptance, 92.9 % get a hit, and 89.2 % of those hits are the track's own. Of
 the ~19 k kept quads with a pixel d per event, ~4.2 k are in OT1-P
 acceptance. It costs ~12 ms per event (measured while other jobs ran).
 
+(Measured with the nominal layer extents. With the extents of aba69e1 below,
+the same rows read 1433.9 / 0.346 (none), 1424.0 / 0.122 (score < 1), 1419.7 /
+0.084 (score < 0.75) and 1409.7 / 0.050 (score < 0.5), all with OT2-P and
+shape.)
+
 Time (the chain's own, events 40-59, fastest of 3 interleaved passes, black):
 389 ms per event before, 394 with the cuts off, and **350 with score < 0.75,
 OT2-P and shape**. That is less than with no cuts, because the stage c score
@@ -1546,3 +1551,68 @@ three tests run on the survivors of the existing box cuts, outside the vector
 loops. Written into the loops, the same tests cost +30 ms per event with the
 cuts off. With the cuts off, `--margins` against `ref-quads.txt` gives the same
 6 differing quads as before.
+
+### Speed after the fake cuts (2026-09-27)
+
+Timing rule as in "Making the chain fast": the chain's own time, events 40-59,
+black, fastest of 3 interleaved passes, each row measured against the row
+before it in one session (the same binary reads within ~1 % across sessions).
+"Cuts on" is `--fk-score 0.75 --fk-ot2 1.5 --fk-shape`. Acceptance: `--margins`
+against the reference list, and for the cleaning the union truth row on events
+40-99.
+
+| commit | change | cuts off | cuts on |
+|---|---|---|---|
+| d7a3c1e | before this section | 389.5 | -- |
+| 0b24bc4 | fake cuts in the finder (off: +5 ms) | 394.2 | 350.3 |
+| 5bcee31 | a cot range per start pair | 367.6 | 321.6 |
+| 1aef0d4 | barrel start pairs once for both sides; disc phi fetch | 343.2 | 299.8 |
+| 87ec7f0 | stage d prediction as lanes | 339.8 | 297.6 |
+| d7e144a | stage c and d fetch ranges in float | 333.4 | -- |
+| 61837b8 | stage c one hit at a time, q first | 318.5 | -- |
+| aba69e1 | layer extents over the hits, 2048 phi bins | **295.5** | **258.6** |
+
+- **A cot range per start pair.** At set-up, `scan_starts()` scans r-z lines
+  over the beam region with the flush's and `route()`'s own crossing tests. Each
+  start pair gets the cot range of the lines it can use, widened by 0.02 in eta.
+  A pair no line can use is skipped: the pairs ending on the last disc (23 27,
+  26 27 and mirrors), which OT1-P closes to doublets. Before, they cost 19 Mcyc
+  per side per event and pushed nothing. Stage b tests each doublet's cot against
+  the range and narrows the fetch on B to the q range the cot range allows.
+- **Shared barrel pairs.** `run_both()` fetches B1 B2, B2 B3 and B3 B4 once and
+  sends each doublet to the side its line goes to. On a disc B, the phi fetch
+  takes the geometric bound at the largest r the cot range reaches.
+- **Stage c one hit at a time.** A stage c fetch returns 4.8 hits per candidate
+  in 1.6 runs. The chunked mask and scan loops cost ~236 cycles per candidate
+  (cycle counters), more than the arithmetic. A plain loop that tests q first,
+  where ~95 % of the hits fail, is 15 ms per event faster.
+- **The layer extents.** `LayerInfo::rin()` of the pixel barrel lies inside the
+  inner radial shell: in layer 0 it is 2.868 cm, with hits from 2.750 cm. 54 / 48
+  / 50 / 49 % of the hits of layers 0-3 have r below it (one event); the discs
+  are exact. The fetches of stages b, c and d were built on the nominal extent,
+  the double reference's too. The 256 phi bins hid it: with 1024 bins the batch
+  finder lost 15 reference quads. `SurfLayer::fill()` now widens the extents to
+  the event's hits. With it the list no longer depends on the phi binning, and
+  2048 bins (3.07 mrad) take 20 ms off stages c and d. Physics, events 40-99:
+  1431.5 -> 1433.9 found tracks per event and fake 0.343 -> 0.346 with the cuts
+  off; 1417.3 -> 1419.7 and 0.083 -> 0.084 with them on.
+- **The reference list** is regenerated with the double chain as
+  `ref-quads-2.txt` in the working report (`prep/chain-kernels-2026-09-27/`),
+  1518676 quads. The double chain at 256 and at 2048 bins differs there by 1
+  quad, 0.17 % inside the stage c phi window. That is an edge of the double
+  chain's own stage c fetch. Against it the batch finder differs by 4 + 3
+  quads, all within 1e-4 of a cut.
+
+Tried and not kept:
+- Gathering the block's a and b hit coordinates into arrays before the stage c
+  loop, so their loads overlap: 5 ms per event slower.
+- The fake-cut tests inside the vector loops: +30 ms per event with the cuts
+  off. They run on the survivors of the box cuts.
+
+Where the time is now (cuts off): start doublets ~116 ms, of which the flush
+(holes, states, routing, queueing of 2.6 M lanes per event, ~63 cycles each) is
+~41 %; stage c ~120 ms over 1.43 M candidates; stage d ~60 ms over 216 k
+triplets. Each is now roughly proportional to the number of doublets the
+configuration makes. Next: b-major stage c (share a c-hit list per b hit, as
+the barrel finder's K3/K4). The chain's crossing envelopes (`SurfOwnership`)
+also take the barrel extents from `LayerInfo`, and are not changed yet.
