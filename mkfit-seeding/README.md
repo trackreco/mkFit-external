@@ -1111,8 +1111,38 @@ the d hit's phi. Output: `prep/ms-eta-2026-09-27/ms-phifold.txt`.
   IT3 or IT4. It lies between the IT4 envelope (r 15.6) and the OT1-P sensor.
   geo-stuff-9d has been asked to localize it in r.
 
-A 9 % modulation of the 95 % containment in one pattern is worth a few percent
-of its window area at most; it is recorded, not acted on.
+**The source is the OT1 flat rods, and it is the lever arm, not material.**
+geo-stuff-7a pointed out that the OT1 flat rods alternate between r = 22.11 and
+24.49 cm every 20 degrees. `--resid` rows now carry the d hit's radius. For
+B1 B2 B3 + OT1-P at |eta| < 0.5 the hits split into inner rods (median r 22.30)
+and outer rods (24.55), and phi mod 40 separates the two classes. Within each
+class, the q95 of residual / window over 5 degree bins has max/min 1.03-1.16,
+against a shuffled q95 of 1.16-1.25: the phi structure vanishes. Between the
+classes the ratio steps from 0.90 to 1.06-1.10. The window fitted per class at
+pT 1 is 1.21x larger on the outer rods, and the lever-arm ratio from IT3 is
+(24.55 - 10.52) / (22.30 - 10.52) = 1.19. geo-stuff-9d's radial slices agree:
+M0 has no 9-fold structure below r = 21.5. The structure in M2 at smaller radii
+comes only from the (s_d - s)^2 weight, i.e. from where the endpoint sits
+(`prep/ms-eta-2026-09-27/ms-rodclass.txt`).
+
+**Scaling b with each candidate's own lever arm: built, measured, a null, off by
+default.** `--pattern-sref A B C D S` scales a listed pattern's b terms by s_cd /
+S. s_cd is the 3D path length on the helix from hit c to the candidate, which the
+prediction already solves for. The fetch uses the longer end of the layer's
+slab. `--resid` rows carry s_cd. `prep/surf-resid-lever.py` fits a + b (s / s_ref)
+/ pT with the same envelope as `surf-resid.py`, s_ref being the median s_cd;
+without `--lever` it reproduces `windows-D121/ot1p.txt` to the last digit.
+Chain, events 40-99 (`prep/ms-eta-2026-09-27/cmp-lever.txt`):
+
+| OT1-P d windows | found / ev | kept quads / ev | fake among decidable |
+|---|---|---|---|
+| a + b / pT (committed) | 1431.5 | 27 468 | 0.343 |
+| a + b (s / s_ref) / pT | 1431.5 | 27 451 | 0.343 |
+
+Found tracks are identical in every |eta| bin. The quads move from short paths
+(-100 to -134 per event at |eta| 0.8-1.2) to long ones (+110 to +154 at 1.4-1.8).
+They do not fall. Without `--pattern-sref` the chain's truth report is identical
+to before in every line but the timings.
 
 Next, in order:
 1. **d windows as a function of |eta|.** Either the per-|eta| (a, b) fitted on

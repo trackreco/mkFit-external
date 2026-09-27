@@ -10,6 +10,7 @@
 //        [--win-c PHI Q] [--win-d PHI Q] [--no-cut] [--win-scale F]
 //        [--pattern-win A B C D PHI_C Q_C PHI_D Q_D]   a pattern with its own windows
 //        [--pattern-dwin A B C D PHI_C Q_C APHI_D BPHI_D AQ_D BQ_D]   ... with d windows a + b / pT_est
+//        [--pattern-sref A B C D S]   for a listed pattern: b scaled by each candidate's c-d path length / S (cm)
 //        [--own DELTA] [--own-skip K] [--own-skip-ot K]   phase-space ownership (SurfOwnership in SeedSurf.h), margin in cm
 //        [--dedup N]   over all patterns, keep a quad only if it shares < N hits with every better kept quad;
 //                      better = fewer outer-tracker layers in the pattern, then smaller
@@ -31,7 +32,7 @@
 //   be set from true quads.  Each row also carries the definite crossings of
 //   other layers on its a-d line, before a (lead) and between a and d (inner),
 //   so a fit can be restricted to what the chain builds (inner = 0), and the
-//   azimuth of the d hit and of the track.
+//   azimuth of the d hit and of the track, and the d hit's radius.
 
 #include "SeedSurf.h"
 
@@ -80,6 +81,7 @@ namespace {
     std::string name;
     float win[4] = {-1, -1, -1, -1};  // phi_c q_c phi_d q_d; < 0: the global ones
     float bwin[2] = {0, 0};           // b_phi_d, b_q_d: d windows a + b / pT_est
+    float sref = 0;                   // > 0: b scaled by the candidate's c-d path length / sref
     bool dynamic = false;             // made by the chain for a layer combination no pattern lists
   };
 
@@ -165,6 +167,20 @@ int main(int argc, char *argv[]) {
       p.win[3] = atof(next());
       p.bwin[1] = atof(next());
       pats.push_back(p);
+    } else if (a == "--pattern-sref") {
+      // A B C D S: for a pattern already listed, scale its d windows' b terms by s_cd / S
+      std::array<int, 4> l;
+      for (int k = 0; k < 4; ++k)
+        l[k] = atoi(next());
+      const float sr = atof(next());
+      bool found = false;
+      for (auto &p : pats)
+        if (p.l == l)
+          p.sref = sr, found = true;
+      if (!found) {
+        printf("--pattern-sref: pattern %d %d %d %d not listed before it\n", l[0], l[1], l[2], l[3]);
+        return 1;
+      }
     } else if (a == "--win-scale")
       win_scale = atof(next());
     else if (a == "--pt-min")
@@ -324,6 +340,7 @@ int main(int argc, char *argv[]) {
     if (p.win[0] >= 0)
       Q.phi_c = p.win[0], Q.q_c = p.win[1], Q.phi_d = p.win[2], Q.q_d = p.win[3];
     Q.b_phi_d = p.bwin[0], Q.b_q_d = p.bwin[1];
+    Q.s_ref = p.sref;
     Q.phi_c *= win_scale, Q.q_c *= win_scale, Q.phi_d *= win_scale, Q.q_d *= win_scale;
     Q.b_phi_d *= win_scale, Q.b_q_d *= win_scale;
     return Q;
@@ -334,13 +351,14 @@ int main(int argc, char *argv[]) {
       for (SurfChain &C : CH) {
         auto &wc = C.win_c[{p.l[0], p.l[1], p.l[2]}];
         wc.first = std::max(wc.first, (float)Q.phi_c), wc.second = std::max(wc.second, (float)Q.q_c);
-        C.win_d[{p.l[0], p.l[1], p.l[2], p.l[3]}] = {(float)Q.phi_d, (float)Q.b_phi_d, (float)Q.q_d, (float)Q.b_q_d};
+        C.win_d[{p.l[0], p.l[1], p.l[2], p.l[3]}] = {(float)Q.phi_d, (float)Q.b_phi_d, (float)Q.q_d, (float)Q.b_q_d, Q.s_ref};
       }
     }
   for (const auto &p : pats) {
     const SurfParams Q = params_of(p);
-    printf("[seedsurf] pattern %s (%d %d %d %d); c: phi %.4f q %.4f; d: phi %.4f + %.4f/pT q %.4f + %.4f/pT\n", p.name.c_str(),
-           p.l[0], p.l[1], p.l[2], p.l[3], Q.phi_c, Q.q_c, Q.phi_d, Q.b_phi_d, Q.q_d, Q.b_q_d);
+    printf("[seedsurf] pattern %s (%d %d %d %d); c: phi %.4f q %.4f; d: phi %.4f + %.4f/pT q %.4f + %.4f/pT%s\n", p.name.c_str(),
+           p.l[0], p.l[1], p.l[2], p.l[3], Q.phi_c, Q.q_c, Q.phi_d, Q.b_phi_d, Q.q_d, Q.b_q_d,
+           Q.s_ref > 0 ? (" (b x s_cd / " + std::to_string(Q.s_ref) + " cm)").c_str() : "");
   }
 
   FILE *fr = nullptr;
@@ -348,7 +366,7 @@ int main(int argc, char *argv[]) {
     fr = fopen(resid_out.c_str(), "w");
     fprintf(fr, "# seedsurf --resid; pt_min %.3f d0_max %.3f\n", P.pt_min, P.d0_max);
     fprintf(fr, "# R pat ev label eta pt ncomb  z0 dphi_b w_b  dphi_c wd0_c dq_c  dphi_d dq_d pte  hit-sigmas: sphi_d sq_d"
-                "  skips: lead inner  phi: d-hit track\n");
+                "  skips: lead inner  phi: d-hit track  r_d  s_cd\n");
   }
   // --resid: the chain's crossing test on each combination's a-d line (margin 0.2 cm, as the chain uses)
   SurfOwnership RO;
@@ -622,9 +640,10 @@ int main(int argc, char *argv[]) {
                   const double z0_ad = h[0].z - cot_ad * std::hypot(h[0].x, h[0].y);
                   int lead, inner;
                   RO.skips(p.l.data(), z0_ad, cot_ad, lead, inner);
-                  fprintf(fr, "R %d %d %d %.4f %.3f %d  %.4f %.6g %.6g  %.6g %.6g %.6g  %.6g %.6g %.4g  %.4g %.4g  %d %d  %.4f %.4f\n", ip, iev,
+                  fprintf(fr, "R %d %d %d %.4f %.3f %d  %.4f %.6g %.6g  %.6g %.6g %.6g  %.6g %.6g %.4g  %.4g %.4g  %d %d  %.4f %.4f  %.3f %.3f\n", ip, iev,
                           kv.first, t.momEta(), t.pT(), ncomb, e.z0 - t.z(), e.dphi_b, e.w_b, e.dphi_c, e.wd0_c, e.dq_c,
-                          e.dphi_d, e.dq_d, e.pte, sphi, sq, lead, inner, std::atan2(h[3].y, h[3].x), t.momPhi());
+                          e.dphi_d, e.dq_d, e.pte, sphi, sq, lead, inner, std::atan2(h[3].y, h[3].x), t.momPhi(),
+                          std::hypot(h[3].x, h[3].y), e.s_cd);
                 }
         }
       }

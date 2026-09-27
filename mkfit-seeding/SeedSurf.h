@@ -60,8 +60,12 @@ namespace mkfit::seeding {
     // phi_d and q_d are then the a terms.  The fetch uses pT_est = pt_min, the widest.
     float b_phi_d = 0;  // rad GeV
     float b_q_d = 0;    // cm GeV
-    double wphi_d(double pte) const { return phi_d + b_phi_d / std::max((double)pt_min, pte); }
-    double wq_d(double pte) const { return q_d + b_q_d / std::max((double)pt_min, pte); }
+    // s_ref > 0: the b terms scale with the candidate's own path length s from hit c
+    // (3D, cm) as s / s_ref -- the lever arm of the scattering between c and d.
+    float s_ref = 0;
+    double lever(double s) const { return s_ref > 0 && s > 0 ? s / s_ref : 1.0; }
+    double wphi_d(double pte, double s = -1) const { return phi_d + lever(s) * b_phi_d / std::max((double)pt_min, pte); }
+    double wq_d(double pte, double s = -1) const { return q_d + lever(s) * b_q_d / std::max((double)pt_min, pte); }
   };
 
   // A layer as the surface finder sees it.
@@ -187,8 +191,8 @@ namespace mkfit::seeding {
       }
 
       // Prediction on a target surface at qbar u: disc (u = z) gives r and
-      // phi, barrel (u = r) gives z and phi.
-      bool predict(bool disc, double u, double &q, double &phi) const {
+      // phi, barrel (u = r) gives z and phi; s3, if given, the 3D path length from c.
+      bool predict(bool disc, double u, double &q, double &phi, double *s3 = nullptr) const {
         double ds;
         if (disc) {
           if (std::abs(cot) < 1e-9)
@@ -202,6 +206,8 @@ namespace mkfit::seeding {
         at(ds, x, y);
         phi = std::atan2(y, x);
         q = disc ? std::hypot(x, y) : c.z + cot * ds;
+        if (s3)
+          *s3 = ds * std::sqrt(1 + cot * cot);
         return true;
       }
 
@@ -236,6 +242,7 @@ namespace mkfit::seeding {
     double z0 = NAN, dphi_b = NAN, w_b = NAN;       // b: residual and its geometric window (no margin)
     double dphi_c = NAN, wd0_c = NAN, dq_c = NAN;   // c: residuals and the D0 term (no phi_c)
     double dphi_d = NAN, dq_d = NAN, pte = NAN;     // d
+    double s_cd = NAN;                              // 3D path length from c to d on the helix
   };
 
   inline double surf_wb(const SurfParams &P, double ra, double rb) {
@@ -267,7 +274,7 @@ namespace mkfit::seeding {
     e.pte = hx.pt();
     const bool dd = Ls[3]->disc;
     double q, phi;
-    if (hx.predict(dd, dd ? h[3].z : h[3].r(), q, phi)) {
+    if (hx.predict(dd, dd ? h[3].z : h[3].r(), q, phi, &e.s_cd)) {
       e.dphi_d = wrap(h[3].phi() - phi);
       e.dq_d = (dd ? h[3].r() : h[3].z) - q;
     }
@@ -371,25 +378,27 @@ namespace mkfit::seeding {
     using namespace surf;
     if (!hx.ok)
       return;
-    double dq0, dp0, dq1, dp1;
-    const bool ok0 = hx.predict(D.disc, D.qbar_lo, dq0, dp0);
-    const bool ok1 = hx.predict(D.disc, D.qbar_hi, dq1, dp1);
+    double dq0, dp0, dq1, dp1, s0 = -1, s1 = -1;
+    const bool ok0 = hx.predict(D.disc, D.qbar_lo, dq0, dp0, &s0);
+    const bool ok1 = hx.predict(D.disc, D.qbar_hi, dq1, dp1, &s1);
     if (!ok0 && !ok1)
       return;
     if (!ok0)
       dq0 = dq1, dp0 = dp1;
     if (!ok1)
       dq1 = dq0, dp1 = dp0;
-    const double pte = hx.pt(), wpd = P.wphi_d(pte), wqd = P.wq_d(pte);
+    // fetch with the window at the longer end of the layer's slab; cut per hit on its own path length
+    const double pte = hx.pt(), smax = std::max(s0, s1), wpd = P.wphi_d(pte, smax), wqd = P.wq_d(pte, smax);
     const auto qd = q_bins(D, std::min(dq0, dq1) - wqd, std::max(dq0, dq1) + wqd);
     const double dmid = dp0 + 0.5 * wrap(dp1 - dp0), dhalf = 0.5 * std::abs(wrap(dp1 - dp0));
     D.sl.for_each_in(phi_bins(D, dmid, dhalf + wpd), qd, [&](unsigned int kd) {
       cnt.d_touched++;
       const P3 hd = surf_p3(D, kd);
-      double q, phi;
-      if (!hx.predict(D.disc, D.qbar(kd), q, phi))
+      double q, phi, s = -1;
+      if (!hx.predict(D.disc, D.qbar(kd), q, phi, &s))
         return;
-      if (!P.no_cut && (std::abs((D.disc ? hd.r() : hd.z) - q) > wqd || std::abs(wrap(hd.phi() - phi)) > wpd))
+      const double wq = P.s_ref > 0 ? P.wq_d(pte, s) : wqd, wp = P.s_ref > 0 ? P.wphi_d(pte, s) : wpd;
+      if (!P.no_cut && (std::abs((D.disc ? hd.r() : hd.z) - q) > wq || std::abs(wrap(hd.phi() - phi)) > wp))
         return;
       cnt.quads++;
       f(kd, hd);
@@ -562,7 +571,7 @@ namespace mkfit::seeding {
   // by the four), defaults from P where a combination has none.
   struct SurfChain {
     struct DW {
-      float aphi, bphi, aq, bq;
+      float aphi, bphi, aq, bq, sref = 0;
     };
     std::map<std::array<int, 3>, std::pair<float, float>> win_c;
     std::map<std::array<int, 4>, DW> win_d;
@@ -661,7 +670,8 @@ namespace mkfit::seeding {
       SurfParams Q = P;
       auto it = win_d.find({order[c.pos[0]], order[c.pos[1]], order[c.pos[2]], L});
       if (it != win_d.end())
-        Q.phi_d = it->second.aphi, Q.b_phi_d = it->second.bphi, Q.q_d = it->second.aq, Q.b_q_d = it->second.bq;
+        Q.phi_d = it->second.aphi, Q.b_phi_d = it->second.bphi, Q.q_d = it->second.aq, Q.b_q_d = it->second.bq,
+        Q.s_ref = it->second.sref;
       return Q;
     }
 
