@@ -1277,11 +1277,29 @@ reaches a quad is made in double. The profile after K2c is flat. At the top are
 the crossing tests on each doublet's line (~11 %), building P3s from five
 arrays (5 %) and the line construction (2 %). What remains is structural.
 
-Next, in order:
-1. **A batched float finder in its own file**, next to `SurfChain` as
-   `SeedFinderTile.h` sits next to the scalar barrel port. The same chain logic,
-   with candidates as structure-of-arrays batches per target layer, the crossing
-   tests vectorized over the batch, the c fetch shared per b hit (b-major), and
-   `SurfChain` kept, in double, as the reference. Accepted by `--margins` against
-   `ref-quads.txt`, which needs crossing-test margins added to the tool first.
-2. Iterations and larger D0.
+Next, in order (agreed 2026-09-27):
+1. **A batched float finder in its own file**, next to `SurfChain`, as
+   `SeedFinderTile.h` sits next to the scalar barrel port. It keeps the same
+   chain logic, with candidates as structure-of-arrays batches per target
+   layer. `SurfChain` stays, in double, as the reference. Accepted by `--margins`
+   against `ref-quads.txt`.
+2. **Its stage d on MkFitCore's `mini_propagators` (maintainer's suggestion).**
+   - From NN triplets at a time, set up an `InitialStatePlex` at hit c (position,
+     direction from the helix tangent, k).
+   - `propagate_to_r` / `propagate_to_z` to the target layer's two edges. This is
+     the same closed form as `cross_r_cf`, which then goes.
+   - Build a two-point `Hermite3D` across the slab, and test each candidate
+     against the cubic, or with `Hermite3DOnPlane` on its own module plane (the
+     right comparison for the tilted OT1-P modules).
+   - Expected error: R_c dalpha^4 / 384, ~0.3 um across OT1 at 0.9 GeV
+     (estimated), against up to ~10 um for the quadratic. Measure it with
+     `--chain-fast-check`, then decide whether the exact confirm can go.
+   - Guard the degenerate span near the turning radius (m_Hderfac -> 0 when both
+     edges clamp) with the fallback `surf_stage_d_fast` already has.
+   - The mini-propagators use uniform B, as the helix does.
+   - The one-point mode is 16x worse and not enough for the 15-30 cm c->d steps.
+3. **Crossing tests vectorized over the batch.** Add the crossing margin (the
+   line's distance to the layer envelope edge) to `--margins` first, so a flipped
+   crossing is classified instead of labelled structural.
+4. Stage c with the fetch shared per b hit (b-major, as the barrel's K3/K4).
+5. Iterations and larger D0.
