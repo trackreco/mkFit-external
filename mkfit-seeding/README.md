@@ -1538,7 +1538,7 @@ acceptance, 92.9 % get a hit, and 89.2 % of those hits are the track's own. Of
 the ~19 k kept quads with a pixel d per event, ~4.2 k are in OT1-P
 acceptance. It costs ~12 ms per event (measured while other jobs ran).
 
-(Measured with the nominal layer extents. With the extents of aba69e1 below,
+(Measured with the nominal layer extents. With the extents of 29ca69d below,
 the same rows read 1433.9 / 0.346 (none), 1424.0 / 0.122 (score < 1), 1419.7 /
 0.084 (score < 0.75) and 1409.7 / 0.050 (score < 0.5), all with OT2-P and
 shape.)
@@ -1570,7 +1570,7 @@ against the reference list, and for the cleaning the union truth row on events
 | 87ec7f0 | stage d prediction as lanes | 339.8 | 297.6 |
 | d7e144a | stage c and d fetch ranges in float | 333.4 | -- |
 | 61837b8 | stage c one hit at a time, q first | 318.5 | -- |
-| aba69e1 | layer extents over the hits, 2048 phi bins | **295.5** | **258.6** |
+| 29ca69d | layer extents over the hits, 2048 phi bins | **295.5** | **258.6** |
 
 - **A cot range per start pair.** At set-up, `scan_starts()` scans r-z lines
   over the beam region with the flush's and `route()`'s own crossing tests. Each
