@@ -20,7 +20,8 @@
 //        [--bind CM]   labels bound to geometry: needs SimHitStates in the sample
 //        [--chain H] [--chain-holes-ot K] [--chain-hole-always] [--chain-any] [--chain-start-holes K] [--chain-lead-only] [--chain-fast] [--chain-batch] [--chain-fast-check] [--chain-phases]   the feed-forward chain (SurfChain) in
 //                      place of the pattern list; the patterns then give window tables and the denominator;
-//                      --chain-batch runs the batched float finder (SeedSurfBatch.h) on the same configuration
+//                      --chain-batch runs the batched float finder (SeedSurfBatch.h) on the same configuration;
+//                      --chain-batch-d N its stage d prediction: 0 direct from hit c, 1 one-point cubic, 2 two-point Hermite
 //        [--truth OUT.txt] [--resid OUT.txt] [--dump quads.txt] [--eta-max E]
 //        [--margins REF.txt] [--margins-print N]   chain only: per event, the symmetric difference of the
 //                      chain's quads (before cleaning) against REF, a --dump of a run with the same pattern
@@ -132,6 +133,7 @@ int main(int argc, char *argv[]) {
   int chain_hole_always = 0, chain_holes_ot = 0, chain_any = 0, chain_start_holes = -1, chain_lead_only = 0;
   int chain_fast = 0;  // --chain-fast: the float kernels (K2) in the chain
   int chain_batch = 0; // --chain-batch: the batched float finder (SurfChainBatch)
+  int chain_batch_d = 0; // --chain-batch-d: its stage d prediction (0 direct, 1 one-point cubic, 2 two-point Hermite)
   int chain_phases = 0;  // --chain-phases: time the chain's phases
   int dedup_n = 0;         // > 0: over all patterns, drop a quad sharing >= N hits with a better kept one
   std::string margins_ref;  // --margins: the reference quad list
@@ -247,6 +249,8 @@ int main(int argc, char *argv[]) {
       chain_fast = 1;
     else if (a == "--chain-batch")
       chain_batch = 1;
+    else if (a == "--chain-batch-d")
+      chain_batch_d = atoi(next());
     else if (a == "--chain-fast-check")
       g_surf_fast_check.on = true;
     else if (a == "--chain-phases")
@@ -459,7 +463,7 @@ int main(int argc, char *argv[]) {
   SurfChainBatch CB[2];
   if (chain_holes >= 0 && chain_batch)
     for (int sd = 0; sd < 2; ++sd)
-      CB[sd].setup(CH[sd]);
+      CB[sd].setup(CH[sd]), CB[sd].d_mode = chain_batch_d;
 
   std::vector<Stats> S(pats.size());
   Stats SU;  // the union

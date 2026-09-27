@@ -1283,7 +1283,7 @@ Next, in order (agreed 2026-09-27):
    chain logic, with candidates as structure-of-arrays batches per target
    layer. `SurfChain` stays, in double, as the reference. Accepted by `--margins`
    against `ref-quads.txt`.
-2. **Its stage d on MkFitCore's `mini_propagators` (maintainer's suggestion).**
+2. **Measured and not taken: see "Stage d: one point and a direct solve" below.** Its stage d on MkFitCore's `mini_propagators` (maintainer's suggestion).
    - From NN triplets at a time, set up an `InitialStatePlex` at hit c (position,
      direction from the helix tangent, k).
    - `propagate_to_r` / `propagate_to_z` to the target layer's two edges. This is
@@ -1378,3 +1378,47 @@ Where the start doublets go (6 events, cycle counters since removed):
 The three barrel start pairs (B1 B2, B2 B3, B3 B4) cost 102 Mcyc per side and
 are fetched once for each side, so fetching them once for both sides would save
 ~30 ms per event.
+
+### Stage d: one point and a direct solve, not the two-point Hermite (2026-09-27)
+
+Plan step 2 was to put the batch finder's stage d on MkFitCore's
+`mini_propagators` with a two-point `Hermite3D` across the target slab. The
+direct single-point solve above was measured against the two `Hermite3D` modes
+instead, as options of the batch finder (`--chain-batch-d N`). Modes 1 and 2
+reproduce `Hermite3D`'s cubics in scalar float, not its Matriplex code:
+- 0 (default): direct, from the helix at hit c, as described above;
+- 1: `Hermite3D`'s one-point mode, the Taylor cubic about c in the transverse
+  arc s, P(s) = c + t (s - k^2 s^3 / 6) + n k s^2 / 2. Barrel: |P(s)| = r by
+  three Newton steps from the straight line. Disc: s from z, which is exact;
+- 2: `Hermite3D`'s two-point mode. The exact helix is taken at the slab's two
+  qbar edges, and the cubic in t runs through both points with the tangents
+  scaled by the transverse arc between them. z and the arc are linear in t.
+  Barrel: |H(t)| = r by three Newton steps from t linear in r. Disc: t from z.
+  It falls back to mode 0 where an edge is not reached.
+
+The same 20 events (40-59), each prediction against surf::Helix::predict in double
+at every fetched hit (`--chain-fast-check`, 18.4 M hits), and `--margins` against
+`ref-quads.txt`:
+
+| stage d | max \|dq\| | max \|dphi\| | worst error / window, q and phi | quads differing |
+|---|---|---|---|---|
+| 0 direct | 0.29 um | 3.0e-7 rad | 2.1e-4, 7.6e-5 | 6 |
+| 1 one-point cubic | 256 um | 10 mrad | 0.10, 1.15 | 2454 |
+| 2 two-point Hermite | 5.1 um | 1.5e-5 rad | 2.0e-3, 1.9e-3 | 10 |
+
+Stage d time, from `--chain-phases`, fastest of 3 interleaved passes (load
+2.0-2.4): mode 0 ~66 ms per event, mode 1 ~76, mode 2 ~85. Mode 2 needs two edge
+solves per candidate and a Newton solve per barrel hit, where mode 0 solves each
+hit in closed form.
+
+**So the second point is not needed.** From one point, the exact helix solved
+directly at each hit's qbar is both ~10x more precise than the two-point cubic
+and cheaper. The one-point cubic is too coarse for the 15-30 cm c-d steps: its
+worst phi error is larger than the window. Modes 1 and 2 stay as options for the
+record; the batch finder uses mode 0.
+
+What stage d costs is per candidate, not the prediction. The 66 ms is ~300 ns
+for each of 216 k triplets, of which the per-hit predictions for ~4.3 fetched
+hits are a small part. The rest is the gathers of nine hit coordinates from
+three layers, the helix set-up, the edge predictions, the fetch and the
+forwarding of misses.

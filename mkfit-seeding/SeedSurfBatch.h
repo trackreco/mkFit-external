@@ -135,6 +135,102 @@ namespace mkfit::seeding {
       bool at(bool disc, float u, float &px, float &py, float &q, float &s3) const {
         return disc ? at_z(u, px, py, q, s3) : at_r(u, px, py, q, s3);
       }
+
+      // --chain-batch-d 1: Hermite3D's one-point mode, the Taylor cubic of the
+      // helix about c in the transverse arc s,
+      //   P(s) = c + t (s - k^2 s^3 / 6) + n k s^2 / 2,
+      // truncation ~ R_c (k s)^4 / 24. Barrel: |P(s)| = r by Newton from the
+      // straight line; disc: s from z, which is exact (z is linear in s).
+      void cubic1(float s, float &x, float &y, float &dx, float &dy) const {
+        const float nx = -ty, ny = tx, ks = k * s;
+        const float a = s * (1 - ks * ks * (1.f / 6)), b = 0.5f * ks * s;
+        x = cx + a * tx + b * nx, y = cy + a * ty + b * ny;
+        const float da = 1 - 0.5f * ks * ks;
+        dx = da * tx + ks * nx, dy = da * ty + ks * ny;
+      }
+      bool at1(bool disc, float u, float &px, float &py, float &q, float &s3) const {
+        float s, dx, dy;
+        if (disc) {
+          if (std::abs(cot) < 1e-9f)
+            return false;
+          s = (u - cz) / cot;
+          if (s <= 0)
+            return false;
+          cubic1(s, px, py, dx, dy);
+          q = std::sqrt(px * px + py * py);
+        } else {
+          const float ct = cx * tx + cy * ty, d = ct * ct - c2 + u * u;
+          if (d < 0)
+            return false;
+          s = -ct + std::sqrt(d);
+          for (int it = 0; it < 3; ++it) {
+            cubic1(s, px, py, dx, dy);
+            s -= (px * px + py * py - u * u) / (2 * (px * dx + py * dy));
+          }
+          cubic1(s, px, py, dx, dy);
+          q = cz + cot * s;
+        }
+        s3 = s * std::sqrt(1 + cot * cot);
+        return s > 0;
+      }
+    };
+
+    // --chain-batch-d 2: Hermite3D's two-point mode across the target slab. The
+    // helix at the slab's two qbar edges (at(), exact), the cubic in t through
+    // both points with the tangents scaled by the transverse arc L between them,
+    // truncation ~ R_c (k L)^4 / 384. z and the arc are linear in t. Barrel:
+    // |H(t)| = r by Newton from t linear in r; disc: t from z, exact.
+    struct Hermite2F {
+      float ax[4], ay[4], z0 = 0, dz = 0, s0 = 0, L = 0, u0 = 0, du = 0, sq = 1;
+      bool ok = false;
+      void make(const HelixF &H, bool disc, float u0_, float u1_) {
+        float x0, y0, q0, a0, x1, y1, q1, a1;
+        ok = H.ok && H.at(disc, u0_, x0, y0, q0, a0) && H.at(disc, u1_, x1, y1, q1, a1);
+        if (!ok)
+          return;
+        sq = std::sqrt(1 + H.cot * H.cot);
+        s0 = a0 / sq, L = (a1 - a0) / sq;
+        ok = L > 1e-4f;
+        if (!ok)
+          return;
+        // tangents: t turned by k s
+        float sc, c0, sn0, c1, sn1;
+        sinc_cs(H.k * s0, sc, c0, sn0);
+        sinc_cs(H.k * (s0 + L), sc, c1, sn1);
+        const float t0x = H.tx * c0 - H.ty * sn0, t0y = H.tx * sn0 + H.ty * c0;
+        const float t1x = H.tx * c1 - H.ty * sn1, t1y = H.tx * sn1 + H.ty * c1;
+        auto coef = [&](float p0, float d0, float p1, float d1, float *a) {
+          a[0] = p0, a[1] = d0, a[2] = 3 * (p1 - p0) - 2 * d0 - d1, a[3] = 2 * (p0 - p1) + d0 + d1;
+        };
+        coef(x0, L * t0x, x1, L * t1x, ax);
+        coef(y0, L * t0y, y1, L * t1y, ay);
+        z0 = H.cz + H.cot * s0, dz = H.cot * L;
+        u0 = u0_, du = u1_ - u0_;
+      }
+      void eval(float t, float &x, float &y, float &dx, float &dy) const {
+        x = ((ax[3] * t + ax[2]) * t + ax[1]) * t + ax[0];
+        y = ((ay[3] * t + ay[2]) * t + ay[1]) * t + ay[0];
+        dx = (3 * ax[3] * t + 2 * ax[2]) * t + ax[1];
+        dy = (3 * ay[3] * t + 2 * ay[2]) * t + ay[1];
+      }
+      bool at(bool disc, float u, float &px, float &py, float &q, float &s3) const {
+        float t, dx, dy;
+        if (disc) {
+          t = (u - z0) / dz;
+          eval(t, px, py, dx, dy);
+          q = std::sqrt(px * px + py * py);
+        } else {
+          t = (u - u0) / du;
+          for (int it = 0; it < 3; ++it) {
+            eval(t, px, py, dx, dy);
+            t -= (px * px + py * py - u * u) / (2 * (px * dx + py * dy));
+          }
+          eval(t, px, py, dx, dy);
+          q = z0 + dz * t;
+        }
+        s3 = (s0 + L * t) * sq;
+        return s3 > 0;
+      }
     };
   }  // namespace surfb
 
@@ -168,6 +264,7 @@ namespace mkfit::seeding {
     double t_start = 0;
     unsigned long long cyc_c = 0, cyc_d = 0;
     bool phases = false;
+    int d_mode = 0;  // stage d prediction: 0 direct from c, 1 one-point cubic, 2 two-point Hermite across the slab
 
     static constexpr int kBlk = 256;
 
@@ -565,8 +662,18 @@ namespace mkfit::seeding {
                   }
                 }
               }
+              Hermite2F H2;
+              if (d_mode == 2)
+                H2.make(H, disc, u0, u1);
+              // the prediction at qbar u in the chosen mode; the two-point mode falls back to the direct
+              // one where its span is degenerate (an edge not reached)
+              auto pred = [&](float u, float &px, float &py, float &q, float &s3) {
+                return d_mode == 1 ? H.at1(disc, u, px, py, q, s3)
+                       : d_mode == 2 && H2.ok ? H2.at(disc, u, px, py, q, s3)
+                                             : H.at(disc, u, px, py, q, s3);
+              };
               float x0, y0, q0, s0 = -1, x1, y1, q1, s1 = -1;
-              const bool ok0 = H.at(disc, u0, x0, y0, q0, s0), ok1 = H.at(disc, u1, x1, y1, q1, s1);
+              const bool ok0 = pred(u0, x0, y0, q0, s0), ok1 = pred(u1, x1, y1, q1, s1);
               if (ok0 || ok1) {
                 if (!ok0)
                   x0 = x1, y0 = y1, q0 = q1;
@@ -588,7 +695,7 @@ namespace mkfit::seeding {
                     for (unsigned int jj = 0; jj < nk; ++jj) {
                       const unsigned int i = i0 + jj;
                       float px, py, qp, s3 = -1;
-                      bool ok = H.at(disc, hu[i], px, py, qp, s3);
+                      bool ok = pred(hu[i], px, py, qp, s3);
                       float wq = wqd, sp2 = sw2;
                       if (isr > 0) {
                         const float lv = s3 > 0 ? s3 * isr : 1.0f, wp = aphi + lv * bpi, sp = std::sin(wp);
