@@ -11,7 +11,7 @@
 #
 #   seedsurf-chain.sh --first-event 40 --num-events 60 --truth truth.txt
 #
-# reproduces the chain row of the README (1430.8 found tracks / ev, 29.0k quads).
+# gives the chain row of the README (1431.5 found tracks / ev, 27.5k quads, fake 0.343).
 
 set -e
 D=$(cd "$(dirname "$0")" && pwd)

@@ -28,7 +28,10 @@
 //   pT_est.
 // --resid: for every findable track and every combination of its labelled hits
 //   in the pattern's layers, what each cut sees (SurfEval), so the windows can
-//   be set from true quads.
+//   be set from true quads.  Each row also carries the definite crossings of
+//   other layers on its a-d line, before a (lead) and between a and d (inner),
+//   so a fit can be restricted to what the chain builds (inner = 0), and the
+//   azimuth of the d hit and of the track.
 
 #include "SeedSurf.h"
 
@@ -344,7 +347,18 @@ int main(int argc, char *argv[]) {
   if (!resid_out.empty()) {
     fr = fopen(resid_out.c_str(), "w");
     fprintf(fr, "# seedsurf --resid; pt_min %.3f d0_max %.3f\n", P.pt_min, P.d0_max);
-    fprintf(fr, "# R pat ev label eta pt ncomb  z0 dphi_b w_b  dphi_c wd0_c dq_c  dphi_d dq_d pte  hit-sigmas: sphi_d sq_d\n");
+    fprintf(fr, "# R pat ev label eta pt ncomb  z0 dphi_b w_b  dphi_c wd0_c dq_c  dphi_d dq_d pte  hit-sigmas: sphi_d sq_d"
+                "  skips: lead inner  phi: d-hit track\n");
+  }
+  // --resid: the chain's crossing test on each combination's a-d line (margin 0.2 cm, as the chain uses)
+  SurfOwnership RO;
+  if (fr) {
+    std::set<int> have;
+    for (const auto &p : pats)
+      for (int l : p.l)
+        have.insert(l);
+    RO.setup(ti, have);
+    RO.delta = 0.2;
   }
   FILE *fd = dump_out.empty() ? nullptr : fopen(dump_out.c_str(), "w");
 
@@ -604,9 +618,13 @@ int main(int argc, char *argv[]) {
                   const double sphi = std::sqrt(std::max(0.0, (double)(y * y * hd.exx() - 2 * x * y * hd.exy() + x * x * hd.eyy()))) / r2;
                   const double sq = L[3]->disc ? std::sqrt(std::max(0.0, (double)(x * x * hd.exx() + 2 * x * y * hd.exy() + y * y * hd.eyy()) / r2))
                                                : std::sqrt((double)hd.ezz());
-                  fprintf(fr, "R %d %d %d %.4f %.3f %d  %.4f %.6g %.6g  %.6g %.6g %.6g  %.6g %.6g %.4g  %.4g %.4g\n", ip, iev,
+                  const double cot_ad = (h[3].z - h[0].z) / (std::hypot(h[3].x, h[3].y) - std::hypot(h[0].x, h[0].y));
+                  const double z0_ad = h[0].z - cot_ad * std::hypot(h[0].x, h[0].y);
+                  int lead, inner;
+                  RO.skips(p.l.data(), z0_ad, cot_ad, lead, inner);
+                  fprintf(fr, "R %d %d %d %.4f %.3f %d  %.4f %.6g %.6g  %.6g %.6g %.6g  %.6g %.6g %.4g  %.4g %.4g  %d %d  %.4f %.4f\n", ip, iev,
                           kv.first, t.momEta(), t.pT(), ncomb, e.z0 - t.z(), e.dphi_b, e.w_b, e.dphi_c, e.wd0_c, e.dq_c,
-                          e.dphi_d, e.dq_d, e.pte, sphi, sq);
+                          e.dphi_d, e.dq_d, e.pte, sphi, sq, lead, inner, std::atan2(h[3].y, h[3].x), t.momPhi());
                 }
         }
       }

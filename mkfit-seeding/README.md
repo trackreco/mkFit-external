@@ -1002,19 +1002,88 @@ are not developed further.
 43 window lines in `windows-D121/`. These are the options of the measured
 chain row, with the tables copied from the working report's
 `prep/endcap-2026-09-26/patterns-D121-{px,ot-q0.95,skip}.txt`. Rerunning the
-script on events 40-99 gives a truth report identical to the recorded one
-(`truth-CHL2.txt`) in every line except the timings.
+script on events 40-99, with the OT1-P windows as they were then, gave a
+truth report identical to the recorded one (`truth-CHL2.txt`) in every line
+except the timings. The OT1-P windows have since been refitted (next section).
 
 **Chain counters for that run, per event:** 4.64 M doublets, 236 k triplets,
 82 k quads before cleaning, 29.0 k after. The scalar double-precision
 reference takes 2.07 s per event, which says nothing about a real
 implementation.
 
+### The multiple-scattering term of the d windows (2026-09-27)
+
+The d windows are `a + b / max(pT_est, pt_min)`, and the b term is multiple
+scattering. Scattering itself cannot be reduced; what can be got right is the
+variable b is fitted in and the population it is fitted on. Residuals: D121
+PU200, events 0-39, `--bind 0.05`, pT down to 0.5 GeV; `prep/ms-eta.py` fits
+`a + b / pT` to the q95 in true-pT bins, per pattern and per |eta| bin. Raw
+output in the working report's `prep/ms-eta-2026-09-27/`.
+
+**b does not scale as 1/p.** If it did, b cosh(eta) would be flat. It is not,
+in any pattern:
+- pixel patterns, phi: b is roughly flat in |eta|, 1.3-2.1 mrad GeV;
+- pixel discs, r: b falls, but more slowly than 1/cosh(eta) (F1 F2 F3 F4:
+  157 -> 49 um GeV while cosh(eta) goes 3.7 -> 8.2);
+- barrel z: b rises (B1 B2 B3 B4: 170 -> 347 um GeV over |eta| 0-1.2), because
+  the projection onto a barrel layer grows faster than the angle falls with p;
+- pixel triplet + OT1-P: b rises steeply, e.g. B1 B2 F1 + OT1-P b_z 1985 ->
+  8574 um GeV and b_phi 6.4 -> 19.8 mrad GeV from |eta| 1.05-1.31 to 1.83-2.09.
+
+A per-|eta| (a, b) instead of one per pattern would shrink the window area at
+95 % containment by 5-10 % in the pixel patterns and by 16 % and 20 % in
+B1 B2 B3 + OT1-P and B1 B2 F1 + OT1-P. Not implemented.
+
+**The OT1-P windows were fitted on tracks the chain does not build.** `--resid`
+now reports, per combination, the definite crossings of other layers on its a-d
+line before hit a (lead) and between a and d (inner). The chain, with no holes
+after the start, builds a pattern only if inner = 0. For B1 B2 B3 + OT1-P that is
+11 k of 83 k true combinations: the rest cross B4 on the way and the chain builds
+B1 B2 B3 B4 for them. Refitted with `prep/surf-resid.py` (q95 envelope) on the
+inner = 0 rows, the d windows move both ways, since each pattern is used only in
+part of its |eta| range:
+
+| pattern | before: a_phi, b_phi, a_z, b_z | inner = 0 |
+|---|---|---|
+| B1 B2 B3 + OT1-P | 2.2 mrad, 6.1 mrad GeV, 1.24 mm, 0.78 mm GeV | 2.9, 7.9, 1.35, 1.03 |
+| B1 B2 F1 + OT1-P | 2.7, 12.0, 1.80, 3.64 | 2.9, 4.7, 1.71, 1.85 |
+| B1 F1 F2 + OT1-P | 4.6, 12.2, 2.46, 5.98 | 1.9, 6.7, 1.86, 7.10 |
+
+The c windows are kept (the refit of B1 B2 F1's c window came out at 6.8 mrad,
+from a q99 in a sparse pT bin). `windows-D121/ot1p.txt` holds the refitted d
+windows. The chain with them, events 40-99 (not the events the windows were
+fitted on), `prep/ms-eta-2026-09-27/cmp-chainfit.txt`:
+
+| OT1-P d windows | found / ev | kept quads / ev | fake among decidable |
+|---|---|---|---|
+| fitted on all combinations | 1430.8 | 28 975 | 0.378 |
+| **fitted on inner = 0** | **1431.5** | **27 468** | **0.343** |
+
+Found tracks are unchanged (+0.4 at |eta| 1.0-1.2, +0.2 at 1.2-1.4). The quads
+fall in the transition, 1273 -> 917 per event at |eta| 1.0-1.2 and 1585 -> 1159
+at 1.2-1.4, and are unchanged above 1.8. Any window table for the chain should
+be fitted on the inner = 0 rows.
+
+**No phi dependence in the residuals, at 15 degrees.** `--resid` rows now carry
+the azimuth of the d hit and of the track. `prep/ms-phi.py` divides each residual
+by its pattern's `a + b / pT` and takes the q95 of that ratio in 24 bins of the d
+hit's azimuth, for pT < 1.5 GeV where scattering dominates. For each pattern the
+max/min over the 24 bins was compared with the same number after shuffling the
+azimuths (200 shuffles). Every pattern lies inside the shuffled spread: e.g.
+B1 B2 B3 B4 1.20 against a shuffled median of 1.21 (q95 1.30), B1 B2 F1 + OT1-P
+1.48 / 1.60 (phi / z) against 1.41 / 1.47 (q95 1.57 / 1.63). So any azimuthal
+modulation of the 95 % containment is below about 10-15 % at this binning.
+This does not exclude structure finer than 15 degrees (ladders, modules,
+service pipes), which bins this wide average away, and above 3 GeV there are
+too few tracks per bin to say anything.
+
+Material: geo-stuff-9d is scanning x/X0 and its lever-arm moment from the third
+layer to the OT1-P sensor as a function of |eta|, and the phi structure, to see
+whether Highland reproduces the rise of b. Pending.
+
 Next, in order:
-1. **The transition windows.** The OT1-P windows are wide at low pT (for
-   B1 B2 F1 + OT1-P: 1.8 mm + 3.6 mm GeV / pT in z), from multiple scattering
-   over the step to the outer tracker.
+1. **The material scan against b(|eta|)**, and phi structure finer than 15
+   degrees if the scan shows any.
 2. **Kernels.** The chain on `SeedLayer` and the tile kernels in float, as the
    barrel finder was done, with the scalar chain as the reference list.
 3. Iterations and larger D0.
-

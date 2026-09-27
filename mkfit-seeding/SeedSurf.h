@@ -492,6 +492,28 @@ namespace mkfit::seeding {
     int max_skip_ot = -1;
     static bool is_pix(int l) { return l <= 3 || (l >= 16 && l <= 27) || (l >= 38 && l <= 49); }
 
+    // Definite crossings of layers NOT in the pattern: before the pattern's first
+    // layer (lead) and between its first and last (inner).  The chain with a late
+    // start takes a quad with lead <= start_holes and inner == 0.
+    void skips(const int lay[4], double z0, double cot, int &lead, int &inner) const {
+      double s_first = 1e30, s_last = -1;
+      std::vector<double> other;
+      for (const Env &e : env) {
+        double s;
+        const int st = cross(e, z0, cot, s);
+        const bool inpat = e.id == lay[0] || e.id == lay[1] || e.id == lay[2] || e.id == lay[3];
+        if (inpat)
+          s_first = std::min(s_first, s), s_last = std::max(s_last, s);
+        else if (st == 2)
+          other.push_back(s);
+      }
+      lead = inner = 0;
+      for (double s : other) {
+        lead += s < s_first;
+        inner += s > s_first && s < s_last;
+      }
+    }
+
     bool owns(const int lay[4], double z0, double cot) const {
       if (delta < 0)
         return true;
