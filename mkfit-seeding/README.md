@@ -17,6 +17,8 @@ reproducing that prototype's output exactly, then made fast.
 | `SeedFinderTile.h` | step B in float: per b-hit kernels K1 (doublets and slopes), K3 (the c list from a phi-only layer c), K4 (the r-z slope pre-filter in slope buckets, then the exact z test). `--tile`; `--tile-brute` keeps the dense-tile form for comparison |
 | `SeedStats.h` | `seedfind --stats`: trip counts and value ranges of the per-pair stages, walking the b-major finder's windows with its cuts (step B0). Its doublet and triplet counts must equal the finder's |
 | `seedfind.cc` | standalone driver: geometry plugin and events as `mkFit.cc` loads them, timers around the fill and the search only |
+| `SeedOT1.h` | `seedfind --ot1`: a compatible hit in OT1 (P or S) for every quad, with truth |
+| `SeedSeq.h` | `seedfind --sequences[-all]`: the layer sequence every sim track crosses, rec -> sim and sim -> rec |
 | `Makefile` | flags from the build's `make echo-aclic`, re-read on every build; ROOT only if `libMkFitCore.so` links it |
 
 ## Build and run
@@ -121,6 +123,95 @@ f 1.5, floor 0.3 mrad / 50 um gives 0.12 / 0.10, but costs 2-4 points of
 efficiency above 1.2 GeV true pT (20 events: 0.961 / 0.963 / 0.951 at 1.2-2 /
 2-5 / >5 against 0.979 / 0.992 / 0.992). Logs in the working report's
 prep/res-2026-09-26/pe-*.log.
+
+**A compatible hit in OT1, `seedfind --ot1 OUT.txt [--ot1-layer L] [--ot1-fetch
+RAD CM]` (`SeedOT1.h`, 2026-09-26).** A truth study; the finder is unchanged. Each
+quad's circle through a, c, d (tangent at d) and its r-z line are extended to
+layer L, and every candidate is predicted at its own radius, since the OT1
+modules are tilted. The hit's error on each residual comes from its full
+covariance, including the r term. The analysis is the working report's
+`prep/ot1-analysis.py` (window, match rates), `ot1-classes.py` (three classes)
+and `ot1-zfloor.py`, with raw output and tables in `prep/ot1-2026-09-26/`. 100
+events, pT_min 0.9, current defaults.
+
+The window is w_phi = sqrt((3 s_phi)^2 + (b_phi / pT_est)^2) and w_z = sqrt(3)
+s_z + b_z / pT_est, each with the hit's own s. b is the envelope over pT_est bins
+that puts at least 95 % of the true hits of good-curvature quads (pT_est within
+20 % of the truth) inside the window in every bin. For OT1-P: **b_phi 3.20 mrad
+GeV, b_z 316 um GeV**. The per-bin products are 2.7-3.2 mrad GeV in phi, so the
+phi prediction scales as 1/pT; in z the hit's extent alone covers above ~2 GeV.
+A match is |dphi| < f w_phi and |dz| < f w_z.
+
+**The first fit had a 486 um z floor, and it was the fit, not the physics.** It
+added the q95 of the residual and the bin's median hit term in quadrature.
+Deconvolving the true-hit dz as U(-h, h) + N(0, sigma) with each hit's own h
+(`ot1-zfloor.py`) gives sigma = 0, on q68 and on q95 alike, above 3 GeV and in
+every |cot| bin: there the residual is the macro-pixel alone. h is not one
+number: 734 um on the flat modules, 940-1110 um at |cot| > 0.7 from the r-z
+projection on the tilted ones, so a median h under-states the pool's q95. With
+that fit the z window was 15-20 % wider than the corrected one (880 against 754
+um above 10 GeV, 1330 against 1130 um at 0.8 GeV). At f = 2 the corrected window
+moves the fake match rate by under one point in every pT_est bin above 0.7 GeV
+(0.477 -> 0.472 at 0.7-0.9, 0.095 -> 0.094 at 5-10) and 2.3 points at 0.5-0.7
+GeV; true quads with their own hit stay at 0.988. Phi does most of the
+rejection: above 5 GeV, 12.5 % of fakes pass phi alone, 37 % pass z alone, and
+10.1 % pass both.
+
+- **OT1-P (layer 4):** 93.3 % of true quads have a hit of their own track there
+  (acceptance, the P sensor missing and module inefficiency together).
+- **OT1-S (layer 5) does not discriminate.** Its z window is the strip. P or S
+  keeps 98.5 % of true quads and 62 % of fakes, against 96.2 % and 32 % for P.
+- **Three classes at f = 2, by pT_est** (fractions of true / fake quads):
+
+| pT_est | true /ev | P | S only | none | fake /ev | P | S only | none |
+|---|---|---|---|---|---|---|---|---|
+| 0.5-1 | 287.3 | 0.964 | 0.024 | 0.012 | 55.4 | 0.442 | 0.301 | 0.257 |
+| 1-2 | 253.1 | 0.962 | 0.021 | 0.017 | 55.4 | 0.323 | 0.305 | 0.372 |
+| 2-5 | 69.7 | 0.956 | 0.025 | 0.018 | 27.1 | 0.180 | 0.300 | 0.521 |
+| > 5 | 9.3 | 0.952 | 0.022 | 0.027 | 17.5 | 0.101 | 0.275 | 0.623 |
+
+  Above 5 GeV a P match keeps 95 % of true quads and 10 % of fakes. The P-matched
+  set there is 8.9 true against 1.8 fake quads per event (83 % of the decidable),
+  against 35 % in the whole list. The 5 % of true quads without a P match (0.45
+  per event) cannot be told from the 16 unmatched fakes at the seed level, so a
+  P match can rank or flag seeds but not veto them.
+- **It already depends on |eta| inside the barrel.** Above 5 GeV the fake P-match
+  rate is 0.115 / 0.139 / 0.064 at |eta| < 0.5 / 0.5-0.9 / > 0.9. These are
+  pixel-barrel quads, |eta| up to ~1.1; OT1's tilted rings at higher |eta| need
+  their own measurement.
+
+## Tried and not kept
+
+Every change that was built and measured, and then dropped or kept off by
+default because it bought nothing or cost more than it saved. Each row points
+at the section below that has the full numbers. Times are search ms per event
+on black unless stated. The quad list was identical in every speed row.
+
+| what | measured | verdict | section |
+|---|---|---|---|
+| branch-free binary search in the per-b c list | no gain over the branching one; ~48 ns per doublet, latency bound | replaced by z buckets | Measurements |
+| dense slope tile (`--tile-brute`) | 45.2 ns per doublet against 29.5 with slope buckets; volume bound | kept as an option for comparison | Step B, first half |
+| K4 masks at fixed per-doublet slots | K4 5.9 against 5.5 ms | dropped | K4: three restructurings |
+| K4 bucket against bucket (doublets sorted too) | 8.4 against 5.5 | dropped | same |
+| K4 4-wide SSE step | 6.4 against 5.5 | dropped | same |
+| int16 per-pair arithmetic (`mkfit-seeding-int16`) | -1.5 to -5 % on four machines; the test arithmetic is ~7 % of the time | branch kept, not merged | After the float kernels; Four machines |
+| forced 512-bit vectors on Skylake-SP | helix -18 %, every other stage +4-5 %, net loss | GCC's 256-bit preference kept | Four machines |
+| `__builtin_prefetch` in the 4th-layer fetch | stage 6 1.95 -> 2.47 ms; IPC 2.2, 2.2 % L1 misses | reverted | Before and after on four machines |
+| 2, 4 or 8 counter sets in K3's sort | K3 4.33-4.70 against 4.44 with cursors, 4.23 / 4.30 against 3.93 with ranks | dropped | K3's counting sort with ranks |
+| drop the per-entry slope tolerance t_c | K3 -0.25-0.4 ms, K4 +0.35-0.8 ms (32 % more pre-filter hits) | dropped | same |
+| 4th-hit windows from the triplet curvature (`--win-scaled`) | every configuration on or below the fixed-window curve; best: same efficiency, 8 % fewer fakes | built, off by default | 4th-hit windows from the curvature |
+| tight scaled windows, f 1.5, floor 0.3 mrad / 50 um | fakes above 5 GeV 0.58 -> 0.12, efficiency -2 to -4 points above 1.2 GeV | not taken | Seed purity against pT_est |
+| phi-cut tolerance M, 1-10 mrad | efficiency 0.9386-0.9393 over the whole range; fake 0.094-0.117 | 2 mrad chosen, the value does not matter | The doublet-slope phi cut |
+
+Not built, sized from the truth tables only:
+- choosing the best 4th hit per triplet would remove about 2 % of fakes (3.2 %
+  of fakes are a true triplet with a wrong d);
+- Matriplex for the per-triplet stages could buy at most ~15 % of the search
+  time, the share of those stages after the float port.
+
+In the prototype study (`../mkfit-standalone-seedgeom/`): radial sub-bins
+(n_r = 8) touched 4.9x fewer hits and made the search slower (226 -> 394 ms),
+since the start table grows with n_r.
 
 ## Acceptance: the quad list, not the physics numbers
 
@@ -792,3 +883,4 @@ need is resolution, and fixed point gives it directly.
    the target layer's own (q, qbar).
 3. Mixed barrel/disc combinations in the transition region.
 4. Iterations and a larger D0_max, where starting further out is cheaper.
+

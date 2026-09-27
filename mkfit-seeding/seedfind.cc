@@ -29,6 +29,8 @@
 #include "SeedTruth.h"
 #include "SeedMissed.h"
 #include "SeedResiduals.h"
+#include "SeedOT1.h"
+#include "SeedSeq.h"
 
 #include <algorithm>
 #include <chrono>
@@ -64,6 +66,8 @@ namespace {
         "         [--staged | --fuse | --bmajor | --tile | --tile-brute] [--block N] [--lbin CM]\n"
         "         [--arith ref|fast|fastk] [--stats] [--margins REF] [--eps-cm E] [--eps-rad E] [--margins-print N]\n"
         "         [--pt-min GEV] [--d0-max CM] [--qwin CM] [--qwin-d CM] [--phiwin-d RAD] [--truth OUT.txt] [--why-missed] [--residuals OUT.txt]\n"
+        "         [--ot1 OUT.txt] [--ot1-layer L] [--ot1-fetch RAD CM]   a compatible hit in layer L (4, OT1-P) for every quad, with truth\n"
+        "         [--sequences OUT.txt]   the pixel-layer sequence of every sim track, for pattern choice\n"
         "         [--win-scaled F PT_KEEP] [--win-floor A_PHI A_Z]   4th-hit windows from the curvature\n"
         "         [--first-look]   the first look's windows and no phi_lin cut; put window options after it\n");
   }
@@ -256,6 +260,10 @@ int main(int argc, char *argv[]) {
   SeedMissed WM;
   std::string residuals_out;
   SeedResiduals SR;
+  std::string ot1_out;
+  SeedOT1 OT;
+  std::string seq_out;
+  SeedSeq SQ;
   bool stats = false;
   SeedStats SS;
   unsigned int block = 64;
@@ -322,6 +330,21 @@ int main(int argc, char *argv[]) {
       why_missed = true;
     else if (a == "--residuals")
       residuals_out = next();
+    else if (a == "--ot1")
+      ot1_out = next();
+    else if (a == "--sequences")
+      seq_out = next();
+    else if (a == "--sequences-all") {
+      seq_out = next();
+      SQ.all_layers = true;
+    }
+    else if (a == "--ot1-layer")
+      OT.layer = atoi(next());
+    else if (a == "--ot1-fetch") {
+      // the generous candidate window around the prediction: rad, cm
+      OT.fetch_phi = atof(next());
+      OT.fetch_z = atof(next());
+    }
     else if (a == "--pt-min")
       P.pt_min = atof(next());
     else if (a == "--d0-max")
@@ -401,6 +424,9 @@ int main(int argc, char *argv[]) {
   Layer gc(lic.zmin(), lic.zmax(), n_q_bins(lic, qbin_c)), gd(lid.zmin(), lid.zmax(), n_q_bins(lid, qbin_d));
   // the tile finder fetches layer c over all q: binned in phi only, one run per window
   Layer gc1(lic.zmin(), lic.zmax(), 1);
+  // the --ot1 target layer, binned in (phi, z) at 2 cm; filled outside the timers
+  const LayerInfo &lio = ti[OT.layer];
+  Layer go(lio.zmin(), lio.zmax(), n_q_bins(lio, 2.0f));
   printf("[seedfind] pt_min %.3f GeV, d0_max %.3f cm; windows: 3rd-hit z %.4f cm, 4th-hit z %.4f cm, 4th-hit phi %.4f rad\n",
          P.pt_min, P.d0_max, P.qwin, P.qwin_d, P.phiwin_d);
   printf("[seedfind] layers %d %d %d %d; phi bins %u; q bins c %u (%.2f cm) d %u (%.2f cm); phi_lin %d %.4f\n",
@@ -470,6 +496,19 @@ int main(int argc, char *argv[]) {
         SR.open(residuals_out, P);
       SR.event<ArithFastK>(iev, ev, la, lb, lc, ld, P, ga, gb, gc, gd, quads);
     }
+    if (!seq_out.empty()) {
+      if (iev == 0 && !SQ.open(seq_out, P.pt_min, P.d0_max)) {
+        printf("cannot open %s\n", seq_out.c_str());
+        return 1;
+      }
+      SQ.event(iev, ev, P.pt_min, P.d0_max);
+    }
+    if (!ot1_out.empty()) {
+      if (iev == 0)
+        OT.open(ot1_out, P, lio);
+      go.fill(ev.layerHits_[OT.layer]);
+      OT.event(iev, ev, la, lb, lc, ld, lio, go, quads);
+    }
     if (stats) {
       if (P.phi_lin && iev == 0)
         printf("[stats] note: --stats does not apply the phi_lin cut, so its triplet count is the one without it\n");
@@ -520,6 +559,8 @@ int main(int argc, char *argv[]) {
   if (why_missed)
     WM.report();
   SR.close();
+  OT.close();
+  SQ.close();
   if (!truth_out.empty()) {
     ST.report();
     if (!ST.write(truth_out, P.pt_min, P.d0_max)) {
