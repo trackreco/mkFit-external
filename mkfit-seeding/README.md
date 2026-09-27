@@ -1239,8 +1239,49 @@ what remains is per candidate: the crossing tests on each doublet's line
 (before b for the holes, after it for the next target), the queueing, and stage
 c for ~2.2 M doublets per event that mostly find nothing.
 
+**Where the time went after K2a** (`--chain-phases`: the start doublets by wall
+clock, stage c and d by rdtsc, 20 events): start doublets 262 ms, forward pass
+367 ms, of which stage c 40 % over 1.43 M doublets and stage d 60 % over 216 k
+triplets. Stage d cost ~1 us per triplet: each triplet made ~6 exact predictions
+(the fetch's two edges and one per candidate, 4.2 candidates per triplet), each
+a Newton solve with a sincos per step on a barrel target.
+
+**K2c, stage d as pre-filter plus exact confirm (`--chain-fast`): 615.0 ->
+519.8 ms per event, 0 of 1516437 quads differ.**
+- `Helix::cross_r_cf()`: the barrel crossing in closed form. The helix circle
+  against |P| = r by the radical line, with d^2 - rho^2 taken as |c|^2 + 2 (c.n)/k
+  so it does not cancel for a stiff track, then the arc to each point.
+  `--chain-fast-check` measures it against Newton over 3.1 M node predictions:
+  max 9.2e-9 cm in z and 1.4e-7 rad in phi, and never succeeds where Newton fails.
+- `surf_stage_d_fast()` predicts at the layer's two qbar edges (also the fetch)
+  and its middle, and takes q, phi and the path length as quadratics in qbar.
+  Over 4.3 M candidates the quadratic's worst error is 2.0 % of the window in q
+  and 0.42 % in phi. Candidates are tested against it in float with the window
+  x1.05. Survivors are confirmed with `surf_stage_d`'s own prediction and double
+  cut, so the accepted quads are decided as in the reference.
+- Without the confirm, the quadratic alone flipped 52 of 1.5 M quads (26 each
+  way). All were in OT1-P patterns, at the d q cut, within 5.4e-3 of the window:
+  its interpolation error over the 8.4 cm OT1 slab.
+
+| | ms / ev | vs scalar |
+|---|---|---|
+| scalar chain (3d10608) | 1884.7 | -- |
+| + K1, K2a | 615.0 | x3.06 |
+| + K2c | 519.8 | x3.63 |
+
+(Fastest of 3 interleaved passes; the load rose from 1.75 to 3.68 during them.)
+
+**This is still the scalar double prototype**, one candidate at a time: only the
+stage b and stage d candidate tests run in float, and every decision that
+reaches a quad is made in double. The profile after K2c is flat. At the top are
+the crossing tests on each doublet's line (~11 %), building P3s from five
+arrays (5 %) and the line construction (2 %). What remains is structural.
+
 Next, in order:
-1. **K2b: stage c batched.** Group the queued doublets by target layer and b
-   hit, and share the c fetch per b hit, as the barrel's b-major finder does.
-   Test the crossing on the cached line in float.
+1. **A batched float finder in its own file**, next to `SurfChain` as
+   `SeedFinderTile.h` sits next to the scalar barrel port. The same chain logic,
+   with candidates as structure-of-arrays batches per target layer, the crossing
+   tests vectorized over the batch, the c fetch shared per b hit (b-major), and
+   `SurfChain` kept, in double, as the reference. Accepted by `--margins` against
+   `ref-quads.txt`, which needs crossing-test margins added to the tool first.
 2. Iterations and larger D0.

@@ -37,6 +37,7 @@
 #include "RecoTracker/MkFitCore/interface/TrackerInfo.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <vector>
 #include <map>
@@ -229,6 +230,62 @@ namespace mkfit::seeding {
         double x, y;
         at(ds, x, y);
         return ds > 0 && std::abs(std::hypot(x, y) - r) < 1e-5;
+      }
+
+      // The first crossing ds > 0 with |P(ds)| = r in closed form: the helix circle
+      // (centre C = c + n / k, n the left normal of the tangent) against |P| = r,
+      // by the radical line, then the arc from c to the point. d^2 - rho^2 is taken
+      // as |c|^2 + 2 (c.n) / k, which does not cancel for a stiff track. No iteration
+      // and no sin/cos; for |k| below 1e-7 the straight-line solution.
+      bool cross_r_cf(double r, double &ds, double &px, double &py) const {
+        const double nx = -ty, ny = tx;
+        if (std::abs(k) < 1e-7) {
+          const double ct = c.x * tx + c.y * ty, c2 = c.x * c.x + c.y * c.y, disc = ct * ct - c2 + r * r;
+          if (disc < 0)
+            return false;
+          ds = -ct + std::sqrt(disc);
+          px = c.x + ds * tx, py = c.y + ds * ty;
+          return ds > 0;
+        }
+        const double ik = 1 / k, Cx = c.x + nx * ik, Cy = c.y + ny * ik;
+        const double d2 = Cx * Cx + Cy * Cy, d = std::sqrt(d2);
+        if (d < 1e-12)
+          return false;
+        const double dmr = c.x * c.x + c.y * c.y + 2 * (c.x * nx + c.y * ny) * ik;  // d^2 - rho^2
+        const double a = (r * r + dmr) / (2 * d), h2 = r * r - a * a;
+        if (h2 < 0)
+          return false;
+        const double h = std::sqrt(h2), ux = Cx / d, uy = Cy / d;
+        // the two points, and the arc from c to each in the direction of motion
+        const double qx[2] = {a * ux - h * uy, a * ux + h * uy}, qy[2] = {a * uy + h * ux, a * uy - h * ux};
+        const double rcx = c.x - Cx, rcy = c.y - Cy;
+        double best = -1;
+        for (int j = 0; j < 2; ++j) {
+          const double rpx = qx[j] - Cx, rpy = qy[j] - Cy;
+          double th = std::atan2(rcx * rpy - rcy * rpx, rcx * rpx + rcy * rpy);  // CCW angle c -> P about C
+          double s = th * ik;
+          if (s <= 0)
+            s += kTwoPi * std::abs(ik);
+          if (best < 0 || s < best) {
+            best = s;
+            px = qx[j], py = qy[j];
+          }
+        }
+        ds = best;
+        return ds > 0;
+      }
+      // predict() with the closed-form barrel crossing; the disc branch is predict()'s.
+      bool predict_cf(bool disc, double u, double &q, double &phi, double *s3 = nullptr) const {
+        if (disc)
+          return predict(true, u, q, phi, s3);
+        double ds, x, y;
+        if (!cross_r_cf(u, ds, x, y))
+          return false;
+        phi = std::atan2(y, x);
+        q = c.z + cot * ds;
+        if (s3)
+          *s3 = ds * std::sqrt(1 + cot * cot);
+        return true;
       }
 
       // Prediction on a target surface at qbar u: disc (u = z) gives r and
@@ -508,6 +565,121 @@ namespace mkfit::seeding {
     });
   }
 
+  // --chain-fast-check: the closed-form nodes against Newton, and the quadratic
+  // against the exact prediction at every fetched candidate (relative to its window).
+  struct SurfFastCheck {
+    bool on = false;
+    long nodes = 0, cands = 0, node_fail_mismatch = 0;
+    double max_node_dq = 0, max_node_dphi = 0, max_rel_q = 0, max_rel_phi = 0;
+  };
+  inline SurfFastCheck g_surf_fast_check;
+
+  // Stage d as a pre-filter plus confirm (K2c). The helix is predicted at the
+  // layer's two qbar edges and its middle with the closed-form crossing
+  // (predict_cf, within 1e-8 cm of Newton), which also give the fetch. q, phi and
+  // the path length are quadratics in qbar through the three points; every fetched
+  // candidate is tested against them in float with the window widened by
+  // kSlackD. The worst quadratic error measured (--chain-fast-check, 5 events,
+  // 4.3 M candidates) is 2.0 % of the window in q and 0.42 % in phi, so the widened
+  // test keeps every hit the exact cut accepts. The survivors are confirmed with
+  // surf_stage_d's own prediction and double cut. Falls back to surf_stage_d if a
+  // node prediction fails.
+  constexpr float kSlackD = 1.05f;
+  template <typename F>
+  inline void surf_stage_d_fast(const SurfParams &P0, const surf::Helix &hx, const SurfLayer &D, SeedCounters &cnt, F &&f) {
+    using namespace surf;
+    if (!hx.ok)
+      return;
+    SurfParams Pe;
+    const SurfParams *pp = &P0;
+    if (P0.n_eta_win > 0) {
+      Pe = P0.for_eta(std::asinh(std::abs(hx.cot)));
+      pp = &Pe;
+    }
+    const SurfParams &P = *pp;
+    const double u0 = D.qbar_lo, u1 = D.qbar_hi, um = 0.5 * (u0 + u1), hh = 0.5 * (u1 - u0);
+    double q0, p0, q1, p1, qm, pm, s0 = -1, s1 = -1, sm = -1;
+    const bool ok0 = hx.predict_cf(D.disc, u0, q0, p0, &s0);
+    const bool ok1 = hx.predict_cf(D.disc, u1, q1, p1, &s1);
+    const bool okm = hx.predict_cf(D.disc, um, qm, pm, &sm);
+    if (!(ok0 && ok1 && okm) || hh <= 0) {
+      surf_stage_d(P0, hx, D, cnt, f);
+      return;
+    }
+    SurfFastCheck &CK = g_surf_fast_check;
+    if (CK.on) {
+      const double uu[3] = {u0, u1, um}, qq[3] = {q0, q1, qm}, ph[3] = {p0, p1, pm};
+      for (int j = 0; j < 3; ++j) {
+        double qn, pn;
+        if (!hx.predict(D.disc, uu[j], qn, pn)) {
+          ++CK.node_fail_mismatch;
+          continue;
+        }
+        ++CK.nodes;
+        CK.max_node_dq = std::max(CK.max_node_dq, std::abs(qn - qq[j]));
+        CK.max_node_dphi = std::max(CK.max_node_dphi, std::abs(wrap(pn - ph[j])));
+      }
+    }
+    // the same fetch as surf_stage_d
+    const double pte = hx.pt(), smax = std::max(s0, s1), wpd = P.wphi_d(pte, smax), wqd = P.wq_d(pte, smax);
+    const auto qd = q_bins(D, std::min(q0, q1) - wqd, std::max(q0, q1) + wqd);
+    const double dmid = p0 + 0.5 * wrap(p1 - p0), dhalf = 0.5 * std::abs(wrap(p1 - p0));
+    // quadratics in x = u - um: v(x) = vm + b1 x + b2 x^2
+    const double d0p = wrap(p0 - pm), d1p = wrap(p1 - pm);
+    const float bq1 = (q1 - q0) / (2 * hh), bq2 = (q1 + q0 - 2 * qm) / (2 * hh * hh);
+    const float bp1 = (d1p - d0p) / (2 * hh), bp2 = (d1p + d0p) / (2 * hh * hh);
+    const float bs1 = (s1 - s0) / (2 * hh), bs2 = (s1 + s0 - 2 * sm) / (2 * hh * hh);
+    const float fum = um, fqm = qm, fpm = pm, fsm = sm;
+    // the windows: a + lever(s) b / pT, in float
+    const float ipt = 1.0f / (float)std::max((double)P.pt_min, pte);
+    const float aq = P.q_d, bq = P.b_q_d * ipt, ap = P.phi_d, bp = P.b_phi_d * ipt, isr = P.s_ref > 0 ? 1.0f / P.s_ref : 0.0f;
+    constexpr float kPi = 3.14159265358979f, k2Pi = 6.28318530717959f;
+    const float *hphi = D.sl.phi_.data(), *hq = D.disc ? D.sl.r_.data() : D.sl.z_.data(),
+                *hu = D.disc ? D.sl.z_.data() : D.sl.r_.data();
+    D.sl.for_each_run(phi_bins(D, dmid, dhalf + wpd), qd, [&](unsigned int b, unsigned int e) {
+      for (unsigned int i0 = b; i0 < e; i0 += 64) {
+        const unsigned int n = std::min(64u, e - i0);
+        unsigned char m[64];
+        for (unsigned int j = 0; j < n; ++j) {
+          const unsigned int i = i0 + j;
+          const float x = hu[i] - fum;
+          const float qp = fqm + (bq1 + bq2 * x) * x;
+          float dp = hphi[i] - fpm;
+          dp = dp > kPi ? dp - k2Pi : dp;
+          dp = dp < -kPi ? dp + k2Pi : dp;
+          dp -= (bp1 + bp2 * x) * x;
+          const float lev = isr > 0 ? (fsm + (bs1 + bs2 * x) * x) * isr : 1.0f;
+          m[j] = (std::abs(hq[i] - qp) <= kSlackD * (aq + lev * bq)) & (std::abs(dp) <= kSlackD * (ap + lev * bp));
+          if (CK.on) {
+            double qe, pe;
+            if (hx.predict(D.disc, D.qbar(i), qe, pe)) {
+              ++CK.cands;
+              const double pq = fqm + (bq1 + bq2 * x) * x, pphi = pm + (bp1 + bp2 * x) * x;
+              CK.max_rel_q = std::max(CK.max_rel_q, std::abs(pq - qe) / (aq + lev * bq));
+              CK.max_rel_phi = std::max(CK.max_rel_phi, std::abs(wrap(pphi - pe)) / (ap + lev * bp));
+            }
+          }
+        }
+        for (unsigned int j = 0; j < n; ++j) {
+          cnt.d_touched++;
+          if (!m[j])
+            continue;
+          // confirm: surf_stage_d's prediction and cut, in double
+          const unsigned int kd = i0 + j;
+          const P3 hd = surf_p3(D, kd);
+          double q, phi, s = -1;
+          if (!hx.predict(D.disc, D.qbar(kd), q, phi, &s))
+            continue;
+          const double wq = P.s_ref > 0 ? P.wq_d(pte, s) : wqd, wp = P.s_ref > 0 ? P.wphi_d(pte, s) : wpd;
+          if (!P.no_cut && (std::abs((D.disc ? hd.r() : hd.z) - q) > wq || std::abs(wrap(hd.phi() - phi)) > wp))
+            continue;
+          cnt.quads++;
+          f(kd, hd);
+        }
+      }
+    });
+  }
+
   // The finder for one pattern.  L[0..3]: the pattern's layers, filled.
   inline void find_quads_surf(const SurfParams &P, const SurfLayer *L[4], std::vector<Quad> &out, SeedCounters &cnt) {
     const SurfLayer &A = *L[0], &Bl = *L[1], &C = *L[2], &D = *L[3];
@@ -694,6 +866,10 @@ namespace mkfit::seeding {
     std::vector<int> env_of;                 // per chain position: index into own->env
     std::vector<std::pair<int, int>> starts; // chain positions (a, b)
     long n_forwarded = 0, n_dropped = 0;
+    double t_start = 0;                    // seconds in the start doublets
+    unsigned long long cyc_c = 0, cyc_d = 0;  // rdtsc cycles in stage c (with its pushes) and stage d
+    bool phases = false;                      // time the phases (costs a few % itself)
+    long n_c_cand = 0, n_d_cand = 0;       // queued candidates searched with stage c, stage d
 
     static int mirror(int l) { return (l >= 16 && l <= 27) ? l + 22 : l; }
 
@@ -849,6 +1025,9 @@ namespace mkfit::seeding {
         Q[q].push_back(c);
         Qst[q].push_back(st);
       };
+      using sclk = std::chrono::steady_clock;
+      auto tsec = [](sclk::time_point a, sclk::time_point b) { return std::chrono::duration<double>(b - a).count(); };
+      const auto t0 = sclk::now();
       // start doublets
       for (const auto &se : starts) {
         const SurfLayer *A = layer(se.first), *B = layer(se.second);
@@ -886,6 +1065,7 @@ namespace mkfit::seeding {
             surf_stage_b(P, ha, *B, cnt, on_b);
         }
       }
+      t_start += tsec(t0, sclk::now());
       // the forward pass
       for (int p = 0; p < n; ++p) {
         const SurfLayer *T = layer(p);
@@ -901,6 +1081,8 @@ namespace mkfit::seeding {
           if (!known) {
             // no windows for this combination: not searched, the candidate moves on as after a miss
           } else if (c.nh == 2) {
+            const unsigned long long tc0 = phases ? __builtin_ia32_rdtsc() : 0;
+            ++n_c_cand;
             const SurfParams &Pc = par_[ix >= 0 ? ix : 0];
             const surf::P3 h0 = hit(c, 0), h1 = hit(c, 1);
             surf_stage_c(Pc, h0, h1, *T, cnt, [&](unsigned int kc, const surf::P3 &hc) {
@@ -910,15 +1092,25 @@ namespace mkfit::seeding {
               t.ln = LineRZ(h0, hc);
               push_next(t, p);
             });
+            if (phases)
+              cyc_c += __builtin_ia32_rdtsc() - tc0;
           } else if (c.nh == 3) {
+            const unsigned long long td0 = phases ? __builtin_ia32_rdtsc() : 0;
+            ++n_d_cand;
             const SurfParams &Pd = par_[ix >= 0 ? ix : 0];
             const surf::Helix hx(hit(c, 0), hit(c, 1), hit(c, 2));
-            surf_stage_d(Pd, hx, *T, cnt, [&](unsigned int kd, const surf::P3 &) {
+            auto on_d = [&](unsigned int kd, const surf::P3 &) {
               found = true;
               std::array<int, 4> ids{order[c.pos[0]], order[c.pos[1]], order[c.pos[2]], order[p]};
               const SurfLayer *La = layer(c.pos[0]), *Lb = layer(c.pos[1]), *Lc = layer(c.pos[2]);
               out.push_back({ids, {La->sl.orig_[c.k[0]], Lb->sl.orig_[c.k[1]], Lc->sl.orig_[c.k[2]], T->sl.orig_[kd]}});
-            });
+            };
+            if (fast)
+              surf_stage_d_fast(Pd, hx, *T, cnt, on_d);
+            else
+              surf_stage_d(Pd, hx, *T, cnt, on_d);
+            if (phases)
+              cyc_d += __builtin_ia32_rdtsc() - td0;
           }
           if (!found || hole_always) {
             if (c.holes + (st == 2) <= max_holes) {

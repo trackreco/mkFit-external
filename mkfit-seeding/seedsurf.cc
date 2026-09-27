@@ -18,7 +18,7 @@
 //                      better = fewer outer-tracker layers in the pattern, then smaller
 //                      (dq_c/q_c)^2 + (dphi_d/w_phi_d)^2 + (dq_d/w_q_d)^2
 //        [--bind CM]   labels bound to geometry: needs SimHitStates in the sample
-//        [--chain H] [--chain-holes-ot K] [--chain-hole-always] [--chain-any] [--chain-start-holes K] [--chain-lead-only] [--chain-fast]   the feed-forward chain (SurfChain) in
+//        [--chain H] [--chain-holes-ot K] [--chain-hole-always] [--chain-any] [--chain-start-holes K] [--chain-lead-only] [--chain-fast] [--chain-fast-check] [--chain-phases]   the feed-forward chain (SurfChain) in
 //                      place of the pattern list; the patterns then give window tables and the denominator
 //        [--truth OUT.txt] [--resid OUT.txt] [--dump quads.txt] [--eta-max E]
 //        [--margins REF.txt] [--margins-print N]   chain only: per event, the symmetric difference of the
@@ -129,6 +129,7 @@ int main(int argc, char *argv[]) {
   int chain_holes = -1;    // >= 0: the feed-forward chain (SurfChain) instead of the patterns, this many holes
   int chain_hole_always = 0, chain_holes_ot = 0, chain_any = 0, chain_start_holes = -1, chain_lead_only = 0;
   int chain_fast = 0;  // --chain-fast: the float kernels (K2) in the chain
+  int chain_phases = 0;  // --chain-phases: time the chain's phases
   int dedup_n = 0;         // > 0: over all patterns, drop a quad sharing >= N hits with a better kept one
   std::string margins_ref;  // --margins: the reference quad list
   int margins_print = 10;
@@ -241,6 +242,10 @@ int main(int argc, char *argv[]) {
       chain_lead_only = 1;
     else if (a == "--chain-fast")
       chain_fast = 1;
+    else if (a == "--chain-fast-check")
+      g_surf_fast_check.on = true;
+    else if (a == "--chain-phases")
+      chain_phases = 1;
     else if (a == "--chain-any")
       chain_any = 1;
     else if (a == "--chain-hole-always")
@@ -355,6 +360,7 @@ int main(int argc, char *argv[]) {
       C.start_holes = chain_start_holes;
       C.lead_only = chain_lead_only;
       C.fast = chain_fast;
+      C.phases = chain_phases;
       C.setup(OWN, sd == 0 ? 1 : -1, have);
     }
     printf("[seedsurf] CHAIN: max holes %d (into OT: %d)%s, crossing margin %.3f cm; start pairs %zu / %zu (+z / -z)\n",
@@ -520,6 +526,7 @@ int main(int argc, char *argv[]) {
       CH[1].run(LM, cq, cnt);
       SC.t_find += secs(s0, clk::now());
       SC.quads += cnt.quads, SC.doublets += cnt.doublets, SC.triplets += cnt.triplets;
+      SC.c_touched += cnt.c_touched, SC.d_touched += cnt.d_touched;
       // each quad to the pattern of its layers; a combination no pattern lists becomes a dynamic one
       for (const auto &e : cq) {
         int ip = -1;
@@ -853,6 +860,22 @@ int main(int argc, char *argv[]) {
     printf("[seedsurf] CHAIN: %.0f doublets, %.0f triplets, %.1f quads per event, %.3f ms/ev; forwarded %.1f, dropped %.1f per event\n",
            SC.doublets / ne, SC.triplets / ne, SC.quads / ne, 1e3 * SC.t_find / ne,
            (CH[0].n_forwarded + CH[1].n_forwarded) / ne, (CH[0].n_dropped + CH[1].n_dropped) / ne);
+  if (chain_holes >= 0 && chain_phases) {
+    // the phases: start doublets by wall clock; stage c and d by cycles, scaled to the rest
+    const double ts = (CH[0].t_start + CH[1].t_start) / ne, tr = SC.t_find / ne - ts;
+    const double cc = CH[0].cyc_c + CH[1].cyc_c, cd = CH[0].cyc_d + CH[1].cyc_d;
+    printf("[seedsurf] CHAIN phases per event: start doublets %.1f ms; forward pass %.1f ms, of it stage c %.0f %% "
+           "(%.0f candidates) and stage d %.0f %% (%.0f candidates)\n",
+           1e3 * ts, 1e3 * tr, 100 * cc / std::max(1.0, cc + cd) * 1.0, (CH[0].n_c_cand + CH[1].n_c_cand) / ne,
+           100 * cd / std::max(1.0, cc + cd), (CH[0].n_d_cand + CH[1].n_d_cand) / ne);
+    printf("[seedsurf] CHAIN hits touched per event: stage c %.0f, stage d %.0f\n", SC.c_touched / ne, SC.d_touched / ne);
+    const SurfFastCheck &CK = g_surf_fast_check;
+    if (CK.on)
+      printf("[seedsurf] FAST CHECK: %ld nodes, closed form vs Newton max |dq| %.3g cm, max |dphi| %.3g rad (%ld Newton"
+             " failures where the closed form succeeded); %ld candidates, quadratic vs exact max error / window:"
+             " q %.3g, phi %.3g\n", CK.nodes, CK.max_node_dq, CK.max_node_dphi, CK.node_fail_mismatch, CK.cands,
+             CK.max_rel_q, CK.max_rel_phi);
+  }
   if (!margins_ref.empty()) {
     long n_only[2] = {0, 0};
     long hist[2][6] = {};  // |rel| < 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, larger or not evaluable
