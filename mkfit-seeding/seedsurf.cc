@@ -117,6 +117,8 @@ namespace {
     double pe_all[kNpe] = {}, pe_true[kNpe] = {}, pe_fake[kNpe] = {};
     // the union only: findable, found and extra true quads by the sim track's pT (kPeEdge), in four |eta| regions
     double sp_den[4][kNpe] = {}, sp_found[4][kNpe] = {}, sp_dup[4][kNpe] = {};
+    // the union only: kept quads, true and fake, by their own pT_est, in four regions of their own |eta|
+    double qp_all[4][kNpe] = {}, qp_true[4][kNpe] = {}, qp_fake[4][kNpe] = {};
     double own_rejected = 0, quads = 0, doublets = 0, triplets = 0, c_touched = 0, d_touched = 0, t_find = 0;
   };
 
@@ -1078,6 +1080,9 @@ int main(int argc, char *argv[]) {
       su.pe_all[c.pb] += 1, su.pe_true[c.pb] += c.tru, su.pe_fake[c.pb] += c.fake;
       if (c.b >= 0) {
         su.q_all[c.b] += 1, su.q_true[c.b] += c.tru, su.q_fake[c.b] += c.fake, su.q_undec[c.b] += !c.tru && !c.fake;
+        const double ae = (c.b + 0.5) * kEtaW;
+        const int rg = ae < 0.8 ? 0 : ae < 1.6 ? 1 : ae < 2.4 ? 2 : 3;
+        su.qp_all[rg][c.pb] += 1, su.qp_true[rg][c.pb] += c.tru, su.qp_fake[rg][c.pb] += c.fake;
       }
       if (c.tru && fb_any.count(c.lab)) {
         fd_any[c.lab] += 1;
@@ -1312,6 +1317,12 @@ int main(int argc, char *argv[]) {
             if (s.sp_den[rg][b])
               fprintf(f, "S %d %g %g %.0f %.0f %.0f\n", rg, kPeEdge[b], kPeEdge[b + 1], s.sp_den[rg][b], s.sp_found[rg][b],
                       s.sp_dup[rg][b]);
+        fprintf(f, "# Q region pte_lo pte_hi quads true fake   (kept quads by their own pT_est and |eta|, same regions)\n");
+        for (int rg = 0; rg < 4; ++rg)
+          for (int b = 0; b < kNpe; ++b)
+            if (s.qp_all[rg][b])
+              fprintf(f, "Q %d %g %g %.0f %.0f %.0f\n", rg, kPeEdge[b], kPeEdge[b + 1], s.qp_all[rg][b], s.qp_true[rg][b],
+                      s.qp_fake[rg][b]);
       }
     }
     fclose(f);
