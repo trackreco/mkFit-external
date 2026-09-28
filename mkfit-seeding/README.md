@@ -1631,3 +1631,52 @@ per (b hit, target) on average, but the queues are ordered by start pair and a
 hit, not by b. So it needs either a b-major stage b or a sort of the stage c
 queues, ~1.4 M candidates per event. The chain's crossing envelopes (`SurfOwnership`)
 also take the barrel extents from `LayerInfo`, and are not changed yet.
+
+### The rest of the seeding: layer fill and cleaning (2026-09-27)
+
+The chain's own time was the only number measured so far. With timers around
+every phase of a `seedsurf-chain.sh --chain-batch` job (events 40-59, cuts off,
+ms per event): reading the event 50, layer fill 22, the chain 288, the per-quad
+loop after it 72 (truth labels, and the cleaning score recomputed in double with
+`surf_eval` for all 76k quads), the cleaning 58. Of these the layer fill, the
+cleaning score and the cleaning belong to the seeding, and ~150 ms per event of
+it had no timer. The job now prints the cleaning time. Fastest of 3 interleaved
+passes, the baseline being f3440c2 with the same timers:
+
+| | chain | layer fill | cleaning |
+|---|---|---|---|
+| cuts off, before | 289.5 | 21.4 | 55.7 |
+| cuts off, after (1ce7f8e) | 293.9 | 14.5 | 9.4 |
+| cuts on, before | 258.3 | 22.9 | 39.3 |
+| cuts on, after | 262.5 | 15.7 | 7.3 |
+
+- **The score from the finder** (0b083e6). The batch finder computes the
+  cleaning score at `take()` in float, with the pattern's own windows, and hands
+  it out with the quad. That costs the chain ~4 ms per event and takes the
+  double `surf_eval` off the batch path (it stays for the double chain).
+- **The cleaning** (03d1feb): a stable radix sort on one 32-bit key, per-hit
+  lists in flat arrays, and only the 5 - N shortest lists walked for "shares
+  >= N hits". The steps are in the commit message.
+- **No double cache** (1ce7f8e): `SurfLayer::fill()` builds the double r, phi
+  of every hit only for the double chain.
+
+The union truth row on events 40-99 is identical to the printed precision, cuts
+off and on, and the OT1-P attach row too. The truth files differ by one
+undecidable quad in a few eta bins: the float score reorders near-ties.
+`--margins` against `ref-quads-2` is unchanged.
+
+**vdt, measured null.** Replacing the finder's float `atan2`, `sin`, `asin`
+and `sincos` with vdt, forced inline, left the margins identical and the time
+unchanged to +5 ms. A microbenchmark (4096 floats, ns per element, `-mavx`)
+says why: `sin` is 1.98 in a loop GCC vectorises through glibc's libmvec
+against 1.86 for vdt; `atan2` is 2.66 through libmvec but 10.25 for vdt,
+whose `fast_atan2f` GCC does not vectorise (its branches and swaps). The
+finder's calls are one per candidate, not in loops, where vdt `atan2` is ~5 ns
+faster than glibc (10.5 against 16.0), a few ms per event at most. Not kept.
+
+**`LayerInfo::rin()`, the cause.** `MkFitGeometryESProducer` takes it as the
+smallest radius over each module's 8 corners, and a flat module's closest point
+to the beam is the foot of the perpendicular. On D121 it is high by 0.06-0.14 cm
+in the pixel barrel, 0.23-0.53 cm in TBPS and 0.10-0.16 cm in TB2S; layer 0's
+true minimum is 2.7425 cm, the hits' 2.750 less the 75 um half-thickness.
+`rout` and the z extents are right.
