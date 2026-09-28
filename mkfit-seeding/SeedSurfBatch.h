@@ -348,6 +348,9 @@ namespace mkfit::seeding {
     float fk_ot2 = 0;
     // q97 of true quads, a + b / pT in rad and cm, events 0-39 (windows-D121 sample)
     float ot2_aphi = -8.1e-4f, ot2_bphi = 5.92e-3f, ot2_aq = 0.3084f, ot2_bq = 0.0909f;
+    // the floor of the phi term: a + b / pT from the q97 per pT bin below 10 GeV crosses zero at 7.3 GeV,
+    // and the q97 of true quads above 3 GeV is 1.31 mrad (events 0-39)
+    float ot2_phimin = 1.31e-3f;
     long n_fk_shape = 0, n_fk_ot2 = 0, n_ot2_tested = 0;
 
     static constexpr int kBlk = 256;
@@ -1047,7 +1050,8 @@ namespace mkfit::seeding {
                             hx_[kd], hy_[kd], hz[kd]);
                     float zm = 0, dpb = 0, dzb = 0, scb = 0;
                     const float ip2 = 1.0f / std::max(0.9f, pte);
-                    const float wp2 = fk_ot2 * (ot2_aphi + ot2_bphi * ip2), wz2 = fk_ot2 * (ot2_aq + ot2_bq * ip2);
+                    const float wp2 = fk_ot2 * std::max(ot2_aphi + ot2_bphi * ip2, ot2_phimin);
+                    const float wz2 = fk_ot2 * (ot2_aq + ot2_bq * ip2);
                     const int kn = next_hit(*lay_ot2, H3, pte, wp2, wz2, zm, dpb, dzb, scb);
                     if (kn != -2 && std::abs(zm) < lay_ot2->q_hi - 2) {
                       ++n_ot2_tested;

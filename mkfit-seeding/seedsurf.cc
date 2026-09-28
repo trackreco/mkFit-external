@@ -115,6 +115,8 @@ namespace {
     double den[kNb] = {}, found[kNb] = {}, dup[kNb] = {}, multi[kNb] = {};
     double q_all[kNb] = {}, q_true[kNb] = {}, q_fake[kNb] = {}, q_undec[kNb] = {};
     double pe_all[kNpe] = {}, pe_true[kNpe] = {}, pe_fake[kNpe] = {};
+    // the union only: findable, found and extra true quads by the sim track's pT (kPeEdge), in four |eta| regions
+    double sp_den[4][kNpe] = {}, sp_found[4][kNpe] = {}, sp_dup[4][kNpe] = {};
     double own_rejected = 0, quads = 0, doublets = 0, triplets = 0, c_touched = 0, d_touched = 0, t_find = 0;
   };
 
@@ -148,6 +150,7 @@ int main(int argc, char *argv[]) {
   int chain_phases = 0;  // --chain-phases: time the chain's phases
   float fk_score = 0, fk_ot2 = 0;
   float ot2_win[4] = {-8.1e-4f, 5.92e-3f, 0.3084f, 0.0909f};  // q97 of true quads, events 0-39
+  float ot2_phimin = 1.31e-3f;  // --ot2-phimin: the floor of its phi term, the q97 above 3 GeV
   float ot1_win[4] = {2.16e-3f, 9.99e-3f, 0.2318f, 0.3566f};  // q97 of true quads, events 0-39
   float attach_ot1 = 0;
   bool fk_shape = false;
@@ -280,6 +283,8 @@ int main(int argc, char *argv[]) {
       fk_shape = true;
     else if (a == "--fk-ot2")
       fk_ot2 = atof(next());
+    else if (a == "--ot2-phimin")
+      ot2_phimin = atof(next());
     else if (a == "--ot2-win")
       for (int k = 0; k < 4; ++k)
         ot2_win[k] = atof(next());
@@ -525,6 +530,7 @@ int main(int argc, char *argv[]) {
       B.setup(CH[sd]), B.d_mode = chain_batch_d;
       B.fk_score = fk_score, B.fk_shape = fk_shape, B.fk_ot2 = fk_ot2;
       B.ot2_aphi = ot2_win[0], B.ot2_bphi = ot2_win[1], B.ot2_aq = ot2_win[2], B.ot2_bq = ot2_win[3];
+      B.ot2_phimin = ot2_phimin;
       for (int l = 0; l < 4; ++l)
         B.shape_[l] = shape_tab[l];
     }
@@ -1083,10 +1089,14 @@ int main(int argc, char *argv[]) {
       if (b < 0)
         continue;
       su.den[b] += 1;
+      const double ae = std::abs(ev.simTracks_[l].momEta());
+      const int rg = ae < 0.8 ? 0 : ae < 1.6 ? 1 : ae < 2.4 ? 2 : 3, pb = pbin(ev.simTracks_[l].pT());
+      su.sp_den[rg][pb] += 1;
       if (auto it = fd_any.find(l); it != fd_any.end()) {
         su.found[b] += 1;
         su.dup[b] += it->second - 1;
         su.multi[b] += fd_pat[l].size() > 1;
+        su.sp_found[rg][pb] += 1, su.sp_dup[rg][pb] += it->second - 1;
       }
     }
     // --quad-dump: one row per quad kept after the cleaning, with what a fake-rejection cut could use
@@ -1295,6 +1305,14 @@ int main(int argc, char *argv[]) {
       for (int b = 0; b < kNpe; ++b)
         if (s.pe_all[b])
           fprintf(f, "T %g %g %.0f %.0f %.0f\n", kPeEdge[b], kPeEdge[b + 1], s.pe_all[b], s.pe_true[b], s.pe_fake[b]);
+      if (ip == npat) {
+        fprintf(f, "# S region pt_lo pt_hi findable found extra_true   (by the sim track's pT; |eta| regions 0-0.8, 0.8-1.6, 1.6-2.4, 2.4-4)\n");
+        for (int rg = 0; rg < 4; ++rg)
+          for (int b = 0; b < kNpe; ++b)
+            if (s.sp_den[rg][b])
+              fprintf(f, "S %d %g %g %.0f %.0f %.0f\n", rg, kPeEdge[b], kPeEdge[b + 1], s.sp_den[rg][b], s.sp_found[rg][b],
+                      s.sp_dup[rg][b]);
+      }
     }
     fclose(f);
     printf("[seedsurf] wrote %s\n", truth_out.c_str());
