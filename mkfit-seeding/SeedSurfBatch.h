@@ -315,6 +315,8 @@ namespace mkfit::seeding {
     std::vector<std::vector<Cand>> Q2_, Q3_;                  // doublets, triplets, per target position
 
     long n_forwarded = 0, n_dropped = 0, n_c_cand = 0, n_d_cand = 0;
+    // non-null: the cleaning score of each quad, parallel to the quads out (see take() in forward())
+    std::vector<float> *score_out_ = nullptr;
     double t_start = 0;
     unsigned long long cyc_c = 0, cyc_d = 0;
     bool phases = false;
@@ -793,7 +795,9 @@ namespace mkfit::seeding {
     // Both z sides, with the barrel start pairs fetched once for both; the quads in the order of run()
     // on a, then on b.
     static void run_both(SurfChainBatch &a, SurfChainBatch &b, const std::map<int, const SurfLayer *> &L,
-                         std::vector<std::pair<std::array<int, 4>, Quad>> &out, SeedCounters &cnt) {
+                         std::vector<std::pair<std::array<int, 4>, Quad>> &out, SeedCounters &cnt,
+                         std::vector<float> *scores = nullptr) {
+      a.score_out_ = b.score_out_ = scores;
       if (a.share_.empty())
         a.link(b);
       a.prepare(L), b.prepare(L);
@@ -1027,7 +1031,8 @@ namespace mkfit::seeding {
                   slo = shT->lo[sb], shi = shT->hi[sb];
                 }
                 // a hit that passed the cuts: the fake cuts, OT2-P, then the quad
-                auto take = [&](unsigned int kd, float dq, float wq, float c2, float sn) {
+                // s2: sin^2 of the d phi residual
+                auto take = [&](unsigned int kd, float dq, float wq, float c2, float sn, float s2) {
                   if (fk_on) {
                     const float rq = dq / wq;
                     if (rq * rq + c2 / sn >= fkd || hsp[kd] < slo || hsp[kd] > shi)
@@ -1059,6 +1064,27 @@ namespace mkfit::seeding {
                   out.push_back({ids,
                                  {lay[c.pos[0]]->sl.orig_[c.k[0]], lay[c.pos[1]]->sl.orig_[c.k[1]],
                                   lay[c.pos[2]]->sl.orig_[c.k[2]], T->sl.orig_[kd]}});
+                  if (score_out_) {
+                    // the cleaning score, (dq_c / q_c)^2 + (dphi_d / wphi_d)^2 + (dq_d / wq_d)^2, with the
+                    // pattern's own windows, no |eta| slices and no lever arm (surf_eval in seedsurf.cc
+                    // computes the same in double)
+                    const SurfLayer &La = *lay[c.pos[0]], &Lb = *lay[c.pos[1]], &Lc = *lay[c.pos[2]];
+                    const bool dc = Lc.disc;
+                    const unsigned ka = c.k[0], kb = c.k[1], kc = c.k[2];
+                    const float ua = dc ? La.sl.z_[ka] : La.sl.r_[ka], ub = dc ? Lb.sl.z_[kb] : Lb.sl.r_[kb];
+                    const float uc = dc ? Lc.sl.z_[kc] : Lc.sl.r_[kc];
+                    const float qa = dc ? La.sl.r_[ka] : La.sl.z_[ka], qb = dc ? Lb.sl.r_[kb] : Lb.sl.z_[kb];
+                    const float qcc = dc ? Lc.sl.r_[kc] : Lc.sl.z_[kc];
+                    const float rqc = (qcc - (qa + (qb - qa) * (uc - ua) / (ub - ua))) / w.q_c;
+                    const float wpc = w.aphi + w.bphi * ipt, wqc = w.aq + w.bq * ipt;
+                    // dphi^2 from sin^2: asin(x)^2 = x^2 (1 + x^2 / 3 + ...), the next term 8/45 x^6
+                    const float dph2 = s2 * (1 + s2 * (1.0f / 3));
+                    const float sc = rqc * rqc + dph2 / (wpc * wpc) + (dq / wqc) * (dq / wqc);
+                    // -Ofast folds std::isfinite: test the exponent bits
+                    unsigned int ub_;
+                    __builtin_memcpy(&ub_, &sc, 4);
+                    score_out_->push_back((ub_ & 0x7f800000u) != 0x7f800000u ? sc : 1e30f);
+                  }
                 };
                 // the q pre-filter (direct mode): q as a quadratic in qbar through the predictions at the two
                 // edges and the middle, which K2c measured within 2 % of the window; a hit off it by more than
@@ -1086,14 +1112,14 @@ namespace mkfit::seeding {
                       const float n2 = (px * px + py * py) * (hxx * hxx + hyy * hyy);
                       const float dq = hq[i] - qp, c2 = cr * cr, sn = sp2 * n2;
                       if (ok && std::abs(dq) <= wq && dt > 0 && c2 <= sn)
-                        take(i, dq, wq, c2, sn);
+                        take(i, dq, wq, c2, sn, c2 / n2);
                     }
                     return;
                   }
                   for (unsigned int i0 = b; i0 < e; i0 += 64) {
                     const unsigned int nk = std::min(64u, e - i0);
                     unsigned char msk[64];
-                    alignas(32) float dqv[64], wqv[64], c2v[64], snv[64];
+                    alignas(32) float dqv[64], wqv[64], c2v[64], snv[64], s2v[64];
                     alignas(32) float PX[64], PY[64], QP[64], S3[64], WQ[64], SP2[64];
                     alignas(32) int OK[64];
                     // the prediction at each hit's qbar: lanes in the direct mode, else one at a time
@@ -1121,7 +1147,7 @@ namespace mkfit::seeding {
                       const float dq = hq[i] - QP[jj], c2 = cr * cr, sn = SP2[jj] * n2;
                       msk[jj] = OK[jj] & (std::abs(dq) <= wq) & (dt > 0) & (c2 <= sn);
                       // for the score of the survivors: (dq / wq)^2 + sin^2(dphi) / sin^2(wp)
-                      dqv[jj] = dq, wqv[jj] = wq, c2v[jj] = c2, snv[jj] = sn;
+                      dqv[jj] = dq, wqv[jj] = wq, c2v[jj] = c2, snv[jj] = sn, s2v[jj] = c2 / n2;
                     }
                     if (CK.on)
                       for (unsigned int jj = 0; jj < nk; ++jj)
@@ -1130,7 +1156,7 @@ namespace mkfit::seeding {
                     n_dt += nk;
                     for (unsigned int jj = 0; jj < nk; ++jj)
                       if (msk[jj])
-                        take(i0 + jj, dqv[jj], wqv[jj], c2v[jj], snv[jj]);
+                        take(i0 + jj, dqv[jj], wqv[jj], c2v[jj], snv[jj], s2v[jj]);
                   }
                 });
               }

@@ -872,6 +872,7 @@ namespace mkfit::seeding {
     struct DW {
       float aphi, bphi, aq, bq, sref = 0;
       std::vector<SurfParams::EtaWin> eta;
+      float qc = 0;  // the pattern's q_c, for the cleaning score; 0: P.q_c
     };
     std::map<std::array<int, 3>, std::pair<float, float>> win_c;
     std::map<std::array<int, 4>, DW> win_d;
@@ -989,6 +990,9 @@ namespace mkfit::seeding {
               SurfParams Q = P;
               Q.phi_d = jt->second.aphi, Q.b_phi_d = jt->second.bphi, Q.q_d = jt->second.aq, Q.b_q_d = jt->second.bq,
               Q.s_ref = jt->second.sref;
+              // stage d reads no q_c: the entry carries the pattern's own, for the cleaning score
+              if (jt->second.qc > 0)
+                Q.q_c = jt->second.qc;
               for (const auto &w : jt->second.eta)
                 Q.add_eta_win(w);
               par_.push_back(Q);

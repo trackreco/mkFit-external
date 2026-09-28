@@ -450,7 +450,8 @@ int main(int argc, char *argv[]) {
         auto &wc = C.win_c[{p.l[0], p.l[1], p.l[2]}];
         wc.first = std::max(wc.first, (float)Q.phi_c), wc.second = std::max(wc.second, (float)Q.q_c);
         C.win_d[{p.l[0], p.l[1], p.l[2], p.l[3]}] = {(float)Q.phi_d, (float)Q.b_phi_d, (float)Q.q_d, (float)Q.b_q_d, Q.s_ref,
-                                                     std::vector<SurfParams::EtaWin>(Q.eta_win, Q.eta_win + Q.n_eta_win)};
+                                                     std::vector<SurfParams::EtaWin>(Q.eta_win, Q.eta_win + Q.n_eta_win),
+                                                     (float)Q.q_c};
       }
     }
   for (const auto &p : pats) {
@@ -610,15 +611,17 @@ int main(int argc, char *argv[]) {
     };
     std::vector<Cand> cands;
     std::vector<std::vector<Quad>> chain_q;
+    std::vector<std::vector<float>> chain_sc;  // the batch finder's cleaning score, parallel to chain_q
     if (chain_holes >= 0) {
       std::vector<std::pair<std::array<int, 4>, Quad>> cq;
+      std::vector<float> csc;
       SeedCounters cnt;
       const auto s0 = clk::now();
       std::map<int, const SurfLayer *> LM;
       for (auto &kv : layers)
         LM[kv.first] = kv.second.get();
       if (chain_batch)
-        SurfChainBatch::run_both(CB[0], CB[1], LM, cq, cnt);
+        SurfChainBatch::run_both(CB[0], CB[1], LM, cq, cnt, &csc);
       else {
         CH[0].run(LM, cq, cnt);
         CH[1].run(LM, cq, cnt);
@@ -627,7 +630,8 @@ int main(int argc, char *argv[]) {
       SC.quads += cnt.quads, SC.doublets += cnt.doublets, SC.triplets += cnt.triplets;
       SC.c_touched += cnt.c_touched, SC.d_touched += cnt.d_touched;
       // each quad to the pattern of its layers; a combination no pattern lists becomes a dynamic one
-      for (const auto &e : cq) {
+      for (size_t ie = 0; ie < cq.size(); ++ie) {
+        const auto &e = cq[ie];
         int ip = -1;
         for (int i = 0; i < (int)pats.size() && ip < 0; ++i)
           if (pats[i].l == e.first)
@@ -645,10 +649,13 @@ int main(int argc, char *argv[]) {
           ip = pats.size() - 1;
         }
         if ((int)chain_q.size() <= ip)
-          chain_q.resize(pats.size());
+          chain_q.resize(pats.size()), chain_sc.resize(pats.size());
         chain_q[ip].push_back(e.second);
+        if (!csc.empty())
+          chain_sc[ip].push_back(csc[ie]);
       }
       chain_q.resize(pats.size());
+      chain_sc.resize(pats.size());
       npat = pats.size();
 
       if (!margins_ref.empty()) {
@@ -827,8 +834,11 @@ int main(int argc, char *argv[]) {
           if (auto it = n_true.find(ls[0]); it != n_true.end())
             ++it->second;
         }
-        {
-          // the quad's quality, for the cleaning: its own c and d residuals over the windows
+        if (chain_holes >= 0 && chain_sc[ip].size() == quads.size()) {
+          // the batch finder's own score, in float
+          cands.push_back({ip, tru ? ls[0] : -1, b, pb, q, chain_sc[ip][&q - quads.data()], tru, fake});
+        } else {
+          // the quad's quality, for the cleaning: its own c and d residuals over the windows, in double
           const SurfLayer *Ls[4] = {L[0], L[1], L[2], L[3]};
           surf::P3 h4[4];
           for (int k = 0; k < 4; ++k) {
