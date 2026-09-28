@@ -56,6 +56,7 @@
 
 #include "RecoTracker/MkFitCore/interface/Config.h"
 #include "RecoTracker/MkFitCore/interface/TrackerInfo.h"
+#include "RecoTracker/MkFitCore/interface/radix_sort.h"
 #include "RecoTracker/MkFitCore/standalone/ConfigStandalone.h"
 #include "RecoTracker/MkFitCore/standalone/Event.h"
 
@@ -550,10 +551,21 @@ int main(int argc, char *argv[]) {
   // quads that reach it: attached, and the attached hit carries the quad's label
   long at_n = 0, at_reach = 0, at_att = 0, at_true = 0, at_true_att = 0, at_true_same = 0;
   double t_attach = 0;
-  double t_fill = 0;
+  double t_fill = 0, t_clean = 0;
   long n_unbound = 0;  // labels dropped by --bind
   int npat = pats.size();
 
+  // the cleaning's buffers, kept across events: allocated afresh, their first touch cost as much as the
+  // cleaning itself. cl_hl: per global hit (layer offset + hit), the list of kept quads using it and
+  // its length; all entries are back at {-1, 0} between events.
+  struct CleanHL {
+    int head = -1, len = 0;
+  };
+  std::vector<CleanHL> cl_hl;
+  std::vector<std::pair<int, int>> cl_link;  // (kept quad, next entry)
+  std::vector<unsigned int> cl_key, cl_rank;
+  radix_sort<unsigned int, unsigned int> cl_sort;
+  std::vector<std::array<unsigned int, 4>> cl_gh;
   for (int iev = 0; iev < n_events; ++iev) {
     Event ev(iev, ti.n_layers());
     ev.read_in(df);
@@ -909,47 +921,96 @@ int main(int argc, char *argv[]) {
     }
     // the union over patterns, after the cleaning
     std::vector<char> keep_c(cands.size(), 1);
+    const auto tc0 = clk::now();
     if (dedup_n > 0) {
-      std::vector<int> ord(cands.size());
-      for (int i = 0; i < (int)ord.size(); ++i)
-        ord[i] = i;
-      // tier first (a pattern with an outer-tracker layer after every pure-pixel one: its windows are
-      // several times wider, so its scores are not comparable), then the score
-      // the tiers once per quad, not in the comparator
-      std::vector<int> tier(cands.size());
-      for (int i = 0; i < (int)cands.size(); ++i) {
+      // the order: tier first (a pattern with an outer-tracker layer after every pure-pixel one: its
+      // windows are several times wider, so its scores are not comparable), then the score, packed in
+      // one 32-bit key for the (stable) radix sort: the tier in the top 3 bits, then the score's float
+      // bits without their 3 lowest (the score is >= 0, so its bits sort as the value; relative 1e-6)
+      const int nc = cands.size();
+      std::vector<unsigned int> &key = cl_key, &rank = cl_rank;
+      key.resize(nc);
+      for (int i = 0; i < nc; ++i) {
         int t = 0;
         for (int l : pats[cands[i].ip].l)
           t += !SurfOwnership::is_pix(l);
-        tier[i] = t;
+        const float sf = (float)cands[i].score;
+        unsigned int sb;
+        __builtin_memcpy(&sb, &sf, 4);
+        key[i] = (unsigned int)t << 29 | sb >> 3;
       }
-      std::sort(ord.begin(), ord.end(), [&](int x, int y) {
-        const int tx = tier[x], ty = tier[y];
-        return tx != ty ? tx < ty : cands[x].score < cands[y].score;
-      });
-      std::unordered_map<long, std::vector<int>> by_hit;  // (layer, hit) -> kept quads using it
-      auto hkey = [](int layer, unsigned int k) { return (long)layer << 32 | k; };
-      std::unordered_map<int, int> shared;
-      for (int i : ord) {
-        const Cand &c = cands[i];
-        const auto &ll = pats[c.ip].l;
-        shared.clear();
+      cl_sort.sort(key, rank);
+      // each quad's hits as sorted global indices (layer offset + hit)
+      const int nl = ti.n_layers();
+      std::vector<unsigned int> off(nl + 1, 0);
+      for (int l = 0; l < nl; ++l)
+        off[l + 1] = off[l] + ev.layerHits_[l].size();
+      std::vector<std::array<unsigned int, 4>> &gh = cl_gh;
+      gh.resize(nc);
+      for (int i = 0; i < nc; ++i) {
+        const auto &ll = pats[cands[i].ip].l;
+        for (int k = 0; k < 4; ++k)
+          gh[i][k] = off[ll[k]] + cands[i].q[k];
+        std::sort(gh[i].begin(), gh[i].end());
+      }
+      std::vector<CleanHL> &hl = cl_hl;
+      if (hl.size() < off[nl])
+        hl.resize(off[nl]);
+      std::vector<std::pair<int, int>> &link = cl_link;
+      link.clear();
+      // a kept quad sharing >= N of the 4 hits holds at least one of any 5 - N of them: walk the
+      // 5 - N shortest lists only, and count the shared hits of each quad found there directly
+      const int nwalk = std::clamp(5 - dedup_n, 1, 4);
+      for (int ik = 0; ik < nc; ++ik) {
+        // the order is by score, so every access below is random: prefetch the hit lists 8 quads ahead
+        // and their hit indices 16 ahead (the loop is latency-bound, ~135 ns per quad without)
+        if (ik + 16 < nc)
+          __builtin_prefetch(&gh[rank[ik + 16]]);
+        if (ik + 8 < nc)
+          for (unsigned int gk : gh[rank[ik + 8]])
+            __builtin_prefetch(&hl[gk]);
+        const int i = rank[ik];
+        const auto &g = gh[i];
+        // the positions by list length: rank each (ties by position), no branches
+        const int ln[4] = {hl[g[0]].len, hl[g[1]].len, hl[g[2]].len, hl[g[3]].len};
+        int pos[4];
+        for (int a = 0; a < 4; ++a) {
+          int r = 0;
+          for (int b = 0; b < 4; ++b)
+            r += ln[b] < ln[a] || (ln[b] == ln[a] && b < a);
+          pos[r] = a;
+        }
         bool drop = false;
-        for (int k = 0; k < 4 && !drop; ++k)
-          if (auto it = by_hit.find(hkey(ll[k], c.q[k])); it != by_hit.end())
-            for (int j : it->second)
-              if (++shared[j] >= dedup_n) {
-                drop = true;
-                break;
-              }
+        for (int w = 0; w < nwalk && !drop; ++w)
+          for (int e = hl[g[pos[w]]].head; e >= 0; e = link[e].second) {
+            const auto &h = gh[link[e].first];
+            // shared hits: all 16 pairs, no branches (the hits of one quad are distinct)
+            int ns = 0;
+            for (int a = 0; a < 4; ++a)
+              for (int b = 0; b < 4; ++b)
+                ns += g[a] == h[b];
+            if (ns >= dedup_n) {
+              drop = true;
+              break;
+            }
+          }
         if (drop) {
           keep_c[i] = 0;
           continue;
         }
-        for (int k = 0; k < 4; ++k)
-          by_hit[hkey(ll[k], c.q[k])].push_back(i);
+        for (int k = 0; k < 4; ++k) {
+          CleanHL &h = hl[g[k]];
+          link.push_back({i, h.head});
+          h.head = link.size() - 1;
+          ++h.len;
+        }
       }
+      // back to empty, for the next event
+      for (const auto &e : link)
+        for (unsigned int gk : gh[e.first])
+          hl[gk] = CleanHL();
     }
+    t_clean += secs(tc0, clk::now());
     if (attach_ot1 > 0) {
       const SurfLayer &LP = *layers[4];
       const auto a0 = clk::now();
@@ -1127,6 +1188,8 @@ int main(int argc, char *argv[]) {
 
   const double ne = n_events;
   printf("[seedsurf] %d events; layer fill %.3f ms/ev\n", n_events, 1e3 * t_fill / ne);
+  if (dedup_n > 0)
+    printf("[seedsurf] cleaning %.3f ms/ev\n", 1e3 * t_clean / ne);
   if (bind_cm > 0)
     printf("[seedsurf] --bind %.3f cm: %.1f label lookups per event dropped (the sim hit farther than that)\n", bind_cm,
            n_unbound / ne);
