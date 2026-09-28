@@ -1680,3 +1680,23 @@ to the beam is the foot of the perpendicular. On D121 it is high by 0.06-0.14 cm
 in the pixel barrel, 0.23-0.53 cm in TBPS and 0.10-0.16 cm in TB2S; layer 0's
 true minimum is 2.7425 cm, the hits' 2.750 less the 75 um half-thickness.
 `rout` and the z extents are right.
+
+**Stage c by b hit, measured slower, not kept (2026-09-28).** The doublets
+queued at a target, as they come, share their b hit in runs of 1.01; sorted
+within blocks of 256 or 4096 in groups of 3.4 or 4.6, over the whole queue in
+groups of 14.6 (14.1 per start pair and b hit, which a b-major stage b would
+give without a sort). With the queues radix-sorted by b hit, which costs 35 ms
+per event, three grouped kernels were built behind a flag. Each fetches the
+target over the union of the group's windows once. The members then test
+(a) all hits of the union as lanes, (b) a range of the hits sorted by their r-z
+slope from b, or (c) the slope buckets of a counting sort. The union holds 43
+hits per member, the sum of the members' own fetches (14.6 x 2.9): the
+windows of doublets that share b are almost disjoint in q on the target,
+because their a-b slopes differ. Of the 43 hits, 0.85 pass a member's q cut and
+7.2 its phi cut. So a group shares the b hit and nothing else, and the old
+per-candidate fetch was not the expensive part. Stage c, the queue sort not
+counted, events 40-59: 118 ms per event one at a time; (a) ~450, (b) ~190,
+(c) ~148. Prefetching the a and b hits of the candidate 8 ahead in the old loop:
+the forward pass +6 ms per event. The margins of (a)-(c) against `ref-quads-2`
+were the 4 + 2 quads plus one new quad 0.17 % inside the c phi window, a hit
+the old per-candidate fetch missed at its edge.
