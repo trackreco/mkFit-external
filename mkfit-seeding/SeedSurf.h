@@ -127,19 +127,24 @@ namespace mkfit::seeding {
           sl((float)q_lo, (float)q_hi, nq(li.is_barrel() ? li.zmin() : li.rin(), li.is_barrel() ? li.zmax() : li.rout(), qbin),
              !li.is_barrel()) {}
 
-    // r and phi of each hit as P3 computes them from the layer's float x, y, in double
+    // r and phi of each hit as P3 computes them from the layer's float x, y, in double: for the
+    // double-precision finders only (with_double); without it surf_p3 takes the float r and phi
     std::vector<double> pr_, pphi_;
+    bool with_double = true;
     // the cluster's length in columns (Hit::spanCols()): along z in the barrel pixels
     std::vector<int> span_;
     void fill(const HitVec &hits) {
       sl.fill(hits);
-      pr_.resize(sl.n());
-      pphi_.resize(sl.n());
+      pr_.resize(with_double ? sl.n() : 0);
+      pphi_.resize(with_double ? sl.n() : 0);
       span_.resize(sl.n());
       qbar_lo = qbar_lo_nom, qbar_hi = qbar_hi_nom, q_lo = q_lo_nom, q_hi = q_hi_nom;
+      if (with_double)
+        for (unsigned int k = 0; k < sl.n(); ++k) {
+          pr_[k] = std::hypot((double)sl.x_[k], (double)sl.y_[k]);
+          pphi_[k] = std::atan2((double)sl.y_[k], (double)sl.x_[k]);
+        }
       for (unsigned int k = 0; k < sl.n(); ++k) {
-        pr_[k] = std::hypot((double)sl.x_[k], (double)sl.y_[k]);
-        pphi_[k] = std::atan2((double)sl.y_[k], (double)sl.x_[k]);
         span_[k] = hits[sl.orig_[k]].spanCols();
         const double u = qbar(k), v = q(k);
         qbar_lo = std::min(qbar_lo, u), qbar_hi = std::max(qbar_hi, u);
@@ -370,7 +375,8 @@ namespace mkfit::seeding {
   }
 
   inline surf::P3 surf_p3(const SurfLayer &L, unsigned int k) {
-    return surf::P3::cached(L.sl.x_[k], L.sl.y_[k], L.sl.z_[k], L.pr_[k], L.pphi_[k]);
+    return L.with_double ? surf::P3::cached(L.sl.x_[k], L.sl.y_[k], L.sl.z_[k], L.pr_[k], L.pphi_[k])
+                         : surf::P3::cached(L.sl.x_[k], L.sl.y_[k], L.sl.z_[k], L.sl.r_[k], L.sl.phi_[k]);
   }
 
   inline void surf_eval(const SurfParams &P, const SurfLayer *Ls[4], const surf::P3 h[4], SurfEval &e) {

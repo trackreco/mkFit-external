@@ -543,6 +543,10 @@ int main(int argc, char *argv[]) {
     for (int l : {4, 6})
       if (!layers.count(l))
         layers[l] = std::make_unique<SurfLayer>(l, ti[l], 2.0);
+  // the batch finder is float: no double r, phi cache per hit
+  if (chain_holes >= 0 && chain_batch)
+    for (auto &kv : layers)
+      kv.second->with_double = false;
 
   std::vector<Stats> S(pats.size());
   Stats SU;  // the union
