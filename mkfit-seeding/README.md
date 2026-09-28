@@ -1700,3 +1700,15 @@ counted, events 40-59: 118 ms per event one at a time; (a) ~450, (b) ~190,
 the forward pass +6 ms per event. The margins of (a)-(c) against `ref-quads-2`
 were the 4 + 2 quads plus one new quad 0.17 % inside the c phi window, a hit
 the old per-candidate fetch missed at its edge.
+
+**The OT2-P phi window had no floor (fixed in ccbdbf5, 2026-09-28).** The
+fitted a + b / pT (a = -8.1e-4 rad, b = 5.92e-3 rad GeV, from the q97 per pT
+bin below 10 GeV) is negative above 7.3 GeV, so `--fk-ot2` cut every quad with
+d on OT1-P there. The floor is 1.31 mrad, the q97 of true quads above 3 GeV on
+events 0-39 (`--ot2-phimin`). Nominal cuts, events 40-99, |eta| 0.8-1.6: found
+tracks at 5-10 GeV 169 -> 180 of 187, above 10 GeV 52 -> 65 of 72, against 180
+and 66 without fake cuts; overall efficiency 0.9490 -> 0.9493. Found while
+making the efficiency-vs-pT plots, which `--truth` now also writes (S rows).
+
+**The deck for all of this** is `~/mic-dev/mkfit-seeds-chain/` (algorithm, the
+fake cuts, the cleaner, and the three working points against |eta| and pT).
