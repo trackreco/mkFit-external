@@ -218,7 +218,7 @@ namespace {
     if (it == 0) {
       ip.nlayers_per_seed = 4;
       // 3, not 6, since 2026-09-23: the in-layer combinatorial search
-      // (Config::v2p2InLayerComb, now on by default) takes several hits per layer,
+      // (Config::V2p2::InLayer::comb, on by default) takes several hits per layer,
       // so the beam width no longer has to carry the per-layer alternatives.
       // Measured on 30 events of ttbar-PU200-D121-C22: with the search on, cap 3
       // gives 89 % of cap 6's gain for 26 % of the extra build time, and 3 -> 6 is
