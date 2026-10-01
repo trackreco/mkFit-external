@@ -53,6 +53,7 @@
 
 #include "SeedSurf.h"
 #include "SeedSurfBatch.h"
+#include "RecoTracker/MkFitCore/interface/MkSeeder.h"
 
 #include "RecoTracker/MkFitCore/interface/Config.h"
 #include "RecoTracker/MkFitCore/interface/TrackerInfo.h"
@@ -385,7 +386,9 @@ int main(int argc, char *argv[]) {
   OWN.delta = own_delta;
   OWN.max_skip = own_skip;
   OWN.max_skip_ot = own_skip_ot;
-  SeedEventOfHits layers;
+  // the seeder: its layers, its two finders (+z, -z) and the cleaning; the configuration is built here
+  MkSeeder seeder;
+  SeedEventOfHits &layers = seeder.hits();
   for (const auto &p : pats)
     for (int l : p.l)
       layers.add_layer(l, ti[l], ti[l].is_barrel() ? 2.0 : 1.0);
@@ -523,11 +526,12 @@ int main(int argc, char *argv[]) {
     fclose(fm);
   }
 
-  SurfChainBatch CB[2];
-  if (chain_holes >= 0 && chain_batch)
+  SurfChainBatch *const CB[2] = {&seeder.finder(0), &seeder.finder(1)};
+  if (chain_holes >= 0 && chain_batch) {
+    seeder.setup(CH[0], CH[1]);
     for (int sd = 0; sd < 2; ++sd) {
-      SurfChainBatch &B = CB[sd];
-      B.setup(CH[sd]), B.d_mode = chain_batch_d;
+      SurfChainBatch &B = *CB[sd];
+      B.d_mode = chain_batch_d;
       if (g_surf_fast_check.on)
         B.d_check = [](const SeedCand &c, const std::vector<const SurfLayer *> &lay, bool disc, float u, bool ok,
                        float px, float py, float qp, float wq, float wp) {
@@ -539,6 +543,7 @@ int main(int argc, char *argv[]) {
       for (int l = 0; l < 4; ++l)
         B.shape_[l] = shape_tab[l];
     }
+  }
   if ((fk_score > 0 || fk_shape || fk_ot2 > 0) && !chain_batch) {
     printf("--fk-* need --chain-batch\n");
     return 1;
@@ -568,22 +573,11 @@ int main(int argc, char *argv[]) {
   long n_unbound = 0;  // labels dropped by --bind
   int npat = pats.size();
 
-  // the cleaning's buffers, kept across events: allocated afresh, their first touch cost as much as the
-  // cleaning itself. cl_hl: per global hit (layer offset + hit), the list of kept quads using it and
-  // its length; all entries are back at {-1, 0} between events.
-  struct CleanHL {
-    int head = -1, len = 0;
-  };
-  std::vector<CleanHL> cl_hl;
-  std::vector<std::pair<int, int>> cl_link;  // (kept quad, next entry)
-  std::vector<unsigned int> cl_key, cl_rank;
-  radix_sort<unsigned int, unsigned int> cl_sort;
-  std::vector<std::array<unsigned int, 4>> cl_gh;
   for (int iev = 0; iev < n_events; ++iev) {
     Event ev(iev, ti.n_layers());
     ev.read_in(df);
     const auto t0 = clk::now();
-    layers.fill(ev.layerHits_);
+    seeder.fill(ev.layerHits_);
     t_fill += secs(t0, clk::now());
 
     const MCHitInfoVec &mc = ev.simHitsInfo_;
@@ -643,7 +637,7 @@ int main(int argc, char *argv[]) {
       const auto s0 = clk::now();
       const auto &LM = layers.layer_map();
       if (chain_batch)
-        SurfChainBatch::run_both(CB[0], CB[1], LM, cq, cnt, &csc);
+        seeder.find(cq, cnt, &csc);
       else {
         CH[0].run(LM, cq, cnt);
         CH[1].run(LM, cq, cnt);
@@ -933,92 +927,13 @@ int main(int argc, char *argv[]) {
     std::vector<char> keep_c(cands.size(), 1);
     const auto tc0 = clk::now();
     if (dedup_n > 0) {
-      // the order: tier first (a pattern with an outer-tracker layer after every pure-pixel one: its
-      // windows are several times wider, so its scores are not comparable), then the score, packed in
-      // one 32-bit key for the (stable) radix sort: the tier in the top 3 bits, then the score's float
-      // bits without their 3 lowest (the score is >= 0, so its bits sort as the value; relative 1e-6)
-      const int nc = cands.size();
-      std::vector<unsigned int> &key = cl_key, &rank = cl_rank;
-      key.resize(nc);
-      for (int i = 0; i < nc; ++i) {
-        int t = 0;
-        for (int l : pats[cands[i].ip].l)
-          t += !SurfOwnership::is_pix(l);
-        const float sf = (float)cands[i].score;
-        unsigned int sb;
-        __builtin_memcpy(&sb, &sf, 4);
-        key[i] = (unsigned int)t << 29 | sb >> 3;
-      }
-      cl_sort.sort(key, rank);
-      // each quad's hits as sorted global indices (layer offset + hit)
-      const int nl = ti.n_layers();
-      std::vector<unsigned int> off(nl + 1, 0);
-      for (int l = 0; l < nl; ++l)
-        off[l + 1] = off[l] + ev.layerHits_[l].size();
-      std::vector<std::array<unsigned int, 4>> &gh = cl_gh;
-      gh.resize(nc);
-      for (int i = 0; i < nc; ++i) {
-        const auto &ll = pats[cands[i].ip].l;
-        for (int k = 0; k < 4; ++k)
-          gh[i][k] = off[ll[k]] + cands[i].q[k];
-        std::sort(gh[i].begin(), gh[i].end());
-      }
-      std::vector<CleanHL> &hl = cl_hl;
-      if (hl.size() < off[nl])
-        hl.resize(off[nl]);
-      std::vector<std::pair<int, int>> &link = cl_link;
-      link.clear();
-      // a kept quad sharing >= N of the 4 hits holds at least one of any 5 - N of them: walk the
-      // 5 - N shortest lists only, and count the shared hits of each quad found there directly
-      const int nwalk = std::clamp(5 - dedup_n, 1, 4);
-      for (int ik = 0; ik < nc; ++ik) {
-        // the order is by score, so every access below is random: prefetch the hit lists 8 quads ahead
-        // and their hit indices 16 ahead (the loop is latency-bound, ~135 ns per quad without)
-        if (ik + 16 < nc)
-          __builtin_prefetch(&gh[rank[ik + 16]]);
-        if (ik + 8 < nc)
-          for (unsigned int gk : gh[rank[ik + 8]])
-            __builtin_prefetch(&hl[gk]);
-        const int i = rank[ik];
-        const auto &g = gh[i];
-        // the positions by list length: rank each (ties by position), no branches
-        const int ln[4] = {hl[g[0]].len, hl[g[1]].len, hl[g[2]].len, hl[g[3]].len};
-        int pos[4];
-        for (int a = 0; a < 4; ++a) {
-          int r = 0;
-          for (int b = 0; b < 4; ++b)
-            r += ln[b] < ln[a] || (ln[b] == ln[a] && b < a);
-          pos[r] = a;
-        }
-        bool drop = false;
-        for (int w = 0; w < nwalk && !drop; ++w)
-          for (int e = hl[g[pos[w]]].head; e >= 0; e = link[e].second) {
-            const auto &h = gh[link[e].first];
-            // shared hits: all 16 pairs, no branches (the hits of one quad are distinct)
-            int ns = 0;
-            for (int a = 0; a < 4; ++a)
-              for (int b = 0; b < 4; ++b)
-                ns += g[a] == h[b];
-            if (ns >= dedup_n) {
-              drop = true;
-              break;
-            }
-          }
-        if (drop) {
-          keep_c[i] = 0;
-          continue;
-        }
-        for (int k = 0; k < 4; ++k) {
-          CleanHL &h = hl[g[k]];
-          link.push_back({i, h.head});
-          h.head = link.size() - 1;
-          ++h.len;
-        }
-      }
-      // back to empty, for the next event
-      for (const auto &e : link)
-        for (unsigned int gk : gh[e.first])
-          hl[gk] = CleanHL();
+      // the quads in the order of cands, which breaks the cleaning's ties
+      std::vector<std::array<int, 4>> cl_l(cands.size());
+      std::vector<Quad> cl_q(cands.size());
+      std::vector<float> cl_s(cands.size());
+      for (size_t i = 0; i < cands.size(); ++i)
+        cl_l[i] = pats[cands[i].ip].l, cl_q[i] = cands[i].q, cl_s[i] = (float)cands[i].score;
+      seeder.clean(ev.layerHits_, cl_l, cl_q, cl_s, dedup_n, keep_c);
     }
     t_clean += secs(tc0, clk::now());
     if (attach_ot1 > 0) {
@@ -1211,13 +1126,13 @@ int main(int argc, char *argv[]) {
     printf("[seedsurf] --bind %.3f cm: %.1f label lookups per event dropped (the sim hit farther than that)\n", bind_cm,
            n_unbound / ne);
   // the chain's own counters, from whichever finder ran
-  const double ch_fwd = chain_batch ? CB[0].n_forwarded + CB[1].n_forwarded : CH[0].n_forwarded + CH[1].n_forwarded;
-  const double ch_drop = chain_batch ? CB[0].n_dropped + CB[1].n_dropped : CH[0].n_dropped + CH[1].n_dropped;
-  const double ch_tst = chain_batch ? CB[0].t_start + CB[1].t_start : CH[0].t_start + CH[1].t_start;
-  const double ch_cc = chain_batch ? CB[0].cyc_c + CB[1].cyc_c : CH[0].cyc_c + CH[1].cyc_c;
-  const double ch_cd = chain_batch ? CB[0].cyc_d + CB[1].cyc_d : CH[0].cyc_d + CH[1].cyc_d;
-  const double ch_nc = chain_batch ? CB[0].n_c_cand + CB[1].n_c_cand : CH[0].n_c_cand + CH[1].n_c_cand;
-  const double ch_nd = chain_batch ? CB[0].n_d_cand + CB[1].n_d_cand : CH[0].n_d_cand + CH[1].n_d_cand;
+  const double ch_fwd = chain_batch ? CB[0]->n_forwarded + CB[1]->n_forwarded : CH[0].n_forwarded + CH[1].n_forwarded;
+  const double ch_drop = chain_batch ? CB[0]->n_dropped + CB[1]->n_dropped : CH[0].n_dropped + CH[1].n_dropped;
+  const double ch_tst = chain_batch ? CB[0]->t_start + CB[1]->t_start : CH[0].t_start + CH[1].t_start;
+  const double ch_cc = chain_batch ? CB[0]->cyc_c + CB[1]->cyc_c : CH[0].cyc_c + CH[1].cyc_c;
+  const double ch_cd = chain_batch ? CB[0]->cyc_d + CB[1]->cyc_d : CH[0].cyc_d + CH[1].cyc_d;
+  const double ch_nc = chain_batch ? CB[0]->n_c_cand + CB[1]->n_c_cand : CH[0].n_c_cand + CH[1].n_c_cand;
+  const double ch_nd = chain_batch ? CB[0]->n_d_cand + CB[1]->n_d_cand : CH[0].n_d_cand + CH[1].n_d_cand;
   if (chain_holes >= 0)
     printf("[seedsurf] CHAIN%s: %.0f doublets, %.0f triplets, %.1f quads per event, %.3f ms/ev; forwarded %.1f, dropped %.1f per event\n",
            chain_batch ? " (batch)" : "", SC.doublets / ne, SC.triplets / ne, SC.quads / ne, 1e3 * SC.t_find / ne,
@@ -1225,8 +1140,8 @@ int main(int argc, char *argv[]) {
   if (chain_batch && (fk_score > 0 || fk_shape || fk_ot2 > 0))
     printf("[seedsurf] FAKE CUTS (batch): score < %g, shape %s, OT2-P x%g; per event: %.1f doublets cut on shape,"
            " %.1f OT1-P-d quads tested on OT2-P of which %.1f cut\n", fk_score, fk_shape ? "on" : "off", fk_ot2,
-           (CB[0].n_fk_shape + CB[1].n_fk_shape) / (double)n_events, (CB[0].n_ot2_tested + CB[1].n_ot2_tested) / (double)n_events,
-           (CB[0].n_fk_ot2 + CB[1].n_fk_ot2) / (double)n_events);
+           (CB[0]->n_fk_shape + CB[1]->n_fk_shape) / (double)n_events, (CB[0]->n_ot2_tested + CB[1]->n_ot2_tested) / (double)n_events,
+           (CB[0]->n_fk_ot2 + CB[1]->n_fk_ot2) / (double)n_events);
   if (attach_ot1 > 0)
     printf("[seedsurf] ATTACH OT1-P x%g: %.1f kept quads with a pixel d per event, %.1f in OT1-P acceptance, %.1f get a hit;"
            " of %.1f true ones that reach it %.3f get one, and it is the track's own in %.3f; %.3f ms/ev\n",
