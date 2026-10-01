@@ -1,5 +1,10 @@
 # mkfit-seeding: a geometric quadruplet seeder on the mkFit binnor
 
+> **Frozen 2026-10-01.** The seeder moved into CMSSW, branch `mkfit-seeding` of trackreco/cmssw:
+> `MkSeeder`, `SeedChain`, `SeedChainFinder` and `SeedStructures` in `RecoTracker/MkFitCore`, the driver
+> `seedsurf` in `RecoTracker/MkFitCMS/standalone/seeding/`, built by the standalone `./mymake`. This file
+> is the research record and is kept as it was; its build instructions describe the setup before the move.
+
 Milestone 1 of the seeding work that started as the study in
 `../mkfit-standalone-seedgeom/`: barrel quadruplets on layers 0,1,2 + 3,
 reproducing that prototype's output exactly, then made fast.
