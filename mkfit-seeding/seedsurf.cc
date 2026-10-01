@@ -528,6 +528,11 @@ int main(int argc, char *argv[]) {
     for (int sd = 0; sd < 2; ++sd) {
       SurfChainBatch &B = CB[sd];
       B.setup(CH[sd]), B.d_mode = chain_batch_d;
+      if (g_surf_fast_check.on)
+        B.d_check = [](const SeedCand &c, const std::vector<const SurfLayer *> &lay, bool disc, float u, bool ok,
+                       float px, float py, float qp, float wq, float wp) {
+          surf_check_d(c, lay, disc, u, ok, px, py, qp, wq, wp, g_surf_fast_check);
+        };
       B.fk_score = fk_score, B.fk_shape = fk_shape, B.fk_ot2 = fk_ot2;
       B.ot2_aphi = ot2_win[0], B.ot2_bphi = ot2_win[1], B.ot2_aq = ot2_win[2], B.ot2_bq = ot2_win[3];
       B.ot2_phimin = ot2_phimin;
