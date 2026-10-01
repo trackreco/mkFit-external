@@ -5,7 +5,8 @@
 #
 #   seedsurf-chain.sh [seedsurf options ...]
 #
-# Environment: B (the build directory, default the isolated seeding build), SS (the binary in
+# Environment: B (the build directory, default the build this checkout sits in, as for the
+# Makefile's BLD), SS (the binary in
 # test-seedgeom/bin, default seedsurf, for an A/B),
 # S (the sample), GEOM, BIND (truth binding in cm; needs SimHitStates in the
 # sample, empty to turn it off). Anything on the command line is appended, e.g.
@@ -16,7 +17,7 @@
 
 set -e
 D=$(cd "$(dirname "$0")" && pwd)
-B=${B:-/foo/matevz/mic-dev/CMSSW_14_1_0_pre0-p2p/src-seeding/standalone}
+B=${B:-$(cd "$D/../.." && pwd)}
 S=${S:-/foo/matevz/mic-dev/ttbar-PU200-D121-C22-100ev.bin}
 GEOM=${GEOM:-CMS-phase2-Run4D121}
 BIND=${BIND-0.05}

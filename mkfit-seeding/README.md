@@ -27,19 +27,20 @@ reproducing that prototype's output exactly, then made fast.
 
 ## Build and run
 
-The shared build in `src/standalone/` is rebuilt, and switched between the
-trace build and a ROOT-off build, by other work. So this runs against an
-**isolated build**:
+Since 2026-10-01 this branch lives in its own work area, `/foo/matevz/mic-dev/cmssw_20_mkseed`
+(CMSSW_20_1_0_pre3; see the `CLAUDE.md` there):
 
-- `CMSSW_14_1_0_pre0-p2p/src-seeding/`: a detached, sparse worktree of the
-  CMSSW repo at `59b10cfe7db`, with the committed `Makefile.config` (ROOT-off,
-  no trace).
-- `src-seeding/standalone/`: its build directory. `mkFit-external` there is a
-  symlink to `src/standalone/mkFit-external-seeding/`, the worktree of this
-  branch, and the geometry `.bin` files are symlinks into the shared build.
+- `cmssw_20_mkseed/src/`: sparse CMSSW checkout, branch `mkfit-seeding` of the CMSSW repo, starting
+  at `mkfinder-v2p2-perf` (`fffd5a1b936`), with the committed `Makefile.config` (ROOT-off, no trace).
+- `cmssw_20_mkseed/standalone/`: its build directory. `mkFit-external` there is the worktree of this
+  branch, and the geometry `.bin` files are symlinks to `/foo/matevz/mic-dev/`, beside the samples.
+
+`make` and `seedsurf-chain.sh` default to the build directory this checkout sits in. Before
+2026-10-01 it ran against an isolated build, `CMSSW_14_1_0_pre0-p2p/src-seeding/standalone` (core at
+`59b10cfe7db`), and the new build reproduces its `--dump` quads and `--truth` tables byte for byte.
 
 ```
-B=/foo/matevz/mic-dev/CMSSW_14_1_0_pre0-p2p/src-seeding/standalone
+B=/foo/matevz/mic-dev/cmssw_20_mkseed/standalone
 make BLD=$B                                  # -> $B/test-seedgeom/bin/seedfind
 make BLD=$B ARCH=-march=native NAME=seedfind-native
 cd $B && LD_LIBRARY_PATH=. test-seedgeom/bin/seedfind \
