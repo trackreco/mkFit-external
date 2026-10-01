@@ -12,6 +12,7 @@
 // re-checked against the same list.
 
 #include "SeedLayer.h"
+#include "RecoTracker/MkFitCore/interface/SeedStructures.h"
 
 #include <array>
 #include <chrono>
@@ -47,22 +48,8 @@ namespace mkfit::seeding {
     int win_low_fixed = 0;  // 1: below pt_keep the fixed windows exactly
   };
 
-  struct SeedCounters {
-    long doublets = 0, c_touched = 0, triplets = 0, d_touched = 0, quads = 0;
-    double t_stage[7] = {0, 0, 0, 0, 0, 0, 0};  // s, staged finder only
-    void add(const SeedCounters &o) {
-      for (int i = 0; i < 7; ++i)
-        t_stage[i] += o.t_stage[i];
-      doublets += o.doublets;
-      c_touched += o.c_touched;
-      triplets += o.triplets;
-      d_touched += o.d_touched;
-      quads += o.quads;
-    }
-  };
-
-  // (ia, ib, ic, id) in ORIGINAL hit indices within each layer's HitVec
-  using Quad = std::array<unsigned int, 4>;
+  // SeedCounters and SeedQuad are in MkFitCore since 2026-10-01
+  using Quad = SeedQuad;
 
   namespace detail {
     constexpr float kTwoPi = 2.0f * kPi;

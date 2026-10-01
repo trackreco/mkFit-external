@@ -31,8 +31,7 @@
 // eval() computes all of it for four given hits, so the truth tools measure
 // the residuals of true quads on the same arithmetic the finder cuts on.
 
-#include "SeedLayer.h"
-#include "SeedFinder.h"  // Quad, SeedCounters
+#include "RecoTracker/MkFitCore/interface/SeedStructures.h"  // SeedLayerOfHits, SeedQuad, SeedCounters
 
 #include "RecoTracker/MkFitCore/interface/TrackerInfo.h"
 
@@ -90,71 +89,11 @@ namespace mkfit::seeding {
     double wq_d(double pte, double s = -1) const { return q_d + lever(s) * b_q_d / std::max((double)pt_min, pte); }
   };
 
-  // A layer as the surface finder sees it.
-  struct SurfLayer {
-// phi N-bins per layer: 2^11 = 2048, 3.07 mrad (was 256; measured: 11 and 12 are equal, 10 slower)
-#ifndef SURF_PHI_NBITS
-#define SURF_PHI_NBITS 11
-#endif
-    using AxPhi = axis_pow2_u1<float, unsigned short, 16, SURF_PHI_NBITS>;
-    using AxQ = axis<float, unsigned short, 16, 8>;
-    using L = SeedLayer<AxPhi, AxQ>;
-    int id = -1;
-    bool disc = false;
-    // r range (barrel) or z range (disc), and z range (barrel) or r range (disc): the LayerInfo extent,
-    // widened in fill() to hold every hit of the event. The pixel barrel's LayerInfo::rin() lies inside
-    // its inner shell (layer 0: 2.868 cm, hits from 2.750), so ~half its hits have r below it, and a fetch
-    // over the nominal extent can miss them; coarse phi bins hid that.
-    double qbar_lo = 0, qbar_hi = 0;
-    double q_lo = 0, q_hi = 0;
-    double qbar_lo_nom = 0, qbar_hi_nom = 0, q_lo_nom = 0, q_hi_nom = 0;
-    L sl;
+  constexpr float kPi = 3.14159265358979323846f;
 
-    static unsigned int nq(double lo, double hi, double bin) {
-      return std::max(1u, (unsigned int)std::ceil((hi - lo) / bin));
-    }
-    SurfLayer(int id_, const LayerInfo &li, double qbin)
-        : id(id_),
-          disc(!li.is_barrel()),
-          qbar_lo(li.is_barrel() ? li.rin() : li.zmin()),
-          qbar_hi(li.is_barrel() ? li.rout() : li.zmax()),
-          q_lo(li.is_barrel() ? li.zmin() : li.rin()),
-          q_hi(li.is_barrel() ? li.zmax() : li.rout()),
-          qbar_lo_nom(qbar_lo),
-          qbar_hi_nom(qbar_hi),
-          q_lo_nom(q_lo),
-          q_hi_nom(q_hi),
-          sl((float)q_lo, (float)q_hi, nq(li.is_barrel() ? li.zmin() : li.rin(), li.is_barrel() ? li.zmax() : li.rout(), qbin),
-             !li.is_barrel()) {}
-
-    // r and phi of each hit as P3 computes them from the layer's float x, y, in double: for the
-    // double-precision finders only (with_double); without it surf_p3 takes the float r and phi
-    std::vector<double> pr_, pphi_;
-    bool with_double = true;
-    // the cluster's length in columns (Hit::spanCols()): along z in the barrel pixels
-    std::vector<int> span_;
-    void fill(const HitVec &hits) {
-      sl.fill(hits);
-      pr_.resize(with_double ? sl.n() : 0);
-      pphi_.resize(with_double ? sl.n() : 0);
-      span_.resize(sl.n());
-      qbar_lo = qbar_lo_nom, qbar_hi = qbar_hi_nom, q_lo = q_lo_nom, q_hi = q_hi_nom;
-      if (with_double)
-        for (unsigned int k = 0; k < sl.n(); ++k) {
-          pr_[k] = std::hypot((double)sl.x_[k], (double)sl.y_[k]);
-          pphi_[k] = std::atan2((double)sl.y_[k], (double)sl.x_[k]);
-        }
-      for (unsigned int k = 0; k < sl.n(); ++k) {
-        span_[k] = hits[sl.orig_[k]].spanCols();
-        const double u = qbar(k), v = q(k);
-        qbar_lo = std::min(qbar_lo, u), qbar_hi = std::max(qbar_hi, u);
-        q_lo = std::min(q_lo, v), q_hi = std::max(q_hi, v);
-      }
-    }
-    // the hit's own qbar and q
-    double qbar(unsigned int k) const { return disc ? sl.z_[k] : sl.r_[k]; }
-    double q(unsigned int k) const { return disc ? sl.r_[k] : sl.z_[k]; }
-  };
+  // A layer as the surface finder sees it: the seeder's layer of hits, in MkFitCore since 2026-10-01.
+  using SurfLayer = SeedLayerOfHits;
+  using Quad = SeedQuad;
 
   namespace surf {
     constexpr double kTwoPi = 2 * 3.14159265358979323846;
@@ -375,8 +314,8 @@ namespace mkfit::seeding {
   }
 
   inline surf::P3 surf_p3(const SurfLayer &L, unsigned int k) {
-    return L.with_double ? surf::P3::cached(L.sl.x_[k], L.sl.y_[k], L.sl.z_[k], L.pr_[k], L.pphi_[k])
-                         : surf::P3::cached(L.sl.x_[k], L.sl.y_[k], L.sl.z_[k], L.sl.r_[k], L.sl.phi_[k]);
+    return L.with_double ? surf::P3::cached(L.x_[k], L.y_[k], L.z_[k], L.pr_[k], L.pphi_[k])
+                         : surf::P3::cached(L.x_[k], L.y_[k], L.z_[k], L.r_[k], L.phi_[k]);
   }
 
   inline void surf_eval(const SurfParams &P, const SurfLayer *Ls[4], const surf::P3 h[4], SurfEval &e) {
@@ -408,11 +347,11 @@ namespace mkfit::seeding {
   namespace surf {
     inline auto phi_bins(const SurfLayer &S, double c, double w) {
       w = std::min(w, 0.9 * kTwoPi / 2);
-      return S.sl.phi_range((float)(c - w), (float)(c + w));
+      return S.phi_range((float)(c - w), (float)(c + w));
     }
     // q bins over [lo, hi], widened by a float ULP margin
     inline auto q_bins(const SurfLayer &S, double lo, double hi) {
-      return S.sl.q_range((float)(lo - 1e-4), (float)(hi + 1e-4));
+      return S.q_range((float)(lo - 1e-4), (float)(hi + 1e-4));
     }
   }  // namespace surf
 
@@ -466,7 +405,7 @@ namespace mkfit::seeding {
       return;
     const double zlo = P.bs_z - P.zv, zhi = P.bs_z + P.zv;
     const double ra = ha.r(), pa = ha.phi();
-    Bl.sl.for_each_in(fe.p, fe.q, [&](unsigned int kb) {
+    Bl.for_each_in(fe.p, fe.q, [&](unsigned int kb) {
       const P3 hb = surf_p3(Bl, kb);
       const double rb = hb.r();
       if (rb <= ra + 0.1)
@@ -495,8 +434,8 @@ namespace mkfit::seeding {
     const float ra = ha.r(), pa = ha.phi(), za = ha.z, inva = 1.0f / ra;
     const float inv2R = 0.003f * 3.8f / (2.0f * P.pt_min), d0 = P.d0_max, marg = P.marg_b;
     const float zlo = P.bs_z - P.zv, zhi = P.bs_z + P.zv;
-    const float *phi = Bl.sl.phi_.data(), *r = Bl.sl.r_.data(), *z = Bl.sl.z_.data(), *ir = Bl.sl.invr_.data();
-    Bl.sl.for_each_run(fe.p, fe.q, [&](unsigned int b, unsigned int e) {
+    const float *phi = Bl.phi_.data(), *r = Bl.r_.data(), *z = Bl.z_.data(), *ir = Bl.invr_.data();
+    Bl.for_each_run(fe.p, fe.q, [&](unsigned int b, unsigned int e) {
       for (unsigned int i0 = b; i0 < e; i0 += 64) {
         const unsigned int n = std::min(64u, e - i0);
         unsigned char m[64];
@@ -535,7 +474,7 @@ namespace mkfit::seeding {
     const double wc_phi = P.d0_max * ln.d0term(ufar, rfar) + P.phi_c;
     const auto qc = q_bins(C, std::min(cq0, cq1) - P.q_c, std::max(cq0, cq1) + P.q_c);
     const double cmid = cp0 + 0.5 * wrap(cp1 - cp0), chalf = 0.5 * std::abs(wrap(cp1 - cp0));
-    C.sl.for_each_in(phi_bins(C, cmid, chalf + wc_phi), qc, [&](unsigned int kc) {
+    C.for_each_in(phi_bins(C, cmid, chalf + wc_phi), qc, [&](unsigned int kc) {
       cnt.c_touched++;
       const P3 hc = surf_p3(C, kc);
       const double uc = C.qbar(kc);
@@ -578,7 +517,7 @@ namespace mkfit::seeding {
     const double pte = hx.pt(), smax = std::max(s0, s1), wpd = P.wphi_d(pte, smax), wqd = P.wq_d(pte, smax);
     const auto qd = q_bins(D, std::min(dq0, dq1) - wqd, std::max(dq0, dq1) + wqd);
     const double dmid = dp0 + 0.5 * wrap(dp1 - dp0), dhalf = 0.5 * std::abs(wrap(dp1 - dp0));
-    D.sl.for_each_in(phi_bins(D, dmid, dhalf + wpd), qd, [&](unsigned int kd) {
+    D.for_each_in(phi_bins(D, dmid, dhalf + wpd), qd, [&](unsigned int kd) {
       cnt.d_touched++;
       const P3 hd = surf_p3(D, kd);
       double q, phi, s = -1;
@@ -664,9 +603,9 @@ namespace mkfit::seeding {
     const float ipt = 1.0f / (float)std::max((double)P.pt_min, pte);
     const float aq = P.q_d, bq = P.b_q_d * ipt, ap = P.phi_d, bp = P.b_phi_d * ipt, isr = P.s_ref > 0 ? 1.0f / P.s_ref : 0.0f;
     constexpr float kPi = 3.14159265358979f, k2Pi = 6.28318530717959f;
-    const float *hphi = D.sl.phi_.data(), *hq = D.disc ? D.sl.r_.data() : D.sl.z_.data(),
-                *hu = D.disc ? D.sl.z_.data() : D.sl.r_.data();
-    D.sl.for_each_run(phi_bins(D, dmid, dhalf + wpd), qd, [&](unsigned int b, unsigned int e) {
+    const float *hphi = D.phi_.data(), *hq = D.disc ? D.r_.data() : D.z_.data(),
+                *hu = D.disc ? D.z_.data() : D.r_.data();
+    D.for_each_run(phi_bins(D, dmid, dhalf + wpd), qd, [&](unsigned int b, unsigned int e) {
       for (unsigned int i0 = b; i0 < e; i0 += 64) {
         const unsigned int n = std::min(64u, e - i0);
         unsigned char m[64];
@@ -713,13 +652,13 @@ namespace mkfit::seeding {
   // The finder for one pattern.  L[0..3]: the pattern's layers, filled.
   inline void find_quads_surf(const SurfParams &P, const SurfLayer *L[4], std::vector<Quad> &out, SeedCounters &cnt) {
     const SurfLayer &A = *L[0], &Bl = *L[1], &C = *L[2], &D = *L[3];
-    for (unsigned int ka = 0; ka < A.sl.n(); ++ka) {
+    for (unsigned int ka = 0; ka < A.n(); ++ka) {
       const surf::P3 ha = surf_p3(A, ka);
       surf_stage_b(P, ha, Bl, cnt, [&](unsigned int kb, const surf::P3 &hb) {
         surf_stage_c(P, ha, hb, C, cnt, [&](unsigned int kc, const surf::P3 &hc) {
           const surf::Helix hx(ha, hb, hc);
           surf_stage_d(P, hx, D, cnt, [&](unsigned int kd, const surf::P3 &) {
-            out.push_back({A.sl.orig_[ka], Bl.sl.orig_[kb], C.sl.orig_[kc], D.sl.orig_[kd]});
+            out.push_back({A.orig_[ka], Bl.orig_[kb], C.orig_[kc], D.orig_[kd]});
           });
         });
       });
@@ -1067,7 +1006,7 @@ namespace mkfit::seeding {
         const SurfLayer *A = layer(se.first), *B = layer(se.second);
         if (!A || !B)
           continue;
-        for (unsigned int ka = 0; ka < A->sl.n(); ++ka) {
+        for (unsigned int ka = 0; ka < A->n(); ++ka) {
           const surf::P3 ha = surf_p3(*A, ka);
           auto on_b = [&](unsigned int kb, const surf::P3 &hb) {
             // the side: a doublet belongs to the side its line goes to
@@ -1137,7 +1076,7 @@ namespace mkfit::seeding {
               found = true;
               std::array<int, 4> ids{order[c.pos[0]], order[c.pos[1]], order[c.pos[2]], order[p]};
               const SurfLayer *La = layer(c.pos[0]), *Lb = layer(c.pos[1]), *Lc = layer(c.pos[2]);
-              out.push_back({ids, {La->sl.orig_[c.k[0]], Lb->sl.orig_[c.k[1]], Lc->sl.orig_[c.k[2]], T->sl.orig_[kd]}});
+              out.push_back({ids, {La->orig_[c.k[0]], Lb->orig_[c.k[1]], Lc->orig_[c.k[2]], T->orig_[kd]}});
             };
             if (fast)
               surf_stage_d_fast(Pd, hx, *T, cnt, on_d);

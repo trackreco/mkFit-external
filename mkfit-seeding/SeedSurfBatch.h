@@ -39,7 +39,7 @@
 namespace mkfit::seeding {
 
   namespace surfb {
-    constexpr float k2Pi = 6.28318530717959f, kInv2Pi = 0.159154943091895f;  // kPi from SeedLayer.h
+    constexpr float k2Pi = 6.28318530717959f, kInv2Pi = 0.159154943091895f;  // kPi from SeedSurf.h
     inline float wrap(float d) { return d - k2Pi * std::floor(d * kInv2Pi + 0.5f); }
     // asin(x) / x, for 0 <= x <= 1; the series below x = 0.2 (next term < 1e-10)
     inline float asin_ox(float x) {
@@ -64,9 +64,9 @@ namespace mkfit::seeding {
     // surf::phi_bins and surf::q_bins in float, for the per-candidate fetches
     inline auto phi_bins(const SurfLayer &S, float c, float w) {
       w = std::min(w, 0.9f * kPi);
-      return S.sl.phi_range(c - w, c + w);
+      return S.phi_range(c - w, c + w);
     }
-    inline auto q_bins(const SurfLayer &S, float lo, float hi) { return S.sl.q_range(lo - 1e-4f, hi + 1e-4f); }
+    inline auto q_bins(const SurfLayer &S, float lo, float hi) { return S.q_range(lo - 1e-4f, hi + 1e-4f); }
 
     // The helix at hit c, from the circle through a, b, c (as surf::Helix, in float).
     struct HelixF {
@@ -546,12 +546,12 @@ namespace mkfit::seeding {
       const float p0 = std::atan2(y0, x0), p1 = std::atan2(y1, x1), dpp = wrap(p1 - p0);
       float best = 1e30f;
       int kb = -1;
-      LP.sl.for_each_in(surf::phi_bins(LP, p0 + 0.5f * dpp, 0.5f * std::abs(dpp) + fphi),
+      LP.for_each_in(surf::phi_bins(LP, p0 + 0.5f * dpp, 0.5f * std::abs(dpp) + fphi),
                         surf::q_bins(LP, std::min(q0, q1) - fz, std::max(q0, q1) + fz), [&](unsigned int k) {
                           float px, py, qp, s3;
-                          if (!H.at_r(LP.sl.r_[k], px, py, qp, s3))
+                          if (!H.at_r(LP.r_[k], px, py, qp, s3))
                             return;
-                          const float dp = wrap(LP.sl.phi_[k] - std::atan2(py, px)), dq = LP.sl.z_[k] - qp;
+                          const float dp = wrap(LP.phi_[k] - std::atan2(py, px)), dq = LP.z_[k] - qp;
                           const float sc = (dp / sphi) * (dp / sphi) + (dq / sz) * (dq / sz);
                           if (sc < best)
                             best = sc, kb = k, dphi = dp, dz = dq;
@@ -711,8 +711,8 @@ namespace mkfit::seeding {
         const float inv2R = 0.003f * 3.8f / (2.0f * P.pt_min), d0 = P.d0_max, marg = P.marg_b;
         const float zlo = P.bs_z - P.zv, zhi = P.bs_z + P.zv, side = Ch.side;
         const float clo0 = clo[0], chi0 = chi[0], clo1 = clo[1], chi1 = chi[1];
-        const float *bphi = B->sl.phi_.data(), *br = B->sl.r_.data(), *bz = B->sl.z_.data(), *bir = B->sl.invr_.data();
-        for (unsigned int ka = 0; ka < A->sl.n(); ++ka) {
+        const float *bphi = B->phi_.data(), *br = B->r_.data(), *bz = B->z_.data(), *bir = B->invr_.data();
+        for (unsigned int ka = 0; ka < A->n(); ++ka) {
           const surf::P3 ha = surf_p3(*A, ka);
           SurfFetch fe;
           if (!surf_b_fetch(P, ha, *B, fe))
@@ -742,7 +742,7 @@ namespace mkfit::seeding {
             if (B->disc && hi + 0.01f < B->q_hi)
               fe.p = surf::phi_bins(*B, ha.phi(), surf_wb(P, ha.r(), hi + 0.01f) + P.marg_b);
           }
-          B->sl.for_each_run(fe.p, fe.q, [&](unsigned int b, unsigned int e) {
+          B->for_each_run(fe.p, fe.q, [&](unsigned int b, unsigned int e) {
             for (unsigned int i0 = b; i0 < e; i0 += 64) {
               const unsigned int nk = std::min(64u, e - i0);
               if (nb[0] + (int)nk > kCap)
@@ -849,8 +849,8 @@ namespace mkfit::seeding {
         if (!T)
           continue;
         const bool disc = T->disc;
-        const float *hphi = T->sl.phi_.data(), *hz = T->sl.z_.data(), *hr = T->sl.r_.data(), *hir = T->sl.invr_.data();
-        const float *hx_ = T->sl.x_.data(), *hy_ = T->sl.y_.data();
+        const float *hphi = T->phi_.data(), *hz = T->z_.data(), *hr = T->r_.data(), *hir = T->invr_.data();
+        const float *hx_ = T->x_.data(), *hy_ = T->y_.data();
         const float *hu = disc ? hz : hr, *hq = disc ? hr : hz;
         const float u0 = T->qbar_lo, u1 = T->qbar_hi;
         const ShapeTab *shT = shape_of(p);
@@ -871,10 +871,10 @@ namespace mkfit::seeding {
               const ParF &w = par_[ix >= 0 ? ix : 0];
               const SurfLayer &La = *lay[c.pos[0]], &Lb = *lay[c.pos[1]];
               const unsigned ka = c.k[0], kb = c.k[1];
-              const float ua = disc ? La.sl.z_[ka] : La.sl.r_[ka], ub = disc ? Lb.sl.z_[kb] : Lb.sl.r_[kb];
-              const float qa = disc ? La.sl.r_[ka] : La.sl.z_[ka], qb = disc ? Lb.sl.r_[kb] : Lb.sl.z_[kb];
-              const float pa = La.sl.phi_[ka], dp = wrap(Lb.sl.phi_[kb] - pa);
-              const float ia = La.sl.invr_[ka], ib = Lb.sl.invr_[kb], idu = 1.0f / (ub - ua);
+              const float ua = disc ? La.z_[ka] : La.r_[ka], ub = disc ? Lb.z_[kb] : Lb.r_[kb];
+              const float qa = disc ? La.r_[ka] : La.z_[ka], qb = disc ? Lb.r_[kb] : Lb.z_[kb];
+              const float pa = La.phi_[ka], dp = wrap(Lb.phi_[kb] - pa);
+              const float ia = La.invr_[ka], ib = Lb.invr_[kb], idu = 1.0f / (ub - ua);
               const float t0_ = (u0 - ua) * idu, t1_ = (u1 - ua) * idu;
               if (std::max(t0_, t1_) > 1) {
                 const float cq0 = qa + (qb - qa) * t0_, cq1 = qa + (qb - qa) * t1_;
@@ -893,7 +893,7 @@ namespace mkfit::seeding {
                   slo = shT->lo[sb], shi = shT->hi[sb];
                 }
                 // a run is a few hits, most failing the q window: one hit at a time, q first
-                T->sl.for_each_run(surfb::phi_bins(*T, cmid, chalf + wcphi + 1e-6f), qc, [&](unsigned int b, unsigned int e) {
+                T->for_each_run(surfb::phi_bins(*T, cmid, chalf + wcphi + 1e-6f), qc, [&](unsigned int b, unsigned int e) {
                   n_ct += e - b;
                   for (unsigned int i = b; i < e; ++i) {
                     const float t = (hu[i] - ua) * idu;
@@ -934,7 +934,7 @@ namespace mkfit::seeding {
             for (int i = 0; i < m; ++i) {
               const Cand &c = Qd[t_j[i]];
               const SurfLayer &La = *lay[c.pos[0]];
-              const float za = La.sl.z_[c.k[0]], ra = La.sl.r_[c.k[0]], zc = hz[t_k[i]], rc = hr[t_k[i]];
+              const float za = La.z_[c.k[0]], ra = La.r_[c.k[0]], zc = hz[t_k[i]], rc = hr[t_k[i]];
               const float cot = (zc - za) / (rc - ra);
               w_cot[i] = cot, w_z0[i] = za - cot * ra;
               w_allow[i] = c.holes <= max_holes_ot;
@@ -977,8 +977,8 @@ namespace mkfit::seeding {
             const Cand &c = Qt[j];
             const SurfLayer &La = *lay[c.pos[0]], &Lb = *lay[c.pos[1]], &Lc = *lay[c.pos[2]];
             const unsigned ka = c.k[0], kb = c.k[1], kc = c.k[2];
-            hx[j - b0].make(La.sl.x_[ka], La.sl.y_[ka], La.sl.z_[ka], Lb.sl.x_[kb], Lb.sl.y_[kb], Lb.sl.z_[kb],
-                            Lc.sl.x_[kc], Lc.sl.y_[kc], Lc.sl.z_[kc]);
+            hx[j - b0].make(La.x_[ka], La.y_[ka], La.z_[ka], Lb.x_[kb], Lb.y_[kb], Lb.z_[kb],
+                            Lc.x_[kc], Lc.y_[kc], Lc.z_[kc]);
           }
           f_j.clear();
           for (size_t j = b0; j < b1; ++j) {
@@ -1046,7 +1046,7 @@ namespace mkfit::seeding {
                     const SurfLayer &Lb = *lay[c.pos[1]], &Lc = *lay[c.pos[2]];
                     const unsigned kb = c.k[1], kc = c.k[2];
                     HelixF H3;
-                    H3.make(Lb.sl.x_[kb], Lb.sl.y_[kb], Lb.sl.z_[kb], Lc.sl.x_[kc], Lc.sl.y_[kc], Lc.sl.z_[kc],
+                    H3.make(Lb.x_[kb], Lb.y_[kb], Lb.z_[kb], Lc.x_[kc], Lc.y_[kc], Lc.z_[kc],
                             hx_[kd], hy_[kd], hz[kd]);
                     float zm = 0, dpb = 0, dzb = 0, scb = 0;
                     const float ip2 = 1.0f / std::max(0.9f, pte);
@@ -1066,8 +1066,8 @@ namespace mkfit::seeding {
                   ++n_qd;
                   const std::array<int, 4> ids{Ch.order[c.pos[0]], Ch.order[c.pos[1]], Ch.order[c.pos[2]], Ch.order[p]};
                   out.push_back({ids,
-                                 {lay[c.pos[0]]->sl.orig_[c.k[0]], lay[c.pos[1]]->sl.orig_[c.k[1]],
-                                  lay[c.pos[2]]->sl.orig_[c.k[2]], T->sl.orig_[kd]}});
+                                 {lay[c.pos[0]]->orig_[c.k[0]], lay[c.pos[1]]->orig_[c.k[1]],
+                                  lay[c.pos[2]]->orig_[c.k[2]], T->orig_[kd]}});
                   if (score_out_) {
                     // the cleaning score, (dq_c / q_c)^2 + (dphi_d / wphi_d)^2 + (dq_d / wq_d)^2, with the
                     // pattern's own windows, no |eta| slices and no lever arm (surf_eval in seedsurf.cc
@@ -1075,10 +1075,10 @@ namespace mkfit::seeding {
                     const SurfLayer &La = *lay[c.pos[0]], &Lb = *lay[c.pos[1]], &Lc = *lay[c.pos[2]];
                     const bool dc = Lc.disc;
                     const unsigned ka = c.k[0], kb = c.k[1], kc = c.k[2];
-                    const float ua = dc ? La.sl.z_[ka] : La.sl.r_[ka], ub = dc ? Lb.sl.z_[kb] : Lb.sl.r_[kb];
-                    const float uc = dc ? Lc.sl.z_[kc] : Lc.sl.r_[kc];
-                    const float qa = dc ? La.sl.r_[ka] : La.sl.z_[ka], qb = dc ? Lb.sl.r_[kb] : Lb.sl.z_[kb];
-                    const float qcc = dc ? Lc.sl.r_[kc] : Lc.sl.z_[kc];
+                    const float ua = dc ? La.z_[ka] : La.r_[ka], ub = dc ? Lb.z_[kb] : Lb.r_[kb];
+                    const float uc = dc ? Lc.z_[kc] : Lc.r_[kc];
+                    const float qa = dc ? La.r_[ka] : La.z_[ka], qb = dc ? Lb.r_[kb] : Lb.z_[kb];
+                    const float qcc = dc ? Lc.r_[kc] : Lc.z_[kc];
                     const float rqc = (qcc - (qa + (qb - qa) * (uc - ua) / (ub - ua))) / w.q_c;
                     const float wpc = w.aphi + w.bphi * ipt, wqc = w.aq + w.bq * ipt;
                     // dphi^2 from sin^2: asin(x)^2 = x^2 (1 + x^2 / 3 + ...), the next term 8/45 x^6
@@ -1097,7 +1097,7 @@ namespace mkfit::seeding {
                 const float um = 0.5f * (u0 + u1), ihh = 2.0f / (u1 - u0);
                 const bool pre = d_mode == 0 && !CK.on && ok0 && ok1 && pred(um, xm, ym, qm, sm);
                 const float qa1 = 0.5f * (q1 - q0), qa2 = 0.5f * (q0 + q1) - qm, wq_pre = 1.1f * wqd + 0.002f;
-                T->sl.for_each_run(surfb::phi_bins(*T, dmid, dhalf + wpd + 1e-6f), qd, [&](unsigned int b, unsigned int e) {
+                T->for_each_run(surfb::phi_bins(*T, dmid, dhalf + wpd + 1e-6f), qd, [&](unsigned int b, unsigned int e) {
                   if (pre) {
                     n_dt += e - b;
                     for (unsigned int i = b; i < e; ++i) {

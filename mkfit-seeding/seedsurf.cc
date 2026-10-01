@@ -385,11 +385,10 @@ int main(int argc, char *argv[]) {
   OWN.delta = own_delta;
   OWN.max_skip = own_skip;
   OWN.max_skip_ot = own_skip_ot;
-  std::map<int, std::unique_ptr<SurfLayer>> layers;
+  SeedEventOfHits layers;
   for (const auto &p : pats)
     for (int l : p.l)
-      if (!layers.count(l))
-        layers[l] = std::make_unique<SurfLayer>(l, ti[l], ti[l].is_barrel() ? 2.0 : 1.0);
+      layers.add_layer(l, ti[l], ti[l].is_barrel() ? 2.0 : 1.0);
 
   // the chain: every layer it can visit, window tables from the listed patterns
   SurfChain CH[2];
@@ -403,8 +402,7 @@ int main(int argc, char *argv[]) {
     for (int l = 16; l <= 27; ++l)
       have.insert(l), have.insert(l + 22);
     for (int l : have)
-      if (!layers.count(l))
-        layers[l] = std::make_unique<SurfLayer>(l, ti[l], ti[l].is_barrel() ? 2.0 : 1.0);
+      layers.add_layer(l, ti[l], ti[l].is_barrel() ? 2.0 : 1.0);
     {
       SurfOwnership O2;
       O2.setup(ti, have);
@@ -549,12 +547,10 @@ int main(int argc, char *argv[]) {
   // --fk-ot2 and --attach-ot1 need them too
   if (!qdump_out.empty() || fk_ot2 > 0 || attach_ot1 > 0)
     for (int l : {4, 6})
-      if (!layers.count(l))
-        layers[l] = std::make_unique<SurfLayer>(l, ti[l], 2.0);
+      layers.add_layer(l, ti[l], 2.0);
   // the batch finder is float: no double r, phi cache per hit
   if (chain_holes >= 0 && chain_batch)
-    for (auto &kv : layers)
-      kv.second->with_double = false;
+    layers.set_with_double(false);
 
   std::vector<Stats> S(pats.size());
   Stats SU;  // the union
@@ -582,8 +578,7 @@ int main(int argc, char *argv[]) {
     Event ev(iev, ti.n_layers());
     ev.read_in(df);
     const auto t0 = clk::now();
-    for (auto &kv : layers)
-      kv.second->fill(ev.layerHits_[kv.first]);
+    layers.fill(ev.layerHits_);
     t_fill += secs(t0, clk::now());
 
     const MCHitInfoVec &mc = ev.simHitsInfo_;
@@ -616,7 +611,7 @@ int main(int argc, char *argv[]) {
     };
     // labelled hits per layer, per track
     std::map<int, std::unordered_map<int, std::vector<int>>> lab_hits;
-    for (auto &kv : layers) {
+    for (auto &kv : layers.layer_map()) {
       const HitVec &hv = ev.layerHits_[kv.first];
       auto &m = lab_hits[kv.first];
       for (int k = 0; k < (int)hv.size(); ++k) {
@@ -641,9 +636,7 @@ int main(int argc, char *argv[]) {
       std::vector<float> csc;
       SeedCounters cnt;
       const auto s0 = clk::now();
-      std::map<int, const SurfLayer *> LM;
-      for (auto &kv : layers)
-        LM[kv.first] = kv.second.get();
+      const auto &LM = layers.layer_map();
       if (chain_batch)
         SurfChainBatch::run_both(CB[0], CB[1], LM, cq, cnt, &csc);
       else {
@@ -694,7 +687,7 @@ int main(int argc, char *argv[]) {
           const SurfLayer *Ls[4];
           surf::P3 h[4];
           for (int k = 0; k < 4; ++k) {
-            Ls[k] = layers[l[k]].get();
+            Ls[k] = layers.layer(l[k]);
             const Hit &hh = ev.layerHits_[l[k]][q[k]];
             h[k] = {hh.x(), hh.y(), hh.z()};
           }
@@ -763,7 +756,7 @@ int main(int argc, char *argv[]) {
     for (int ip = 0; ip < npat; ++ip) {
       const Pattern &p = pats[ip];
       Stats &st = S[ip];
-      const SurfLayer *L[4] = {layers[p.l[0]].get(), layers[p.l[1]].get(), layers[p.l[2]].get(), layers[p.l[3]].get()};
+      const SurfLayer *L[4] = {layers.layer(p.l[0]), layers.layer(p.l[1]), layers.layer(p.l[2]), layers.layer(p.l[3])};
       std::vector<Quad> quads;
       SeedCounters cnt;
       const auto s0 = clk::now();
@@ -1024,7 +1017,7 @@ int main(int argc, char *argv[]) {
     }
     t_clean += secs(tc0, clk::now());
     if (attach_ot1 > 0) {
-      const SurfLayer &LP = *layers[4];
+      const SurfLayer &LP = *layers.layer(4);
       const auto a0 = clk::now();
       std::vector<int> att(cands.size(), -1);  // the attached OT1-P hit (index into layerHits_[4]), -1 none
       auto fxyz = [&](int l, unsigned int k, float &x, float &y, float &z) {
@@ -1057,7 +1050,7 @@ int main(int argc, char *argv[]) {
         }
         ++at_reach;
         if (kn >= 0 && std::abs(dp) < wp && std::abs(dz) < wz)
-          att[i] = LP.sl.orig_[kn], ++at_att;
+          att[i] = LP.orig_[kn], ++at_att;
       }
       t_attach += secs(a0, clk::now());
       for (int i = 0; i < (int)cands.size(); ++i)
@@ -1108,7 +1101,7 @@ int main(int argc, char *argv[]) {
     if (fq) {
       fprintf(fq, "E %d %zu\n", iev, fb_any.size());
       // the next outer P layer: OT1-P after a pixel d, OT2-P after an OT1-P d
-      const SurfLayer *LP4 = layers[4].get(), *LP6 = layers[6].get();
+      const SurfLayer *LP4 = layers.layer(4), *LP6 = layers.layer(6);
       const double bx = ev.beamSpot_.x, by = ev.beamSpot_.y;
       auto p3of = [&](int l, unsigned int k) {
         const Hit &h = ev.layerHits_[l][k];
@@ -1135,7 +1128,7 @@ int main(int argc, char *argv[]) {
         const surf::Helix abc(h[0], h[1], h[2]), acd(h[0], h[2], h[3]), bcd(h[1], h[2], h[3]);
         const double eta = std::asinh((h[3].z - h[0].z) / (h[3].r() - h[0].r()));
         const SurfParams Q = params_of(pats[c.ip]);
-        const SurfLayer *Ls[4] = {layers[ll[0]].get(), layers[ll[1]].get(), layers[ll[2]].get(), layers[ll[3]].get()};
+        const SurfLayer *Ls[4] = {layers.layer(ll[0]), layers.layer(ll[1]), layers.layer(ll[2]), layers.layer(ll[3])};
         SurfEval e;
         surf_eval(Q, Ls, h, e);
         const double wc = e.wd0_c + Q.phi_c, wpd = Q.wphi_d(e.pte), wqd = Q.wq_d(e.pte);
@@ -1159,18 +1152,18 @@ int main(int argc, char *argv[]) {
             const double pte = std::max(0.5, e.pte), sphi = 0.0005 + 3.2e-3 / pte, sz = 0.075 + 0.0316 / pte;
             const double dm = p0 + 0.5 * surf::wrap(p1 - p0), dh = 0.5 * std::abs(surf::wrap(p1 - p0));
             double best = 1e30;
-            LP->sl.for_each_in(surf::phi_bins(*LP, dm, dh + 10 * sphi),
+            LP->for_each_in(surf::phi_bins(*LP, dm, dh + 10 * sphi),
                                surf::q_bins(*LP, std::min(q0, q1) - 10 * sz, std::max(q0, q1) + 10 * sz),
                                [&](unsigned int kk) {
                                  double qp, pp;
                                  if (!bcd.predict(false, LP->qbar(kk), qp, pp))
                                    return;
-                                 const double dp = surf::wrap(LP->sl.phi_[kk] - pp), dz = LP->sl.z_[kk] - qp;
+                                 const double dp = surf::wrap(LP->phi_[kk] - pp), dz = LP->z_[kk] - qp;
                                  const double sc = (dp / sphi) * (dp / sphi) + (dz / sz) * (dz / sz);
                                  n3 += sc < 9;
                                  if (sc < best) {
                                    best = sc, bdp = dp, bdz = dz, ot = 1;
-                                   same = c.lab >= 0 && label_l(hp4[LP->sl.orig_[kk]], elay) == c.lab;
+                                   same = c.lab >= 0 && label_l(hp4[LP->orig_[kk]], elay) == c.lab;
                                  }
                                });
           }
