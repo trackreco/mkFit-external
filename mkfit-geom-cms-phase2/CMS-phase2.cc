@@ -294,8 +294,9 @@ namespace {
     setup_default_windows(ti, ii[0]);
 
     ii[0].m_seed_cleaner_name = "phase1:default";
-    // ii[0].m_default_track_scorer_name = "phase1:default";
-    ii[0].m_default_track_scorer_name = "phase2:LstIntoPix";
+    // As the CMSSW initialStep JSON. "phase2:LstIntoPix" was a hack for longer tracks in the
+    // LST-into-pixels search; Shell::RunLSTintoPix() warns which scorer it runs with.
+    ii[0].m_default_track_scorer_name = "phase1:default";
 
     ii[0].m_seed_partitioner_name = "phase2:1";
 
