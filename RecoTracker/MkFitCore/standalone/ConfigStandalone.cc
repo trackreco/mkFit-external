@@ -19,6 +19,7 @@ namespace mkfit {
     int nTracks = 10000;
     int nEvents = 20;
     int nItersCMSSW = 0;
+    bool mimiUseV2p2 = false;
     bool loopOverFile = false;
 
     seedOpts seedInput = simSeeds;
@@ -37,6 +38,7 @@ namespace mkfit {
     bool cmssw_val = false;
     bool fit_val = false;
     bool readSimTrackStates = false;
+    bool readSimHitStates = false;
     bool inclusiveShorts = false;
     bool keepHitInfo = false;
     bool tryToSaveSimInfo = false;

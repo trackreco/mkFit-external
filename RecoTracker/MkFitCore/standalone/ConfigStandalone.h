@@ -45,6 +45,7 @@ namespace mkfit {
     extern int nTracks;  //defined in Config.cc by default or when reading events from file
     extern int nEvents;
     extern int nItersCMSSW;
+    extern bool mimiUseV2p2;
     extern bool loopOverFile;
     // XXXXMT: nTracks should be thrown out ... SMatrix and Event allocate some arrays on this
     // which can be wrong for real data or in multi-event environment
@@ -132,6 +133,7 @@ namespace mkfit {
     extern bool cmssw_val;
     extern bool fit_val;
     extern bool readSimTrackStates;  // need this to fill pulls
+    extern bool readSimHitStates;    // per-sim-hit truth states, see SimHitState
     extern bool inclusiveShorts;
     extern bool keepHitInfo;
     extern bool tryToSaveSimInfo;

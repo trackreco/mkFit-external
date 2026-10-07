@@ -6,6 +6,9 @@
 #include "RecoTracker/MkFitCore/interface/HitStructures.h"
 #include "RecoTracker/MkFitCore/interface/MkBuilder.h"
 #include "RecoTracker/MkFitCore/src/MkFitter.h"
+#include "RecoTracker/MkFitCore/src/MkFinderV2p2.h"
+#include "RecoTracker/MkFitCore/src/V2p2Score.h"
+#include "RecoTracker/MkFitCore/src/V2p2Config.h"
 #include "RecoTracker/MkFitCMS/interface/MkStdSeqs.h"
 #include "RecoTracker/MkFitCMS/standalone/MkStandaloneSeqs.h"
 
@@ -14,15 +17,18 @@
 
 #include "RecoTracker/MkFitCore/standalone/Event.h"
 
-#ifdef WITH_ROOT
+#ifdef MKFIT_WITH_ROOT
 #include "RecoTracker/MkFitCore/standalone/Validation.h"
 #include "RecoTracker/MkFitCore/standalone/RntDumper/RntDumper.h"
+
+#include "TROOT.h"
 #endif
 
 //#define DEBUG
 #include "RecoTracker/MkFitCore/src/Debug.h"
 #include "RecoTracker/MkFitCMS/standalone/Shell.h"
 
+#include "RecoTracker/MkFitCore/src/MkFitTbb.h"
 #include "oneapi/tbb/task_arena.h"
 #include "oneapi/tbb/parallel_for.h"
 #include <oneapi/tbb/global_control.h>
@@ -32,12 +38,26 @@
 #endif
 
 #include <cstdlib>
+#include <functional>
 #include <limits>
 #include <list>
 #include <sstream>
 #include <memory>
 
 using namespace mkfit;
+namespace V2p2 = mkfit::Config::V2p2;
+
+//==============================================================================
+
+// --max-cands-per-seed. -1 leaves whatever the geometry plugin set.
+// Applied at the END of initGeom(), because that is where Config::ItrInfo comes
+// into existence -- option parsing runs before it.
+static int g_max_cands_per_seed = -1;
+
+// The options that set V2p2Params (IterationConfig::m_v2p2). Collected while
+// parsing and applied to every iteration config at the end of initGeom(), like
+// --max-cands-per-seed.
+static std::vector<std::function<void(V2p2Params &)>> g_v2p2_setters;
 
 //==============================================================================
 
@@ -106,6 +126,30 @@ void initGeom() {
   }
 
   Config::ItrInfo.setupStandardFunctionsFromNames();
+
+  if (g_max_cands_per_seed > 0) {
+    // BOTH parameter sets, not just the forward one: the beam width a candidate
+    // actually gets is CombCandidate::capacity(), reserved from
+    // MkJob::max_max_cands() = max(params(), params_bks()), so setting the
+    // forward one alone leaves the capacity at whichever is larger and the knob
+    // does nothing at all.
+    const int ni = Config::ItrInfo.size();
+    for (int i = 0; i < ni; ++i) {
+      Config::ItrInfo[i].m_params.maxCandsPerSeed = g_max_cands_per_seed;
+      Config::ItrInfo[i].m_backward_params.maxCandsPerSeed = g_max_cands_per_seed;
+    }
+    printf("mkFit.cc/%s--max-cands-per-seed = %d (fwd and bkw) for %d iteration configs\n",
+           __func__, g_max_cands_per_seed, ni);
+  }
+
+  if (!g_v2p2_setters.empty()) {
+    const int ni = Config::ItrInfo.size();
+    for (int i = 0; i < ni; ++i)
+      for (const auto &set : g_v2p2_setters)
+        set(Config::ItrInfo[i].m_v2p2);
+    printf("mkFit.cc/%s %d v2p2 option(s) applied to %d iteration configs\n",
+           __func__, (int)g_v2p2_setters.size(), ni);
+  }
 
   // Test functions for ConfigJsonPatcher
   // cj.test_Direct (Config::ItrInfo[0]);
@@ -209,7 +253,7 @@ void test_standard() {
 
   DataFile data_file;
   if (g_operation == "read") {
-    int evs_in_file = data_file.openRead(g_input_file, Config::TrkInfo.n_layers());
+    int evs_in_file = data_file.openRead(g_input_file, Config::TrkInfo.n_layers(), Config::TrkInfo.geom_version());
     int evs_available = evs_in_file - g_start_event + 1;
     if (Config::nEvents == -1) {
       Config::nEvents = evs_available;
@@ -427,6 +471,9 @@ void test_standard() {
     printf("================================================================\n");
   }
   if (Config::quality_val) {
+    if (Config::mimiUseV2p2)
+      g_v2p2_policy_counters.print("summed over the run");
+
     printf("Sum up of quality-val:\n");
     StdSeq::Quality::s_quality_sum.quality_print();
   }
@@ -490,12 +537,14 @@ int main(int argc, const char* argv[]) {
     mArgs.push_back(argv[i]);
   }
   bool run_shell = false;
+  std::vector<std::string> shell_commands;
 
   lStr_i i = mArgs.begin();
   while (i != mArgs.end()) {
     lStr_i start = i;
 
     if (*i == "-h" || *i == "-help" || *i == "--help") {
+      const V2p2Params v2p2d;  // the defaults the help text shows
       printf(
           "\n"
           "Usage: %s [options]\n"
@@ -506,8 +555,30 @@ int main(int argc, const char* argv[]) {
           "  --geom           <str>   geometry plugin to use (def: %s)\n"
           "  --silent                 suppress printouts inside event loop (def: %s)\n"
           "  --best-out-of    <int>   run test num times, report best time (def: %d)\n"
+          "  --max-cands-per-seed <int>  override IterationParams::maxCandsPerSeed on every\n"
+          "                           iteration config, forward AND backward (def: from the geometry)\n"
+          "  --v2p2-extra-dq <float>  MkFinderV2p2 pre-selection: LEGACY compound knob, sets both dq\n"
+          "                           factors in the old ratio (dq_trk_fac def: %.2f)\n"
+          "  --v2p2-dq-trk <float>    MkFinderV2p2 pre-selection: factor on the dq TRACK term,\n"
+          "                           itself 3 sigma (def: %.2f)\n"
+          "  --v2p2-dq-hit <float>    MkFinderV2p2 pre-selection: factor on hit_q_half_length, the\n"
+          "                           q CONTAINMENT term; geometric floor 1.0 (def: %.2f)\n"
+          "  --v2p2-phi-per-hit <float>  MkFinderV2p2 pre-selection: replace the flat phi tolerance\n"
+          "                           by this factor times the hit's own phi extent; 0 keeps the\n"
+          "                           flat constant (def: %.2f, %s)\n"
+          "  --v2p2-dphi-trk <float>  MkFinderV2p2 pre-selection: factor on the dphi TRACK term,\n"
+          "                           applied in the cut AND in the binnor range (def: %.2f)\n"
+          "  --v2p2-hit-dphi <float>  MkFinderV2p2 pre-selection: the flat per-hit phi tolerance in\n"
+          "                           RADIANS, used only with --v2p2-phi-per-hit 0 (def: %.5f)\n"
+          "  --v2p2-precut-q <0|1>    MkFinderV2p2: line pre-cut in q before the plane solve (def: %d)\n"
+          "  --v2p2-precut-phi <0|1>  MkFinderV2p2: line pre-cut in phi before the plane solve (def: %d)\n"
+          "  --v2p2-q-extra-bins <n>  MkFinderV2p2: fetch margin beyond the cut, in whole q\n"
+          "                           bins (def: %d)\n"
+          "  --v2p2-phi-extra-bins <n>  MkFinderV2p2: fetch margin beyond the cut, in whole phi\n"
+          "                           bins (def: %d)\n"
           "  --input-file             file name for reading (def: %s)\n"
           "  --output-file            file name for writitng (def: %s)\n"
+          "  --read-sim-hit-states    read per-sim-hit truth states if present in the file (def: %s)\n"
           "  --read-cmssw-tracks      read external cmssw reco tracks if available (def: %s)\n"
           "  --read-simtrack-states   read in simTrackStates for pulls in validation (def: %s)\n"
           "  --num-events     <int>   number of events to run over or simulate (def: %d)\n"
@@ -516,6 +587,8 @@ int main(int argc, const char* argv[]) {
           "  --loop-over-file         after reaching the end of the file, start over from the beginning until "
           "                           <num-events> events have been processed\n"
           "  --shell                  start interactive shell instead of running test_standard()\n"
+          "  --shell-command          add a command to be executed in the shell (def: none)\n"
+          "  --shell-cmd              add a command to be executed in the shell (def: none)\n"
           "\n"
           "If no --input-file is specified, will trigger simulation\n"
           "  --num-tracks     <int>   number of tracks to generate for each event (def: %d)\n"
@@ -543,6 +616,7 @@ int main(int argc, const char* argv[]) {
           "  --build-std              run standard combinatorial building test (def: %s)\n"
           "  --build-ce               run clone engine combinatorial building test (def: %s)\n"
           "  --build-mimi             run clone engine on multiple-iteration test (def: %s)\n"
+          "  --build-mimi-v2p2        run v2p2 on multiple-iteration test for fwd and bkw search (def: %s)\n"
           "  --num-iters-cmssw <int>  number of mimi iterations to run (def: set to 3 when --build-mimi is in effect, "
           "0 otherwise)\n"
           "\n"
@@ -569,6 +643,42 @@ int main(int argc, const char* argv[]) {
           "'--backward-fit' (def: %s)\n"
           "  --use-p2p <0|1>          use prop-to-plane (def: %d)\n"
           "  --use-ptms <0|1>         use pT multiple scattering (def: %d)\n"
+          "  --v2p2-wsr <0|1>         MkFinderV2p2: set and act on the within-sensitive-region\n"
+          "                           verdict -- skip a layer the track does not reach, and do not\n"
+          "                           charge a hole for one it only clips (def: %d)\n"
+          "  --v2p2-hole-limits <0|1> MkFinderV2p2: apply maxHolesPerCand / maxConsecHoles (def: %d)\n"
+          "  --v2p2-stop-cuts <0|1>   MkFinderV2p2: apply minPtCut and the looper stop at pull-in (def: %d)\n"
+          "  --v2p2-hit-chi2-cut <f>  MkFinderV2p2: Kalman hit acceptance cut on the acceptance chi2 (def: %g)\n"
+          "  --v2p2-chi2-trk-fac <f>  MkFinderV2p2: scale on the track sigma in the acceptance chi2, the hit\n"
+          "                           covariance is taken as it is (def: %g)\n"
+          "  --v2p2-score-mode <0|1>  MkFinderV2p2 score: 0 linear, 1 log-likelihood ratio (def: %d)\n"
+          "  --v2p2-hit-eff <f>       MkFinderV2p2 score, likelihood mode: per-layer hit efficiency,\n"
+          "                           for both directions and every layer group, which clears the\n"
+          "                           forward per-group values (def: fwd %g with per-group values,\n"
+          "                           bkw %g)\n"
+          "  --v2p2-best-short <0|1>  MkFinderV2p2: move a stopped candidate out of the beam and\n"
+          "                           keep the best of them per seed, outward only (def: %d)\n"
+          "  --v2p2-reserve-hole-slot <0|1>  MkFinderV2p2: keep one beam slot for a continuation\n"
+          "                           that declined the layer, even when outranked (def: %d)\n"
+          "  --v2p2-early-select <0|1>  MkFinderV2p2: select a CombCandidate after its last layer\n"
+          "                           batch and reuse its tree-node slots (def: %d)\n"
+          "  --v2p2-late-max-cands <n>      MkFinderV2p2: beam width per seed once its best candidate has\n"
+          "                           more than --v2p2-late-max-cands-hits found hits; 0 = off (def: %d)\n"
+          "  --v2p2-late-max-cands-hits <n> MkFinderV2p2: found hits above which --v2p2-late-max-cands applies (def: %d)\n"
+          "  --v2p2-late-max-cands-step <f> MkFinderV2p2: ... except on a straight-line step to the layer longer\n"
+          "                           than this [cm]; 0 = off (def: %g)\n"
+          "  --v2p2-sister-hole-drop <0|1>  MkFinderV2p2: drop the hole of a candidate whose path in the\n"
+          "                           same sub-layer pair takes the sister sensor (def: %d)\n"
+          "  --v2p2-sister-hole-chi2 <f>    MkFinderV2p2: ... only for a sister hit with chi2 below this;\n"
+          "                           0 = any accepted hit (def: %g)\n"
+          "  --v2p2-max-hits-per-layer <n>  MkFinderV2p2: most hits one candidate may take in one layer\n"
+          "                           (def: %d)\n"
+          "  --v2p2-max-presel-hits <n>  MkFinderV2p2: pre-selection reduction cap, per sub-layer (def: %d)\n"
+          "  --v2p2-hit-bonus <f>     MkFinderV2p2 score: per hit taken (def: %g)\n"
+          "  --v2p2-overlap-bonus <f> MkFinderV2p2 score: per hit beyond the first in a layer (def: %g)\n"
+          "  --v2p2-chi2-weight <f>   MkFinderV2p2 score: per unit chi2 (def: %g)\n"
+          "  --v2p2-miss-penalty <f>  MkFinderV2p2 score: per real hole, both directions (def: %g)\n"
+          "  --v2p2-miss-penalty-bkw <f>  ... inward only, for the head/body asymmetry (def: %g)\n"
           "\n----------------------------------------------------------------------------------------------------------"
           "\n\n"
           "Validation options\n\n"
@@ -676,8 +786,20 @@ int main(int argc, const char* argv[]) {
           Config::geomPlugin.c_str(),
           b2a(Config::silent),
           Config::finderReportBestOutOfN,
+          V2p2::Window::dq_trk_fac,
+          V2p2::Window::dq_trk_fac,
+          V2p2::Window::dq_hit_fac,
+          V2p2::Window::dphi_hit_fac,
+          V2p2::Window::phi_per_hit ? "on" : "off",
+          V2p2::Window::dphi_trk_fac,
+          V2p2::Window::dphi_flat_rad,
+          (int) V2p2::PreCut::q,
+          (int) V2p2::PreCut::phi,
+          V2p2::Window::q_extra_bins,
+          V2p2::Window::phi_extra_bins,
           g_input_file.c_str(),
           g_output_file.c_str(),
+          b2a(Config::readSimHitStates),
           b2a(Config::readCmsswTracks),
           b2a(Config::readSimTrackStates),
           Config::nEvents,
@@ -699,6 +821,7 @@ int main(int argc, const char* argv[]) {
           b2a(g_run_build_default || g_run_build_std),
           b2a(g_run_build_default || g_run_build_ce),
           b2a(g_run_build_mimi),
+          b2a(Config::mimiUseV2p2),
 
           getOpt(Config::seedInput, g_seed_opts).c_str(),
           getOpt(Config::seedCleaning, g_clean_opts).c_str(),
@@ -714,6 +837,29 @@ int main(int argc, const char* argv[]) {
           b2a(Config::includePCA),
           int(Config::usePropToPlane),
           int(Config::usePtMultScat),
+          int(V2p2::Policy::use_wsr),
+          int(V2p2::Policy::use_hole_limits),
+          int(V2p2::Policy::use_stop_cuts),
+          v2p2d.hit_chi2_cut,
+          v2p2d.chi2_trk_fac,
+          V2p2::Score::mode,
+          v2p2d.score_outward.hit_eff,
+          v2p2d.score_inward.hit_eff,
+          int(V2p2::InLayer::best_short),
+          int(V2p2::InLayer::reserve_hole_slot),
+          int(V2p2::InLayer::early_select),
+          V2p2::InLayer::late_max_cands,
+          V2p2::InLayer::late_max_cands_hits,
+          V2p2::InLayer::late_max_cands_step_cm,
+          int(V2p2::InLayer::sister_hole_drop),
+          V2p2::InLayer::sister_hole_chi2,
+          v2p2d.max_hits_per_layer,
+          v2p2d.max_presel_hits,
+          v2p2d.score_outward.hit_bonus,
+          v2p2d.score_outward.overlap_bonus,
+          v2p2d.score_outward.chi2_weight,
+          v2p2d.score_outward.miss_penalty,
+          v2p2d.score_inward.miss_penalty,
 
           b2a(Config::quality_val),
           b2a(Config::dumpForPlots),
@@ -783,6 +929,42 @@ int main(int argc, const char* argv[]) {
       Config::geomPlugin = *i;
     } else if (*i == "--silent") {
       Config::silent = true;
+    } else if (*i == "--v2p2-extra-dq") {
+      next_arg_or_die(mArgs, i);
+      V2p2::set_extra_dq((float) atof(i->c_str()));
+    } else if (*i == "--v2p2-dq-trk") {
+      next_arg_or_die(mArgs, i);
+      V2p2::Window::dq_trk_fac = (float) atof(i->c_str());
+    } else if (*i == "--v2p2-dq-hit") {
+      next_arg_or_die(mArgs, i);
+      V2p2::Window::dq_hit_fac = (float) atof(i->c_str());
+    } else if (*i == "--v2p2-phi-per-hit") {
+      next_arg_or_die(mArgs, i);
+      const float f = (float) atof(i->c_str());
+      V2p2::Window::phi_per_hit = f > 0.0f;
+      if (f > 0.0f)
+        V2p2::Window::dphi_hit_fac = f;
+    } else if (*i == "--v2p2-dphi-trk") {
+      next_arg_or_die(mArgs, i);
+      V2p2::Window::dphi_trk_fac = (float) atof(i->c_str());
+    } else if (*i == "--v2p2-hit-dphi") {
+      next_arg_or_die(mArgs, i);
+      V2p2::Window::dphi_flat_rad = (float) atof(i->c_str());
+    } else if (*i == "--v2p2-precut-q") {
+      next_arg_or_die(mArgs, i);
+      V2p2::PreCut::q = atoi(i->c_str()) != 0;
+    } else if (*i == "--v2p2-precut-phi") {
+      next_arg_or_die(mArgs, i);
+      V2p2::PreCut::phi = atoi(i->c_str()) != 0;
+    } else if (*i == "--v2p2-q-extra-bins") {
+      next_arg_or_die(mArgs, i);
+      V2p2::Window::q_extra_bins = atoi(i->c_str());
+    } else if (*i == "--v2p2-phi-extra-bins") {
+      next_arg_or_die(mArgs, i);
+      V2p2::Window::phi_extra_bins = atoi(i->c_str());
+    } else if (*i == "--max-cands-per-seed") {
+      next_arg_or_die(mArgs, i);
+      g_max_cands_per_seed = atoi(i->c_str());
     } else if (*i == "--best-out-of") {
       next_arg_or_die(mArgs, i);
       Config::finderReportBestOutOfN = atoi(i->c_str());
@@ -799,6 +981,8 @@ int main(int argc, const char* argv[]) {
       Config::readCmsswTracks = true;
     } else if (*i == "--read-simtrack-states") {
       Config::readSimTrackStates = true;
+    } else if (*i == "--read-sim-hit-states") {
+      Config::readSimHitStates = true;
     } else if (*i == "--num-events") {
       next_arg_or_die(mArgs, i);
       Config::nEvents = atoi(i->c_str());
@@ -808,12 +992,15 @@ int main(int argc, const char* argv[]) {
     } else if (*i == "--loop-over-file") {
       Config::loopOverFile = true;
     } else if (*i == "--shell") {
-#ifndef WITH_ROOT
+#ifndef MKFIT_WITH_ROOT
       std::cerr << "--shell option is only supported when compiled with ROOT.\n";
       exit(1);
 #endif
       run_shell = true;
-    } else if (*i == "--num-tracks") {
+    } else if (*i == "--shell-command" || *i == "--shell-cmd") {
+      next_arg_or_die(mArgs, i);
+      shell_commands.push_back(*i);
+    }else if (*i == "--num-tracks") {
       next_arg_or_die(mArgs, i);
       Config::nTracks = atoi(i->c_str());
     } else if (*i == "--num-thr-sim") {
@@ -850,11 +1037,13 @@ int main(int argc, const char* argv[]) {
     } else if (*i == "--build-ce") {
       g_run_build_default = false;
       g_run_build_ce = true;
-    } else if (*i == "--build-mimi") {
+    } else if (*i == "--build-mimi" || *i == "--build-mimi-v2p2") {
       g_run_build_default = false;
       g_run_build_mimi = true;
       if (Config::nItersCMSSW == 0)
         Config::nItersCMSSW = 3;
+      if (*i == "--build-mimi-v2p2")
+        Config::mimiUseV2p2 = true;
     } else if (*i == "--num-iters-cmssw") {
       next_arg_or_die(mArgs, i);
       Config::nItersCMSSW = atoi(i->c_str());
@@ -892,6 +1081,97 @@ int main(int argc, const char* argv[]) {
     } else if (*i == "--use-ptms") {
       next_arg_or_die(mArgs, i);
       Config::usePtMultScat = (bool)atoi(i->c_str());
+    } else if (*i == "--v2p2-wsr") {
+      next_arg_or_die(mArgs, i);
+      V2p2::Policy::use_wsr = (bool)atoi(i->c_str());
+    } else if (*i == "--v2p2-hole-limits") {
+      next_arg_or_die(mArgs, i);
+      V2p2::Policy::use_hole_limits = (bool)atoi(i->c_str());
+    } else if (*i == "--v2p2-stop-cuts") {
+      next_arg_or_die(mArgs, i);
+      V2p2::Policy::use_stop_cuts = (bool)atoi(i->c_str());
+    } else if (*i == "--v2p2-hit-chi2-cut") {
+      next_arg_or_die(mArgs, i);
+      const float v = atof(i->c_str());
+      g_v2p2_setters.push_back([v](V2p2Params &p) { p.hit_chi2_cut = v; });
+    } else if (*i == "--v2p2-chi2-trk-fac") {
+      next_arg_or_die(mArgs, i);
+      const float v = atof(i->c_str());
+      g_v2p2_setters.push_back([v](V2p2Params &p) { p.chi2_trk_fac = v; });
+    } else if (*i == "--v2p2-score-mode") {
+      next_arg_or_die(mArgs, i);
+      V2p2::Score::mode = atoi(i->c_str());
+    } else if (*i == "--v2p2-hit-eff") {
+      next_arg_or_die(mArgs, i);
+      const float v = atof(i->c_str());
+      g_v2p2_setters.push_back([v](V2p2Params &p) {
+        p.score_outward.hit_eff = p.score_inward.hit_eff = v;
+        for (float &e : p.score_outward.hit_eff_grp)
+          e = -1.0f;
+      });
+    } else if (*i == "--v2p2-best-short") {
+      next_arg_or_die(mArgs, i);
+      V2p2::InLayer::best_short = (bool)atoi(i->c_str());
+    } else if (*i == "--v2p2-reserve-hole-slot") {
+      next_arg_or_die(mArgs, i);
+      V2p2::InLayer::reserve_hole_slot = (bool)atoi(i->c_str());
+    } else if (*i == "--v2p2-early-select") {
+      next_arg_or_die(mArgs, i);
+      V2p2::InLayer::early_select = (bool)atoi(i->c_str());
+    } else if (*i == "--v2p2-late-max-cands") {
+      next_arg_or_die(mArgs, i);
+      V2p2::InLayer::late_max_cands = atoi(i->c_str());
+    } else if (*i == "--v2p2-late-max-cands-hits") {
+      next_arg_or_die(mArgs, i);
+      V2p2::InLayer::late_max_cands_hits = atoi(i->c_str());
+    } else if (*i == "--v2p2-late-max-cands-step") {
+      next_arg_or_die(mArgs, i);
+      V2p2::InLayer::late_max_cands_step_cm = atof(i->c_str());
+    } else if (*i == "--v2p2-sister-hole-drop") {
+      next_arg_or_die(mArgs, i);
+      V2p2::InLayer::sister_hole_drop = (bool)atoi(i->c_str());
+    } else if (*i == "--v2p2-sister-hole-chi2") {
+      next_arg_or_die(mArgs, i);
+      V2p2::InLayer::sister_hole_chi2 = atof(i->c_str());
+    } else if (*i == "--v2p2-max-hits-per-layer") {
+      next_arg_or_die(mArgs, i);
+      const int v = atoi(i->c_str());
+      if (v < 1 || v > V2p2Params::max_hits_per_layer_limit) {
+        fprintf(stderr, "--v2p2-max-hits-per-layer must be in [1, %d]\n", V2p2Params::max_hits_per_layer_limit);
+        exit(1);
+      }
+      g_v2p2_setters.push_back([v](V2p2Params &p) { p.max_hits_per_layer = v; });
+    } else if (*i == "--v2p2-max-presel-hits") {
+      next_arg_or_die(mArgs, i);
+      const int v = atoi(i->c_str());
+      if (v < 1 || v > V2p2Params::max_presel_hits_limit) {
+        fprintf(stderr, "--v2p2-max-presel-hits must be in [1, %d]\n", V2p2Params::max_presel_hits_limit);
+        exit(1);
+      }
+      g_v2p2_setters.push_back([v](V2p2Params &p) { p.max_presel_hits = v; });
+    } else if (*i == "--v2p2-hit-bonus") {
+      next_arg_or_die(mArgs, i);
+      const float v = atof(i->c_str());
+      g_v2p2_setters.push_back([v](V2p2Params &p) { p.score_outward.hit_bonus = p.score_inward.hit_bonus = v; });
+    } else if (*i == "--v2p2-overlap-bonus") {
+      next_arg_or_die(mArgs, i);
+      const float v = atof(i->c_str());
+      g_v2p2_setters.push_back([v](V2p2Params &p) { p.score_outward.overlap_bonus = p.score_inward.overlap_bonus = v; });
+    } else if (*i == "--v2p2-chi2-weight") {
+      next_arg_or_die(mArgs, i);
+      const float v = atof(i->c_str());
+      g_v2p2_setters.push_back([v](V2p2Params &p) { p.score_outward.chi2_weight = p.score_inward.chi2_weight = v; });
+    } else if (*i == "--v2p2-miss-penalty") {
+      next_arg_or_die(mArgs, i);
+      const float v = atof(i->c_str());
+      g_v2p2_setters.push_back([v](V2p2Params &p) { p.score_outward.miss_penalty = p.score_inward.miss_penalty = v; });
+    } else if (*i == "--v2p2-miss-penalty-bkw") {
+      // The head/body asymmetry on its own: outward, a trailing hole is at large
+      // radius and cheap; inward, it is at small radius and is the most
+      // expensive hole there is.
+      next_arg_or_die(mArgs, i);
+      const float v = atof(i->c_str());
+      g_v2p2_setters.push_back([v](V2p2Params &p) { p.score_inward.miss_penalty = v; });
     } else if (*i == "--quality-val") {
       Config::quality_val = true;
     } else if (*i == "--dump-for-plots") {
@@ -1017,16 +1297,21 @@ int main(int argc, const char* argv[]) {
          MPT_SIZE, Config::numThreadsEvents, Config::numThreadsFinder,
          sizeof(Track), sizeof(Hit), sizeof(SVector3), sizeof(SMatrixSym33), sizeof(MCHitInfo));
 
-#ifdef WITH_ROOT
+#ifdef MKFIT_WITH_ROOT
   Shell *shell = nullptr;
 #endif
   if (run_shell) {
-#ifdef WITH_ROOT
+#ifdef MKFIT_WITH_ROOT
+    // Might (tbb + RDF) or might not be (RDF only) needed
+    // ROOT::EnableThreadSafety();
+    // Does not seem to work -- is it tbb?
+    // ROOT::EnableImplicitMT(2);
+    // Why exactly is this here?
     tbb::global_control global_limit(tbb::global_control::max_allowed_parallelism, Config::numThreadsFinder);
 
     initGeom();
     shell = new Shell(mkfit::internal::deadvectors, g_input_file, g_start_event);
-    shell->Run();
+    shell->RunShell(shell_commands);
 #else
     std::cerr << "shell selected on a non-ROOT build.\n";
 #endif
@@ -1034,7 +1319,7 @@ int main(int argc, const char* argv[]) {
     test_standard();
   }
 
-#ifdef WITH_ROOT
+#ifdef MKFIT_WITH_ROOT
   RntDumper::FinalizeAll();
   if (run_shell) {
     delete shell;

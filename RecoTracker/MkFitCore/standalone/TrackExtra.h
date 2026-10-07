@@ -9,6 +9,9 @@
 #include <unordered_set>
 
 namespace mkfit {
+
+  typedef std::map<int, std::vector<int> > HitLayerMap;
+
   //==============================================================================
   // ReducedTrack
   //==============================================================================

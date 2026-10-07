@@ -1,6 +1,8 @@
 #ifndef RecoTracker_MkFitCore_standalone_RntDumper_RntDumper_h
 #define RecoTracker_MkFitCore_standalone_RntDumper_RntDumper_h
 
+#include <ROOT/RVersion.hxx>
+
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -9,14 +11,24 @@
 class TFile;
 class TTree;
 
+#if ROOT_VERSION_CODE >= ROOT_VERSION(6, 36, 0)
+namespace ROOT {
+  class RNTupleModel;
+  class RNTupleWriter;
+}
+namespace REX = ROOT;
+#else
 namespace ROOT::Experimental {
   class RNTupleModel;
   class RNTupleWriter;
-}  // namespace ROOT::Experimental
+}
+namespace REX = ROOT::Experimental;
+#endif
+
 
 class RntDumper {
-  using RNTupleModel = ROOT::Experimental::RNTupleModel;
-  using RNTupleWriter = ROOT::Experimental::RNTupleWriter;
+  using RNTupleModel = REX::RNTupleModel;
+  using RNTupleWriter = REX::RNTupleWriter;
 
 public:
   std::unique_ptr<RNTupleModel> CreateModel();

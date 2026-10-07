@@ -19,13 +19,13 @@ namespace {
       f = -999.0f;
     return is_bad;
   }
-  bool ngr(RVec &v) {
+  bool ngr(EVec3 &v) {
     bool is_bad = ngr(v.fX);
     is_bad |= ngr(v.fY);
     is_bad |= ngr(v.fZ);
     return is_bad;
   }
-  bool ngr(State &s) {
+  bool ngr(EBiVec3 &s) {
     bool is_bad = ngr(s.pos);
     is_bad |= ngr(s.mom);
     return is_bad;

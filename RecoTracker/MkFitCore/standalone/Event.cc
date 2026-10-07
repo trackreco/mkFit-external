@@ -5,8 +5,11 @@
 //#define DEBUG
 #include "RecoTracker/MkFitCore/src/Debug.h"
 
-#include <memory>
 #include <cstring>
+#include <memory>
+#include <set>
+
+#include <format>
 
 namespace {
   std::unique_ptr<mkfit::Validation> dummyValidation(mkfit::Validation::make_validation("dummy", nullptr));
@@ -39,6 +42,7 @@ namespace mkfit {
 
     simHitsInfo_.clear();
     simTrackStates_.clear();
+    simHitStates_.clear();
     simTracks_.clear();
     simTracksExtra_.clear();
     seedTracks_.clear();
@@ -52,6 +56,17 @@ namespace mkfit {
     beamSpot_ = {};
 
     validation_.resetValidationMaps();  // need to reset maps for every event.
+
+  #ifdef MKFIT_TRACE
+    trCandMetas_.clear();
+    trCandStages_.clear();
+    trCandStates_.clear();
+    trLayerSearches_.clear();
+    trHitMatches_.clear();
+    trKalmanUpdates_.clear();
+    trBkFitUpdates_.clear();
+    trSeeds_.clear();
+  #endif
   }
 
   void Event::validate() {
@@ -129,6 +144,14 @@ namespace mkfit {
       fwrite(&nts, sizeof(int), 1, fp);
       fwrite(&simTrackStates_[0], sizeof(TrackState), nts, fp);
       evsize += sizeof(int) + nts * sizeof(TrackState);
+    }
+
+    if (data_file.hasSimHitStates()) {
+      int nhs = simHitStates_.size();
+      fwrite(&nhs, sizeof(int), 1, fp);
+      if (nhs > 0)
+        fwrite(&simHitStates_[0], sizeof(SimHitState), nhs, fp);
+      evsize += sizeof(int) + nhs * sizeof(SimHitState);
     }
 
     int nl = layerHits_.size();
@@ -214,6 +237,22 @@ namespace mkfit {
       fread(&nts, sizeof(int), 1, fp);
       simTrackStates_.resize(nts);
       fread(&simTrackStates_[0], sizeof(TrackState), nts, fp);
+    }
+
+    // Genuinely optional on the read side, unlike simTrackStates_ above: without
+    // --read-sim-hit-states the section is seeked past, so a file carrying it
+    // costs disk and nothing else.
+    if (data_file.hasSimHitStates()) {
+      int nhs;
+      fread(&nhs, sizeof(int), 1, fp);
+      if (Config::readSimHitStates) {
+        simHitStates_.resize(nhs);
+        if (nhs > 0)
+          fread(&simHitStates_[0], sizeof(SimHitState), nhs, fp);
+      } else {
+        simHitStates_.clear();
+        std::fseek(fp, (long) nhs * sizeof(SimHitState), SEEK_CUR);
+      }
     }
 
     int nl;
@@ -489,7 +528,7 @@ namespace mkfit {
     dprintf("Event::clean_cms_simtracks processing %lu simtracks.\n", simTracks_.size());
 
     int n_acc = 0;
-    int i = -1;  //wrap in ifdef DEBUG?
+    [[maybe_unused]] int i = -1;
     for (Track &t : simTracks_) {
       i++;
 
@@ -511,45 +550,6 @@ namespace mkfit {
     }
 
     return n_acc;
-  }
-
-  void Event::print_tracks(const TrackVec &tracks, bool print_hits) const {
-    const int nt = tracks.size();
-    auto score_func = IterationConfig::get_track_scorer("default");
-    //WARNING: Printouts for hits will not make any sense if mkFit is not run with a validation flag such as --quality-val
-    printf("Event::print_tracks printing %d tracks %s hits:\n", nt, (print_hits ? "with" : "without"));
-    for (int it = 0; it < nt; it++) {
-      const Track &t = tracks[it];
-      printf("  %i with q=%+i pT=%7.3f eta=% 7.3f nHits=%2d  label=%4d findable=%d score=%7.3f chi2=%7.3f\n",
-             it,
-             t.charge(),
-             t.pT(),
-             t.momEta(),
-             t.nFoundHits(),
-             t.label(),
-             t.isFindable(),
-             getScoreCand(score_func, t),
-             t.chi2());
-
-      if (print_hits) {
-        for (int ih = 0; ih < t.nTotalHits(); ++ih) {
-          int lyr = t.getHitLyr(ih);
-          int idx = t.getHitIdx(ih);
-          if (idx >= 0) {
-            const Hit &hit = layerHits_[lyr][idx];
-            printf("    hit %2d lyr=%2d idx=%3d pos r=%7.3f z=% 8.3f   mc_hit=%3d mc_trk=%3d\n",
-                   ih,
-                   lyr,
-                   idx,
-                   layerHits_[lyr][idx].r(),
-                   layerHits_[lyr][idx].z(),
-                   hit.mcHitID(),
-                   hit.mcTrackID(simHitsInfo_));
-          } else
-            printf("    hit %2d lyr=%2d idx=%3d\n", ih, t.getHitLyr(ih), t.getHitIdx(ih));
-        }
-      }
-    }
   }
 
   int Event::clean_cms_seedtracks(TrackVec *seed_ptr) {
@@ -783,7 +783,7 @@ namespace mkfit {
     // Convert from per-hit uint64_t to per layer bool-vectors for given
     // iteration.
 
-    uint64_t iter_mask = 1 << track_algo;
+    uint64_t iter_mask = uint64_t(1) << track_algo;
 
     const int n_lay = (int)layerHits_.size();
     layer_masks.resize(n_lay);
@@ -805,7 +805,7 @@ namespace mkfit {
 
     uint64_t iter_mask = 0;
     for (auto ta : track_algo_vec)
-      iter_mask |= 1 << ta;
+      iter_mask |= uint64_t(1) << ta;
 
     const int n_lay = (int)layerHits_.size();
     layer_masks.resize(n_lay);
@@ -822,56 +822,210 @@ namespace mkfit {
   }
 
   //==============================================================================
+  // Helpers for extracting information about tracks
+  //==============================================================================
+
+  Event::SimInfoFromHits Event::simInfoForTrack(const Track &s) const {
+    int n_total = s.nTotalHits();
+    int n_valid = 0;
+    int n_pix_total = 0, n_strip_total = 0;
+
+    struct LabelCount {
+      int n_match = 0, n_pix_match = 0, n_strip_match = 0;
+    };
+    std::map<int, LabelCount> lab_cnt;
+
+    // Loop over hits on track and count matches to MC truth.
+    for (int hi = 0; hi < n_total; ++hi) {
+      auto hot = s.getHitOnTrack(hi);
+      // printf(" %d", hot.index);
+
+      // Ignore invalid hits
+      if (hot.index < 0)
+        continue;
+
+      ++n_valid;
+
+      bool is_pixel = Config::TrkInfo[hot.layer].is_pixel();
+      if (is_pixel)
+        ++n_pix_total;
+      else
+        ++n_strip_total;
+
+      const Hit &h = layerHits_[hot.layer][hot.index];
+      int hl = simHitsInfo_[h.mcHitID()].mcTrackID_;
+      // printf(" (%d)", hl);
+      if (hl >= 0) {
+        LabelCount &lc = lab_cnt[hl];
+        ++lc.n_match;
+        if (is_pixel)
+          ++lc.n_pix_match;
+        else
+          ++lc.n_strip_match;
+      }
+    }
+
+    // Find the label and hit-counts with maximum number of matches.
+    int max_c = -1, max_c_pix = -1, max_c_strip = -1, max_l = -1;
+    for (auto &x : lab_cnt) {
+      if (x.second.n_match > max_c) {
+        max_l = x.first;
+        max_c = x.second.n_match;
+        max_c_pix = x.second.n_pix_match;
+        max_c_strip = x.second.n_strip_match;
+      } else if (x.second.n_match == max_c) {
+        max_l = -1;
+      }
+    }
+    if (max_c < 0) {
+      max_c = max_c_pix = max_c_strip = 0;
+      max_l = -1;
+    }
+    // printf(" ] -> %d %d => %d\n", s.nTotalHits(), max_c, max_l);
+    return { max_l, n_total, n_valid, max_c, n_pix_total, max_c_pix, n_strip_total, max_c_strip };
+  }
+
+  Event::SimInfoFromHits Event::simInfoForTrack(Track &s, bool relabel) {
+    auto sifh = simInfoForTrack(s);
+    if (relabel) {
+      s.setLabel(sifh.label);
+    }
+    return sifh;
+  }
+
+  //==============================================================================
+
+  int Event::countSimHitsInLayer(int label, int layer) const {
+    if (label < 0 || label >= (int) simTracks_.size())
+      return -1;
+    const Track &s = simTracks_[label];
+    int count = 0;
+    for (int hi = 0; hi < s.nTotalHits(); ++hi) {
+      HitOnTrack hot = s.getHitOnTrack(hi);
+      if (hot.layer == layer && hot.index >= 0)
+        ++count;
+    }
+    return count;
+  }
+
+  int Event::countPixelHits(const Track &track, bool inner_only) const{
+    int npix = 0;
+    for (int i = 0; i < track.nTotalHits(); ++i) {
+      int lay = track.getHitLyr(i);
+      if (lay >= 0) {
+        if (Config::TrkInfo[lay].is_pixel())
+          ++npix;
+        else if (inner_only)
+          break;
+      }
+    }
+    return npix;
+  }
+
+  int Event::countPixelLayers(const Track &track, bool inner_only) const {
+    std::set<int> layers;
+    for (int i = 0; i < track.nTotalHits(); ++i) {
+      int lay = track.getHitLyr(i);
+      if (lay >= 0) {
+        if (Config::TrkInfo[lay].is_pixel())
+          layers.insert(lay);
+        else if (inner_only)
+          break;
+      }
+    }
+    return layers.size();
+  }
+
+  int Event::firstInnerPixelLayer(const Track &track, int offset) const {
+    if (offset < 0) throw std::runtime_error("Invalid offset in Event::firstInnerPixelLayer");
+
+    std::vector<int> pix_layers = getInnerPixelLayers(track);
+    int n_pix = pix_layers.size();
+    return (offset >= n_pix) ? -1 : pix_layers[offset];
+  }
+
+  int Event::lastInnerPixelLayer(const Track &track, int offset) const {
+    if (offset < 0) throw std::runtime_error("Invalid offset in Event::lastInnerPixelLayer");
+
+    std::vector<int> pix_layers = getInnerPixelLayers(track);
+    int n_pix = pix_layers.size();
+    return (offset >= n_pix) ? -1 : pix_layers[n_pix - offset - 1];
+  }
+
+  std::vector<int> Event::getInnerPixelLayers(const Track &track) const {
+    std::vector<int> pix_layers;
+    pix_layers.reserve(6);
+    int last_pix = -1;
+    for (int i = 0; i < track.nTotalHits(); ++i) {
+      int lay = track.getHitLyr(i);
+      if (lay >= 0) {
+        if (Config::TrkInfo[lay].is_pixel() ) {
+          if (lay != last_pix)
+            pix_layers.push_back(lay);
+          last_pix = lay;
+        } else {
+          break;
+        }
+      }
+    }
+    return pix_layers;
+  }
+
+  int Event::countStripHits(const Track &track, bool outer_only) const {
+    int nhit = 0;
+    for (int i = track.nTotalHits() - 1; i >= 0 ; --i) {
+      int lay = track.getHitLyr(i);
+      if (lay >= 0) {
+        if (Config::TrkInfo[lay].is_strip())
+          ++nhit;
+        else if (outer_only)
+          break;
+      }
+    }
+    return nhit;
+  }
+
+  int Event::countStripLayers(const Track &track, bool outer_only) const {
+    std::set<int> layers;
+    for (int i = track.nTotalHits() - 1; i >= 0 ; --i) {
+      int lay = track.getHitLyr(i);
+      if (lay >= 0) {
+        if (Config::TrkInfo[lay].is_strip())
+          layers.insert(lay);
+        else if (outer_only)
+          break;
+      }
+    }
+    return layers.size();
+  }
+
+  int Event::firstInnerStripLayer(const Track &track) const {
+    int first_layer = -1;
+    for (int i = 0; i < track.nTotalHits(); ++i) {
+      int lay = track.getHitLyr(i);
+      if (lay >= 0) {
+        if (Config::TrkInfo[lay].is_strip()) {
+          first_layer = lay;
+          break;
+        }
+      }
+    }
+    return first_layer;
+  }
+
+  //==============================================================================
   // Handling of current seed vectors and MC label reconstruction from hit data
   //==============================================================================
 
   void Event::setCurrentSeedTracks(const TrackVec &seeds) {
     currentSeedTracks_ = &seeds;
-    currentSeedSimFromHits_.clear();
-  }
 
-  const Track &Event::currentSeed(int i) const { return (*currentSeedTracks_)[i]; }
-
-  Event::SimLabelFromHits Event::simLabelForCurrentSeed(int i) const {
-    assert(currentSeedTracks_ != nullptr);
-
-    if (currentSeedSimFromHits_.empty()) {
-      currentSeedSimFromHits_.resize(currentSeedTracks_->size());
-
-      for (int si = 0; si < (int)currentSeedTracks_->size(); ++si) {
-        const Track &s = currentSeed(si);
-        // printf("%3d (%d): [", si, s.label());
-        std::map<int, int> lab_cnt;
-        for (int hi = 0; hi < s.nTotalHits(); ++hi) {
-          auto hot = s.getHitOnTrack(hi);
-          // printf(" %d", hot.index);
-          if (hot.index < 0)
-            continue;
-          const Hit &h = layerHits_[hot.layer][hot.index];
-          int hl = simHitsInfo_[h.mcHitID()].mcTrackID_;
-          // printf(" (%d)", hl);
-          if (hl >= 0)
-            ++lab_cnt[hl];
-        }
-        int max_c = -1, max_l = -1;
-        for (auto &x : lab_cnt) {
-          if (x.second > max_c) {
-            max_l = x.first;
-            max_c = x.second;
-          } else if (x.second == max_c) {
-            max_l = -1;
-          }
-        }
-        if (max_c < 0) {
-          max_c = 0;
-          max_l = -1;
-        }
-        // printf(" ] -> %d %d => %d\n", s.nTotalHits(), max_c, max_l);
-        currentSeedSimFromHits_[si] = {s.nTotalHits(), max_c, max_l};
-      }
+    currentSeedSimFromHits_.resize(currentSeedTracks_->size());
+    for (int si = 0; si < (int)currentSeedTracks_->size(); ++si) {
+      const Track &s = currentSeed(si);
+      // printf("%3d (%d): [", si, s.label());
+      currentSeedSimFromHits_[si] = simInfoForTrack(s);
     }
-
-    return currentSeedSimFromHits_[i];
   }
 
   void Event::resetCurrentSeedTracks() {
@@ -879,31 +1033,219 @@ namespace mkfit {
     currentSeedSimFromHits_.clear();
   }
 
+  // The following functions are needed for mkFit@HLT phase2 (and maybe beyond)
+
+  void Event::relabelSeedTracksSequentially() {
+    const int ns = seedTracks_.size();
+    for (int i = 0; i < ns; ++i)
+      seedTracks_[i].setLabel(i);
+  }
+
+  void Event::filterOutMislabeledHitsInSimTracks() {
+    for (Track &track : simTracks_) {
+      const int label = track.label();
+
+      track.filterHits([this, label](const HitOnTrack& hot) {
+        if (hot.index < 0) return false;  // Keep invalid hits
+
+        const Hit& hit = layerHits_[hot.layer][hot.index];
+        const int hit_label = simHitsInfo_[hit.mcHitID()].mcTrackID();
+
+        return hit_label != label;  // Remove mismatched, typically hit_label == -1
+      });
+    }
+  }
+
+  //==============================================================================
+  // Print / memUsage
+  //==============================================================================
+
+  void Event::print_tracks(const TrackVec &tracks, bool print_hits) const {
+    const int nt = tracks.size();
+    auto score_func = IterationConfig::get_track_scorer("default");
+    //WARNING: Printouts for hits will not make any sense if mkFit is not run with a validation flag such as --quality-val
+    printf("Event::print_tracks printing %d tracks %s hits:\n", nt, (print_hits ? "with" : "without"));
+    for (int it = 0; it < nt; it++) {
+      const Track &t = tracks[it];
+      printf("  %i with q=%+i pT=%7.3f eta=% 7.3f nHits=%2d  label=%4d findable=%d score=%7.3f chi2=%7.3f\n",
+             it,
+             t.charge(),
+             t.pT(),
+             t.momEta(),
+             t.nFoundHits(),
+             t.label(),
+             t.isFindable(),
+             getScoreCand(score_func, t),
+             t.chi2());
+
+      if (print_hits) {
+        for (int ih = 0; ih < t.nTotalHits(); ++ih) {
+          int lyr = t.getHitLyr(ih);
+          int idx = t.getHitIdx(ih);
+          if (idx >= 0) {
+            const Hit &hit = layerHits_[lyr][idx];
+            printf("    hit %2d lyr=%2d idx=%3d pos r=%7.3f z=% 8.3f   mc_hit=%3d mc_trk=%3d\n",
+                   ih,
+                   lyr,
+                   idx,
+                   layerHits_[lyr][idx].r(),
+                   layerHits_[lyr][idx].z(),
+                   hit.mcHitID(),
+                   hit.mcTrackID(simHitsInfo_));
+          } else
+            printf("    hit %2d lyr=%2d idx=%3d\n", ih, t.getHitLyr(ih), t.getHitIdx(ih));
+        }
+      }
+    }
+  }
+
+  size_t Event::memUsage() const {
+    size_t total = 0;
+
+    // Layer hits: Iterate over layers to count hits in each buffer
+    for (const auto& hv : layerHits_) {
+      total += hv.capacity() * sizeof(Hit); // Sum capacity of hits across all layers
+    }
+
+    // Track vectors
+    total += simTracks_.size() * sizeof(Track);
+    total += seedTracks_.size() * sizeof(Track);
+    total += candidateTracks_.size() * sizeof(Track);
+    total += fitTracks_.size() * sizeof(Track);
+
+    // Trace data (if MKFIT_TRACE is defined)
+    #ifdef MKFIT_TRACE
+      total += trCandMetas_.size() * sizeof(TrCandMeta);
+      total += trCandStates_.size() * sizeof(TrCandState);
+      total += trHitMatches_.size() * sizeof(TrHitMatch);
+      total += trKalmanUpdates_.size() * sizeof(TrKalmanUpdate);
+      total += trBkFitUpdates_.size() * sizeof(TrBkFitUpdate);
+    #endif
+
+    return total;
+  }
+
+  void Event::printMemUsage() const {
+    printf("Event Memory Breakdown:\n");
+    printf("========================\n");
+
+    // Calculate hits size dynamically
+    size_t totalHits = 0;
+    for (const auto& hv : layerHits_)
+      totalHits += hv.size();
+    printf("Layer Hits:  %5zu * %3zu = %zu bytes\n", totalHits, sizeof(Hit), totalHits * sizeof(Hit));
+
+    printf("Sim tracks:  %5zu * %3zu = %zu bytes\n", simTracks_.size(), sizeof(Track), simTracks_.size() * sizeof(Track));
+    printf("Seed tracks: %5zu * %3zu = %zu bytes\n", seedTracks_.size(), sizeof(Track), seedTracks_.size() * sizeof(Track));
+    printf("Cand tracks: %5zu * %3zu = %zu bytes\n", candidateTracks_.size(), sizeof(Track), candidateTracks_.size() * sizeof(Track));
+    printf("Fit tracks:  %5zu * %3zu = %zu bytes\n", fitTracks_.size(), sizeof(Track), fitTracks_.size() * sizeof(Track));
+
+    #ifdef MKFIT_TRACE
+      printf("Trace cand metas:     %6zu * %3zu = %zu bytes\n", trCandMetas_.size(), sizeof(TrCandMeta), trCandMetas_.size() * sizeof(TrCandMeta));
+      printf("Trace cand states:    %6zu * %3zu = %zu bytes\n", trCandStates_.size(), sizeof(TrCandState), trCandStates_.size() * sizeof(TrCandState));
+      printf("Trace hit matches:    %6zu * %3zu = %zu bytes\n", trHitMatches_.size(), sizeof(TrHitMatch), trHitMatches_.size() * sizeof(TrHitMatch));
+      printf("Trace kalman updates: %6zu * %3zu = %zu bytes\n", trKalmanUpdates_.size(), sizeof(TrKalmanUpdate), trKalmanUpdates_.size() * sizeof(TrKalmanUpdate));
+      printf("Trace bkfit updates: %6zu * %3zu = %zu bytes\n", trBkFitUpdates_.size(), sizeof(TrBkFitUpdate), trBkFitUpdates_.size() * sizeof(TrBkFitUpdate));
+    #endif
+
+    printf("========================\n");
+    printf("Total estimated size (without vector overhead): %zu bytes\n", memUsage());
+  }
+
+  //==============================================================================
+  // Trace and RDF stuff
+  //==============================================================================
+
+#ifdef MKFIT_TRACE
+
+  void Event::build_trace_maps_etc() {
+    trChildrenByState_.clear();
+    trRootCands_.clear();
+    for (auto& c : trCandStates_) {
+        if (c.parent_id >= 0)
+          trChildrenByState_[c.parent_id].push_back(c.id);
+        else
+          trRootCands_.push_back(c.id);
+    }
+    for (auto &s : trLayerSearches_) {
+      trCandStates_[s.state_id].search_id = s.id;
+    }
+    trHitMatchesByState_.clear();
+    for (auto& h : trHitMatches_) {
+      trHitMatchesByState_[h.state_id].push_back(h.id);
+    }
+    trKalmanUpdatesByState_.clear();
+    for (auto& k : trKalmanUpdates_) {
+      trKalmanUpdatesByState_[k.state_id_in].push_back(k.id);
+    }
+    trBkFitUpdatesByState_.clear();
+    for (auto& b : trBkFitUpdates_) {
+      trBkFitUpdatesByState_[b.state_id_in].push_back(b.id);
+    }
+
+    int msize = trCandMetas_.size();
+    trSIFHforSeedByMeta_.clear();
+    trSIFHforSeedByMeta_.resize(msize);
+    trSIFHforCandByMeta_.clear();
+    trSIFHforCandByMeta_.resize(msize);
+
+    for (int i = 0; i < (int)trCandMetas_.size(); ++i) {
+      auto& c = trCandMetas_[i];
+      trSIFHforSeedByMeta_[i] = simInfoForCurrentSeed(c.seed);
+      // c.cand stays -1 for a meta whose candidate never got exported -- it was
+      // filtered out, or the driver did not publish its tracks into
+      // candidateTracks_ at all. candidateTracks_[] is unchecked, so guard it.
+      if (c.cand >= 0 && c.cand < (int)candidateTracks_.size())
+        trSIFHforCandByMeta_[i] = simInfoForTrack(candidateTracks_[c.cand]);
+      c.sim = trSIFHforSeedByMeta_[i].label;
+    }
+
+    // copy currentSeeds out, they might be temporary or modified
+    trSeeds_ = *currentSeedTracks_;
+  }
+
+#endif
+
   //==============================================================================
   // DataFile
   //==============================================================================
 
-  int DataFile::openRead(const std::string &fname, int expected_n_layers) {
-    constexpr int min_ver = 7;
-    constexpr int max_ver = 7;
+  int DataFile::openRead(const std::string &fname, int expected_n_layers,
+                         const std::string &expected_geom_version) {
+    constexpr int min_ver = 7;  // v7/v8 files stay readable; they simply carry
+    constexpr int max_ver = 9;  // no geometry stamp, so none is compared.
 
     f_fp = fopen(fname.c_str(), "r");
     assert(f_fp != 0 && "Opening of input file failed.");
 
-    fread(&f_header, sizeof(DataFileHeader), 1, f_fp);
+    // Magic and version are the first two ints of the file so that the rest can
+    // be read knowing what it is. Read those two alone, decide, then read the
+    // header for THAT version.
+    int magic = 0, version = 0;
+    fread(&magic, sizeof(int), 1, f_fp);
+    fread(&version, sizeof(int), 1, f_fp);
 
-    if (f_header.f_magic != 0xBEEF) {
+    if (magic != 0xBEEF) {
       fprintf(stderr, "Incompatible input file (wrong magick).\n");
       exit(1);
     }
-    if (f_header.f_format_version < min_ver || f_header.f_format_version > max_ver) {
+    if (version < min_ver || version > max_ver) {
       fprintf(stderr,
               "Unsupported file version %d. Supported versions are from %d to %d.\n",
-              f_header.f_format_version,
+              version,
               min_ver,
               max_ver);
       exit(1);
     }
+
+    const size_t hdr_size = DataFileHeader::size_of_version(version);
+    f_header = DataFileHeader();  // f_geom_version stays empty unless the file has one
+    fseek(f_fp, 0, SEEK_SET);
+    fread(&f_header, hdr_size, 1, f_fp);
+
+    f_data_start = hdr_size;
+    f_pos = f_data_start;
+
     if (f_header.f_sizeof_track != sizeof(Track)) {
       fprintf(stderr,
               "sizeof(Track) on file (%d) different from current value (%d).\n",
@@ -933,12 +1275,28 @@ namespace mkfit {
       exit(1);
     }
 
+    // The check the SAMPLE PROVENANCE disaster needed and did not have: a stale
+    // sample and the current geometry agree on n_layers (both phase-2 geometries
+    // have 60), so nothing caught it. The names differ, and that is cheap.
+    if (!expected_geom_version.empty() && f_header.f_geom_version[0] != '\0' &&
+        expected_geom_version != f_header.f_geom_version) {
+      fprintf(stderr,
+              "GEOMETRY MISMATCH: sample '%s' was written against geometry '%s', "
+              "but the loaded geometry is '%s'.\n"
+              "Module short-ids are assigned per geometry, so every module-frame "
+              "quantity from this pairing would be meaningless.\n",
+              fname.c_str(), f_header.f_geom_version, expected_geom_version.c_str());
+      exit(1);
+    }
+
     printf("Opened file '%s', format version %d, n_layers %d, n_events %d\n",
            fname.c_str(),
            f_header.f_format_version,
            f_header.f_n_layers,
            f_header.f_n_events);
     if (f_header.f_extra_sections) {
+      if (f_header.f_geom_version[0] != '\0')
+        printf("  Geometry: %s\n", f_header.f_geom_version);
       printf("  Extra sections:");
       if (f_header.f_extra_sections & ES_SimTrackStates)
         printf(" SimTrackStates");
@@ -946,6 +1304,12 @@ namespace mkfit {
         printf(" Seeds");
       if (f_header.f_extra_sections & ES_CmsswTracks)
         printf(" CmsswTracks");
+      if (f_header.f_extra_sections & ES_HitIterMasks)
+        printf(" HitIterMasks");
+      if (f_header.f_extra_sections & ES_BeamSpot)
+        printf(" BeamSpot");
+      if (f_header.f_extra_sections & ES_SimHitStates)
+        printf(" SimHitStates%s", Config::readSimHitStates ? "" : "(skipped)");
       printf("\n");
     }
 
@@ -962,18 +1326,26 @@ namespace mkfit {
     return f_header.f_n_events;
   }
 
-  void DataFile::openWrite(const std::string &fname, int n_layers, int n_ev, int extra_sections) {
+  void DataFile::openWrite(const std::string &fname, int n_layers, int n_ev, int extra_sections,
+                           const std::string &geom_version) {
     f_fp = fopen(fname.c_str(), "w");
     f_header.f_n_layers = n_layers;
     f_header.f_n_events = n_ev;
     f_header.f_extra_sections = extra_sections;
 
+    if (!geom_version.empty()) {
+      std::strncpy(f_header.f_geom_version, geom_version.c_str(), sizeof(f_header.f_geom_version) - 1);
+      f_header.f_geom_version[sizeof(f_header.f_geom_version) - 1] = '\0';
+    }
     fwrite(&f_header, sizeof(DataFileHeader), 1, f_fp);
+
+    f_data_start = ftell(f_fp);
+    f_pos = f_data_start;
   }
 
   void DataFile::rewind() {
     std::lock_guard<std::mutex> readlock(f_next_ev_mutex);
-    f_pos = sizeof(DataFileHeader);
+    f_pos = f_data_start;
     fseek(f_fp, f_pos, SEEK_SET);
   }
 
@@ -987,7 +1359,7 @@ namespace mkfit {
     if (Config::loopOverFile) {
       // File ended, rewind back to beginning
       if (feof(fp) != 0) {
-        f_pos = sizeof(DataFileHeader);
+        f_pos = f_data_start;
         fseek(fp, f_pos, SEEK_SET);
         fread(&evsize, sizeof(int), 1, fp);
       }
@@ -1028,11 +1400,11 @@ namespace mkfit {
   //==============================================================================
   // Misc debug / printout
   //==============================================================================
+  // clang-format off
 
   void print(std::string pfx, int itrack, const Track &trk, const Event &ev) {
-    std::cout << std::endl
-              << pfx << ": " << itrack << " hits: " << trk.nFoundHits() << " label: " << trk.label()
-              << " State:" << std::endl;
+    std::cout << pfx << ": " << itrack << " hits: " << trk.nFoundHits() << " label: " << trk.label()
+              << " algo: " << trk.algoint() << "\n";
     print(trk.state());
 
     for (int i = 0; i < trk.nTotalHits(); ++i) {
@@ -1041,11 +1413,146 @@ namespace mkfit {
       if (hot.index >= 0) {
         auto &h = ev.layerHits_[hot.layer][hot.index];
         int hl = ev.simHitsInfo_[h.mcHitID()].mcTrackID_;
-        printf("  %4d  %8.3f %8.3f %8.3f  r=%.3f\n", hl, h.x(), h.y(), h.z(), h.r());
+        printf("  %4d  x=%8.3f y=%8.3f z=%8.3f r=%8.3f | e_z=%8.3g e_r=%8.3g | pix=%d str=%d brl=%d\n",
+                hl, h.x(), h.y(), h.z(), h.r(),
+                std::sqrt(h.ezz()),
+                std::sqrt(getRadErr2(h.x(), h.y(), h.exx(), h.eyy(), h.exy())),
+                Config::TrkInfo[hot.layer].is_pixel(),
+                Config::TrkInfo[hot.layer].is_stereo(),
+                Config::TrkInfo[hot.layer].is_barrel()
+                );
       } else {
         printf("\n");
       }
     }
   }
+
+  void print(std::string pfx, int itrack, const Track &trk, int hit_begin, int hit_end, const Event &ev) {
+    std::cout << pfx << ": " << itrack << " hits: " << trk.nFoundHits() << " label: " << trk.label()
+              << " algo: " << trk.algoint() << "\n";
+    print(trk.state());
+
+    for (int i = hit_begin; i < hit_end; ++i) {
+      auto hot = trk.getHitOnTrack(i);
+      printf("  %2d: lyr %2d idx %5d", i, hot.layer, hot.index);
+      if (hot.index >= 0) {
+        auto &h = ev.layerHits_[hot.layer][hot.index];
+        int hl = ev.simHitsInfo_[h.mcHitID()].mcTrackID_;
+        printf("  %4d  x=%8.3f y=%8.3f z=%8.3f r=%8.3f | e_z=%8.3g e_r=%8.3g | pix=%d str=%d brl=%d\n",
+                hl, h.x(), h.y(), h.z(), h.r(),
+                std::sqrt(h.ezz()),
+                std::sqrt(getRadErr2(h.x(), h.y(), h.exx(), h.eyy(), h.exy())),
+                Config::TrkInfo[hot.layer].is_pixel(),
+                Config::TrkInfo[hot.layer].is_stereo(),
+                Config::TrkInfo[hot.layer].is_barrel()
+                );
+      } else {
+        printf("\n");
+      }
+    }
+  }
+
+  void print(std::string pfx, const TrackVec &tvec, const Event &ev) {
+    int nt = tvec.size();
+    for (int i = 0; i < nt; ++i) {
+      print(pfx, i, tvec[i], ev);
+    }
+  }
+
+  void print(std::string pfx, const Event::SimInfoFromHits &si) {
+    printf("%s: label=%5d n_valid=%2d n_match=%2d n_invalid=%2d good_frac()=%.4f n_pix=%2d n_pix_match=%2d n_strip=%2d n_strip_match=%2d\n",
+           pfx.c_str(), si.label, si.n_valid, si.n_match, si.n_invalid(), si.good_frac(),
+           si.n_pix, si.n_pix_match, si.n_strip, si.n_strip_match);
+  }
+
+#ifdef MKFIT_TRACE
+
+  std::string format(const ::EVec3 &v, int width, int prec, char feg) {
+    if (feg == 'f')
+      return std::format("({0: {3}.{4}f}, {1: {3}.{4}f}, {2: {3}.{4}f}; {5: {3}.{4}f})", v.fX, v.fY, v.fZ, width, prec, v.R());
+    else if(feg == 'e')
+      return std::format("({0: {3}.{4}e}, {1: {3}.{4}e}, {2: {3}.{4}e}; {5: {3}.{4}e})", v.fX, v.fY, v.fZ, width, prec, v.R());
+    else if(feg == 'g')
+      return std::format("({0: {3}.{4}g}, {1: {3}.{4}g}, {2: {3}.{4}g}; {5: {3}.{4}g})", v.fX, v.fY, v.fZ, width, prec, v.R());
+    else
+      return std::format("({0: {3}.{4}}, {1: {3}.{4}}, {2: {3}.{4}}; {5: {3}.{4}})", v.fX, v.fY, v.fZ, width, prec, v.R());
+  }
+
+  void print(std::string prefix, const ::EBiVec3 &s, const std::string postfix) {
+    printf("%s: pos=(% 8.3f,% 8.3f,% 8.3f)  mom=(% 8.3f,% 8.3f,% 8.3f)%s",
+           prefix.c_str(), s.pos.fX, s.pos.fY, s.pos.fZ, s.mom.fX, s.mom.fY, s.mom.fZ, postfix.c_str());
+  }
+
+  void print(std::string pfx, const TrCandMeta &cm, const Event *ev) {
+    printf("%s: id=%d event=%d seed=%d global_seed=%d sim=%d cand=%d "
+      "stage_id_0=%d stage_id_1=%d stage_id_2=%d \n",
+      pfx.c_str(), cm.id, cm.event,
+      cm.seed, cm.global_seed, cm.sim, cm.cand,
+      cm.stage_ids[0], cm.stage_ids[1], cm.stage_ids[2]);
+      if (ev != nullptr) {
+        print("seed_sim_info", ev->trSIFHforSeedByMeta_[cm.id]);
+        print("cand_sim_info", ev->trSIFHforCandByMeta_[cm.id]);
+      }
+  }
+
+  void print(std::string pfx, const TrCandStage &cs) {
+    printf("%s: id=%d meta_id=%d parent_stage_id=%d stage=%d "
+      "root_state_id=%d final_state_id=%d\n",
+      pfx.c_str(), cs.id, cs.meta_id, cs.parent_stage_id, cs.stage,
+      cs.root_state_id, cs.final_state_id);
+  }
+
+  void print(std::string pfx, const TrCandState &cs) {
+    printf("%s: id=%d parent_id=%d meta_id=%d stage_id=%d layer=%d step=%d "
+        "has_children=%d on_final_path=%d\n",
+        pfx.c_str(), cs.id, cs.parent_id, cs.meta_id, cs.stage_id,
+        cs.layer, cs.step, cs.has_children, cs.on_final_path);
+        print("    kine", cs.kine);
+  }
+
+  void print(std::string pfx, const TrLayerSearch &ls) {
+    printf("%s: id=%d state_id=%d layer=%d layer_sec=%d %s %s\n",
+           pfx.c_str(), ls.id, ls.state_id, ls.layer, ls.layer_sec,
+           ls.is_barrel ? "barrel" : "endcap", ls.is_outward ? "outward" : "inward");
+    printf("    entry=%s dalpha=% f fail=%d\n"
+           "    exit =%s dalpha=% f fail=%d\n",
+           format(ls.prop_entry.pos, 10, 8, ' ').c_str(), ls.prop_entry.dalpha, ls.prop_entry.fail_flag,
+           format(ls.prop_exit.pos, 10, 8, ' ').c_str(), ls.prop_exit.dalpha, ls.prop_exit.fail_flag);
+    printf("    phi_c=% f phi_d=% f dphi_track=% f | q_c=% f q=[% f,% f] dq_track=% f\n",
+           ls.phi_center, ls.phi_delta, ls.dphi_track,
+           ls.q_center(), ls.q_min, ls.q_max, ls.dq_track);
+    printf("    cov xx=% .4g xy=% .4g yy=% .4g zz=% .4g\n",
+           ls.cov_xx, ls.cov_xy, ls.cov_yy, ls.cov_zz);
+    printf("    bins p=[%u,%u) q=[%u,%u)", ls.p1, ls.p2, ls.q1, ls.q2);
+    if (ls.layer_sec >= 0)
+      printf(" | sec p=[%u,%u) q=[%u,%u)", ls.p1_sec, ls.p2_sec, ls.q1_sec, ls.q2_sec);
+    printf("\n    hits scanned=%d masked=%d presel=%d pqueue=%d\n",
+           ls.n_hits_scanned, ls.n_hits_masked, ls.n_hits_presel, ls.n_hits_pqueue);
+  }
+
+  void print(std::string pfx, const TrHitMatch &hm) {
+    printf("%s: id=%d state_id=%d search_id=%d layer=%d hit=%d mc_match=%d "
+          "score=% f dphi=% f dq=% f passed_preselect=%d "
+          "rank=%d passed_pqueue=%d kalman_id=%d\n",
+          pfx.c_str(), hm.id, hm.state_id, hm.search_id, hm.layer,
+          hm.hit, hm.mc_match, hm.score, hm.dphi, hm.dq, hm.passed_preselect,
+          hm.sub_rank, hm.passed_pqueue, hm.kalman_id);
+    printf("    t_hermite=% f d_plane_h3=% .3e\n", hm.t_hermite, hm.d_plane_h3);
+    printf("    residual_xyz=(res_x=% f res_y=% f res_z=% f); ", hm.residual_x, hm.residual_y, hm.residual_z);
+    print("kine", hm.kine_on_plane);
+  }
+
+  void print(std::string pfx, const TrKalmanUpdate &ku) {
+    printf("%s: id=%d hit_match_id=%d state_id_in=%d state_id_out=%d  "
+            "chi2=% f chi2_trk=% f accepted=%d\n",
+            pfx.c_str(), ku.id, ku.hit_match_id, ku.state_id_in, ku.state_id_out,
+            ku.chi2, ku.chi2_trk, ku.accepted);
+#ifdef MKFIT_TRACE_KALMAN_DEBUG
+    print("    prop ", ku.propagated_state);
+    print("    updt ", ku.updated_state);
+#endif
+  }
+
+#endif
 
 }  // end namespace mkfit

@@ -21,17 +21,26 @@ mkdir -p objs-Core objs-Core-Geoms objs-CMS objs-CMS-Geoms
 git clone git@github.com:trackreco/mkFit-external.git
 
 sa=$path/RecoTracker/MkFitCore/standalone
+bld=$(pwd)
 
 ### ln -fs $sa/Makefile.config .
 
+# BLDDIR must be absolute -- it ends up as a rootcling -I, which is baked into
+# the dictionary and re-resolved against the working directory at run time.
 cat > Makefile <<END
 export SRCDIR := $path
 export SADIR  := $path/RecoTracker/MkFitCore/standalone
 export SACMS  := $path/RecoTracker/MkFitCMS/standalone
+export BLDDIR := $bld
 
 ### include Makefile.config
 
 all:
+
+# Explicit rule, so it beats the catch-all below and does not fan out to the
+# four sub-makes (only Core defines it).  Consumed by ACLiC-based studies.
+echo-aclic:
+	@\${MAKE} -s --no-print-directory -C objs-Core -f \${SADIR}/Makefile echo-aclic
 
 
 SUBPKGS := Core CylCowWLids CMS

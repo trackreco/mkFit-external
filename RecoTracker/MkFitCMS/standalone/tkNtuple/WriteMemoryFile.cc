@@ -54,6 +54,8 @@ void printHelp(const char* av0) {
       "  --clean-sim-tracks        apply sim track cleaning (def: no cleaning)\n"
       "  --write-all-events        write all events (def: skip events with 0 simtracks or seeds)\n"
       "  --write-rec-tracks        write rec tracks (def: not written)\n"
+      "  --write-sim-hit-states    write truth position+momentum per sim hit, indexed by mcHitID\n"
+      "                            (def: not written; 24 B/hit, about +30%% on file size)\n"
       "  --apply-ccc               apply cluster charge cut to strip hits (def: false)\n"
       "  --all-seeds               write all seeds from the input file, not only initialStep and hltIter0 (def: "
       "false)\n",
@@ -70,6 +72,7 @@ int main(int argc, char* argv[]) {
   bool cleanSimTracks = false;
   bool writeAllEvents = false;
   bool writeRecTracks = false;
+  bool writeSimHitStates = false;
   bool writeHitIterMasks = false;
   bool applyCCC = false;
   bool allSeeds = false;
@@ -114,6 +117,8 @@ int main(int argc, char* argv[]) {
       writeAllEvents = true;
     } else if (*i == "--write-rec-tracks") {
       writeRecTracks = true;
+    } else if (*i == "--write-sim-hit-states") {
+      writeSimHitStates = true;
     } else if (*i == "--write-hit-iter-masks") {
       writeHitIterMasks = true;
     } else if (*i == "--apply-ccc") {
@@ -521,7 +526,6 @@ int main(int argc, char* argv[]) {
     }
     t->SetBranchAddress("ph2_simHitIdx", &ph2_simHitIdx);
   }
-  vector<float> ph2_chargeFraction_dummy(16, 0.f);
 
   // beam spot
   float bsp_x;
@@ -547,10 +551,20 @@ int main(int argc, char* argv[]) {
   if (writeHitIterMasks)
     outOptions |= DataFile::ES_HitIterMasks;
   outOptions |= DataFile::ES_BeamSpot;
+  if (writeSimHitStates)
+    outOptions |= DataFile::ES_SimHitStates;
 
   if (maxevt < 0)
     maxevt = totentries;
-  data_file.openWrite(outputFileName, static_cast<int>(nTotalLayers), std::min(maxevt, totentries), outOptions);
+  // Stamp the sample with the geometry it was written against, straight from the
+  // geometry binary's own header. This is the whole point: module short-ids are
+  // assigned per geometry, so a sample and a geometry that disagree produce
+  // silently meaningless module-frame quantities.
+  if (tkinfo.geom_version().empty())
+    std::cout << "WARNING: geometry '" << geoFileName << "' carries no version stamp "
+                 "(pre-v4 dump); the sample will be written unstamped." << std::endl;
+  data_file.openWrite(outputFileName, static_cast<int>(nTotalLayers), std::min(maxevt, totentries), outOptions,
+                      tkinfo.geom_version());
 
   Event EE(0, static_cast<int>(nTotalLayers));
 
@@ -595,7 +609,14 @@ int main(int argc, char* argv[]) {
                 << trk_q->size() << std::endl;
 
     //find best matching tkIdx from a list of simhits indices
-    auto bestTkIdx = [&](std::vector<int> const& shs, std::vector<float> const& shfs, int rhIdx, HitType rhType) {
+    //shfs is passed as ptr as it does not exist in phase2 strip hits (nullptr is passed)
+    // sh_out, when given, returns the index of the winning SIM HIT (shbest).
+    // That is NOT redundant with the return value: the arbitration below can
+    // clear ibest (the sim TRACK) while the sim hit itself stays perfectly well
+    // defined, so a caller wanting the truth STATE at this rec hit needs the hit
+    // index, not the track index.
+    auto bestTkIdx = [&](std::vector<int> const& shs, std::vector<float> const* shfs, int rhIdx, HitType rhType,
+                         int* sh_out = nullptr) {
       //assume that all simhits are associated
       int ibest = -1;
       int shbest = -1;
@@ -638,7 +659,7 @@ int main(int argc, char* argv[]) {
           shbest = sh;
           hpbest = hp;
           tpbest = tp;
-          hfbest = shfs[ish];
+          hfbest = shfs ? shfs->at(ish) : 0.0f;
         }
       }
 
@@ -650,8 +671,14 @@ int main(int argc, char* argv[]) {
         int ih = -1;
         for (auto itype : srhTypeV) {
           ih++;
-          if (HitType(itype) == rhType && srhIdxV[ih] != rhIdx) {
-            ibest = -1;
+          // Decide at the FIRST rec hit of this type, do not scan for a
+          // different one. The old form cleared ibest whenever ANY other
+          // same-type rec hit shared this sim hit -- which for a split cluster
+          // is true for BOTH of them, so neither kept the link, contradicting
+          // the comment above. Now exactly one keeps it: the first.
+          if (HitType(itype) == rhType) {
+            if (srhIdxV[ih] != rhIdx)
+              ibest = -1;
             break;
           }
         }
@@ -666,6 +693,8 @@ int main(int argc, char* argv[]) {
                     << "  rh " << str_x->at(rhIdx) << ", " << str_y->at(rhIdx) << ", " << str_z->at(rhIdx) << std::endl;
         }
       }
+      if (sh_out)
+        *sh_out = shbest;
       return ibest;
     };
 
@@ -798,7 +827,7 @@ int main(int argc, char* argv[]) {
                 lnc.convertLayerNumber(pix_det->at(ipix), pix_lay->at(ipix), useMatched, -1, pix_z->at(ipix) > 0);
             if (ilay < 0)
               continue;
-            int simTkIdxNt = bestTkIdx(pix_simHitIdx->at(ipix), pix_chargeFraction->at(ipix), ipix, HitType::Pixel);
+            int simTkIdxNt = bestTkIdx(pix_simHitIdx->at(ipix), &pix_chargeFraction->at(ipix), ipix, HitType::Pixel);
             if (simTkIdxNt >= 0)
               nRecToSimHit++;
           }
@@ -810,7 +839,7 @@ int main(int argc, char* argv[]) {
                 continue;
               if (ilay == -1)
                 continue;
-              int simTkIdxNt = bestTkIdx(ph2_simHitIdx->at(istr), ph2_chargeFraction_dummy, istr, HitType::Phase2OT);
+              int simTkIdxNt = bestTkIdx(ph2_simHitIdx->at(istr), nullptr, istr, HitType::Phase2OT);
               if (simTkIdxNt >= 0)
                 nRecToSimHit++;
             }
@@ -821,7 +850,7 @@ int main(int argc, char* argv[]) {
                   continue;
                 int igluMono = glu_monoIdx->at(iglu);
                 int simTkIdxNt =
-                    bestTkIdx(str_simHitIdx->at(igluMono), str_chargeFraction->at(igluMono), igluMono, HitType::Strip);
+                    bestTkIdx(str_simHitIdx->at(igluMono), &str_chargeFraction->at(igluMono), igluMono, HitType::Strip);
                 if (simTkIdxNt >= 0)
                   nRecToSimHit++;
               }
@@ -833,7 +862,7 @@ int main(int argc, char* argv[]) {
                 continue;
               if (ilay == -1)
                 continue;
-              int simTkIdxNt = bestTkIdx(str_simHitIdx->at(istr), str_chargeFraction->at(istr), istr, HitType::Strip);
+              int simTkIdxNt = bestTkIdx(str_simHitIdx->at(istr), &str_chargeFraction->at(istr), istr, HitType::Strip);
               if (simTkIdxNt >= 0)
                 nRecToSimHit++;
             }
@@ -854,7 +883,6 @@ int main(int argc, char* argv[]) {
           rhIdxs.push_back(simhit_hitIdx->at(ish)[irh]);
         }
       }
-      int irh = 0;
       for (unsigned int ip = 0; ip < rhTypes.size(); ip++) {
         unsigned int hidx = rhIdxs[ip];
         pair<int, int> itrh(simTracks_.size(), ip);
@@ -888,7 +916,6 @@ int main(int argc, char* argv[]) {
           default:
             throw std::logic_error("Track hit type can not be handled");
         }  //switch( HitType
-        irh++;
       }  // ip : rhTypes
       simTrackIdx_[isim] = simTracks_.size();
       simTracks_.push_back(track);
@@ -1098,6 +1125,26 @@ int main(int argc, char* argv[]) {
     vector<vector<Hit>>& layerHits_ = EE.layerHits_;
     vector<vector<uint64_t>>& layerHitMasks_ = EE.layerHitMasks_;
     vector<MCHitInfo>& simHitsInfo_ = EE.simHitsInfo_;
+    SHSVec& simHitStates_ = EE.simHitStates_;
+
+    // Keep simHitStates_ INDEX-PARALLEL to simHitsInfo_ (both are addressed by
+    // mcHitID == totHits): call this exactly once per simHitsInfo_.push_back,
+    // including when there is no sim hit -- a default-constructed SimHitState has
+    // zero momentum, which is the "invalid" convention.
+    //
+    // Note shbest, not simTkIdx: bestTkIdx() can clear the sim TRACK link in its
+    // split-cluster arbitration while the sim HIT is perfectly well defined, so a
+    // state is written in cases where mcTrackID() is -1. That is deliberate --
+    // it is what makes the sample usable for studying that very defect.
+    auto pushSimHitState = [&](int shbest) {
+      if (!writeSimHitStates)
+        return;
+      if (shbest >= 0)
+        simHitStates_.emplace_back(simhit_x->at(shbest), simhit_y->at(shbest), simhit_z->at(shbest),
+                                   simhit_px->at(shbest), simhit_py->at(shbest), simhit_pz->at(shbest));
+      else
+        simHitStates_.emplace_back();
+    };
     int totHits = 0;
     layerHits_.resize(nTotalLayers);
     layerHitMasks_.resize(nTotalLayers);
@@ -1109,7 +1156,8 @@ int main(int argc, char* argv[]) {
       int ihit = layerHits_[ilay].size();
       unsigned int imoduleid = tkinfo[ilay].short_id(pix_detId->at(ipix));
 
-      int simTkIdxNt = bestTkIdx(pix_simHitIdx->at(ipix), pix_chargeFraction->at(ipix), ipix, HitType::Pixel);
+      int shbest = -1;
+      int simTkIdxNt = bestTkIdx(pix_simHitIdx->at(ipix), &pix_chargeFraction->at(ipix), ipix, HitType::Pixel, &shbest);
       int simTkIdx = simTkIdxNt >= 0 ? simTrackIdx_[simTkIdxNt] : -1;  //switch to index in simTracks_
       //cout << Form("pix lay=%i det=%i x=(%6.3f, %6.3f, %6.3f)",ilay+1,pix_det->at(ipix),pix_x->at(ipix),pix_y->at(ipix),pix_z->at(ipix)) << endl;
       SVector3 pos(pix_x->at(ipix), pix_y->at(ipix), pix_z->at(ipix));
@@ -1138,6 +1186,7 @@ int main(int argc, char* argv[]) {
         layerHitMasks_[ilay].push_back(pix_usedMask->at(ipix));
       MCHitInfo hitInfo(simTkIdx, ilay, layerHits_[ilay].size() - 1, totHits);
       simHitsInfo_.push_back(hitInfo);
+      pushSimHitState(shbest);
       totHits++;
     }
 
@@ -1154,7 +1203,8 @@ int main(int argc, char* argv[]) {
         int ihit = layerHits_[ilay].size();
         unsigned int imoduleid = tkinfo[ilay].short_id(ph2_detId->at(iph2));
 
-        int simTkIdxNt = bestTkIdx(ph2_simHitIdx->at(iph2), ph2_chargeFraction_dummy, iph2, HitType::Phase2OT);
+        int shbest = -1;
+        int simTkIdxNt = bestTkIdx(ph2_simHitIdx->at(iph2), nullptr, iph2, HitType::Phase2OT, &shbest);
         int simTkIdx = simTkIdxNt >= 0 ? simTrackIdx_[simTkIdxNt] : -1;  //switch to index in simTracks_
 
         SVector3 pos(ph2_x->at(iph2), ph2_y->at(iph2), ph2_z->at(iph2));
@@ -1183,6 +1233,7 @@ int main(int argc, char* argv[]) {
           layerHitMasks_[ilay].push_back(ph2_usedMask->at(iph2));
         MCHitInfo hitInfo(simTkIdx, ilay, layerHits_[ilay].size() - 1, totHits);
         simHitsInfo_.push_back(hitInfo);
+        pushSimHitState(shbest);
         totHits++;
       }
     } else {
@@ -1191,8 +1242,9 @@ int main(int argc, char* argv[]) {
           if (glu_isBarrel->at(iglu) == 0)
             continue;
           int igluMono = glu_monoIdx->at(iglu);
-          int simTkIdxNt =
-              bestTkIdx(str_simHitIdx->at(igluMono), str_chargeFraction->at(igluMono), igluMono, HitType::Strip);
+          int shbest = -1;
+          int simTkIdxNt = bestTkIdx(
+              str_simHitIdx->at(igluMono), &str_chargeFraction->at(igluMono), igluMono, HitType::Strip, &shbest);
           int simTkIdx = simTkIdxNt >= 0 ? simTrackIdx_[simTkIdxNt] : -1;  //switch to index in simTracks_
 
           int ilay = lnc.convertLayerNumber(glu_det->at(iglu), glu_lay->at(iglu), useMatched, -1, glu_z->at(iglu) > 0);
@@ -1226,6 +1278,7 @@ int main(int argc, char* argv[]) {
           layerHits_[ilay].push_back(hit);
           MCHitInfo hitInfo(simTkIdx, ilay, layerHits_[ilay].size() - 1, totHits);
           simHitsInfo_.push_back(hitInfo);
+          pushSimHitState(shbest);
           totHits++;
         }
       }
@@ -1242,7 +1295,8 @@ int main(int argc, char* argv[]) {
 
         unsigned int imoduleid = tkinfo[ilay].short_id(str_detId->at(istr));
 
-        int simTkIdxNt = bestTkIdx(str_simHitIdx->at(istr), str_chargeFraction->at(istr), istr, HitType::Strip);
+        int shbest = -1;
+        int simTkIdxNt = bestTkIdx(str_simHitIdx->at(istr), &str_chargeFraction->at(istr), istr, HitType::Strip, &shbest);
         int simTkIdx = simTkIdxNt >= 0 ? simTrackIdx_[simTkIdxNt] : -1;  //switch to index in simTracks_
 
         bool passCCC = applyCCC ? (str_chargePerCM->at(istr) > cutValueCCC) : true;
@@ -1276,6 +1330,7 @@ int main(int argc, char* argv[]) {
             layerHitMasks_[ilay].push_back(str_usedMask->at(istr));
           MCHitInfo hitInfo(simTkIdx, ilay, layerHits_[ilay].size() - 1, totHits);
           simHitsInfo_.push_back(hitInfo);
+          pushSimHitState(shbest);
           totHits++;
         }
       }  // istr : str_lay

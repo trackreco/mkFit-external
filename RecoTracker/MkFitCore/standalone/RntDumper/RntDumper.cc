@@ -11,8 +11,6 @@
 
 #include <vector>
 
-namespace REX = ROOT::Experimental;
-
 std::vector<RntDumper *> RntDumper::s_instances;
 
 RntDumper::RntDumper(const char *fname) : m_file(TFile::Open(fname, "recreate")) {
@@ -25,8 +23,9 @@ RntDumper::RntDumper(const char *fname) : m_file(TFile::Open(fname, "recreate"))
 
 RntDumper::~RntDumper() {
   printf("RntDumper::~RntDumper() destroying writers and closing file '%s'.\n", m_file->GetName());
-  // Finish up trees first, ntuple-writers seem to write everything reulting
+  // Finish up trees first, ntuple-writers seem to write everything resulting
   // in two cycles of trees.
+  m_file->cd();
   for (auto &tp : m_trees) {
     tp->Write();
     delete tp;
@@ -47,7 +46,10 @@ REX::RNTupleWriter *RntDumper::WritifyModel(std::unique_ptr<REX::RNTupleModel> &
   return w;
 }
 
-void RntDumper::RegisterTree(TTree *t) { m_trees.push_back(t); }
+void RntDumper::RegisterTree(TTree *t) {
+  m_trees.push_back(t);
+  t->SetDirectory(file());
+}
 
 // === static ===
 
@@ -62,4 +64,5 @@ void RntDumper::FinalizeAll() {
   printf("RntDumper::FinalizeAll() shutting down %d instances.\n", (int)s_instances.size());
   for (auto &d : s_instances)
     delete d;
+  s_instances.clear();
 }

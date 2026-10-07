@@ -2,14 +2,12 @@
 // To be included in cc file, outside of any namespace.
 
 #include "RecoTracker/MkFitCore/standalone/RntDumper/RntDumper.h"
-#include "RecoTracker/MkFitCore/standalone/RntDumper/RntStructs.h"
-#include "RecoTracker/MkFitCore/standalone/RntDumper/RntConversions.h"
+#include "RecoTracker/MkFitCore/standalone/DataFormats/RntStructs.h"
+#include "RecoTracker/MkFitCore/standalone/DataFormats/RntConversions.h"
 
 #include <ROOT/RNTuple.hxx>
 #include <ROOT/RNTupleModel.hxx>
-#if ROOT_VERSION_CODE >= ROOT_VERSION(6, 32, 0)
 #include <ROOT/RNTupleWriter.hxx>
-#endif
 
 #include <TTree.h>
 
@@ -17,7 +15,7 @@ namespace {
   using namespace mkfit;
 
   struct RntIfc_selectHitIndices {
-    using RNTupleWriter = ROOT::Experimental::RNTupleWriter;
+    using RNTupleWriter = ROOT::RNTupleWriter;
 
     RntDumper *f_dumper;
     const bool f_do_rnt;
@@ -92,11 +90,11 @@ namespace {
       // }
 
       mini_propagators::State c(ctr, i);
-      return ci->emplace_back(evsi2ssinfo(ev, seed_idx), state2state(c));
+      return ci->emplace_back(evsi2ssinfo(ev, seed_idx), state2bivec3(c));
     }
     void RegisterFailedProp(int i, const MPlexLV &beg, const MPlexLV &end, const Event *ev, int seed_idx) {
       mini_propagators::State b(beg, i), e(end, i);
-      fpi->emplace_back(evsi2ssinfo(ev, seed_idx), state2state(b), state2state(e));
+      fpi->emplace_back(evsi2ssinfo(ev, seed_idx), state2bivec3(b), state2bivec3(e));
     }
     int MapHIdx(int i) { return f_h_remap[i]; }
 

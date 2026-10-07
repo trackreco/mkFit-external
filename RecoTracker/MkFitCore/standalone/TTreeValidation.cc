@@ -4,7 +4,7 @@
 #include "RecoTracker/MkFitCore/standalone/ConfigStandalone.h"
 #include "RecoTracker/MkFitCore/interface/IterationConfig.h"
 
-#ifdef WITH_ROOT
+#ifdef MKFIT_WITH_ROOT
 
 namespace mkfit {
 
@@ -1432,7 +1432,7 @@ namespace mkfit {
 
       if (Config::mtvRequireSeeds) {
         for (auto aa : ev.simTracksExtra_[count].seedAlgos()) {
-          algo_seed_eff_ = (algo_seed_eff_ | (1 << aa));
+          algo_seed_eff_ = (algo_seed_eff_ | (ULong64_t(1) << aa));
         }
       }
       count++;
@@ -1456,8 +1456,8 @@ namespace mkfit {
         for (unsigned int ii = 0; ii < simToSeedMap_[mcID_eff_].size(); ii++) {
           const int theAlgo = evt_seed_tracks[simToSeedMap_[mcID_eff_][ii]].algoint();
           if ((itermask_seed_eff_ >> theAlgo) & 1)
-            iterduplmask_seed_eff_ = (iterduplmask_seed_eff_ | (1 << theAlgo));  //filled at the second time
-          itermask_seed_eff_ = (itermask_seed_eff_ | (1 << theAlgo));
+            iterduplmask_seed_eff_ = (iterduplmask_seed_eff_ | (ULong64_t(1) << theAlgo));  //filled at the second time
+          itermask_seed_eff_ = (itermask_seed_eff_ | (ULong64_t(1) << theAlgo));
         }
         const auto& seedtrack =
             evt_seed_tracks[simToSeedMap_[mcID_eff_][0]];            // returns seedTrack best matched to sim track
@@ -1583,8 +1583,8 @@ namespace mkfit {
         for (unsigned int ii = 0; ii < simToBuildMap_[mcID_eff_].size(); ii++) {
           const int theAlgo = evt_build_tracks[simToBuildMap_[mcID_eff_][ii]].algoint();
           if ((itermask_build_eff_ >> theAlgo) & 1)
-            iterduplmask_build_eff_ = (iterduplmask_build_eff_ | (1 << theAlgo));  //filled at the second time
-          itermask_build_eff_ = (itermask_build_eff_ | (1 << theAlgo));
+            iterduplmask_build_eff_ = (iterduplmask_build_eff_ | (ULong64_t(1) << theAlgo));  //filled at the second time
+          itermask_build_eff_ = (itermask_build_eff_ | (ULong64_t(1) << theAlgo));
         }
         const auto& buildtrack =
             evt_build_tracks[simToBuildMap_[mcID_eff_][0]];  // returns buildTrack best matched to sim track
@@ -1710,8 +1710,8 @@ namespace mkfit {
         for (unsigned int ii = 0; ii < simToFitMap_[mcID_eff_].size(); ii++) {
           const int theAlgo = evt_fit_tracks[simToFitMap_[mcID_eff_][ii]].algoint();
           if ((itermask_fit_eff_ >> theAlgo) & 1)
-            iterduplmask_fit_eff_ = (iterduplmask_fit_eff_ | (1 << theAlgo));  //filled at the second time
-          itermask_fit_eff_ = (itermask_fit_eff_ | (1 << theAlgo));
+            iterduplmask_fit_eff_ = (iterduplmask_fit_eff_ | (ULong64_t(1) << theAlgo));  //filled at the second time
+          itermask_fit_eff_ = (itermask_fit_eff_ | (ULong64_t(1) << theAlgo));
         }
         const auto& fittrack =
             evt_fit_tracks[simToFitMap_[mcID_eff_][0]];           // returns fitTrack best matched to sim track
@@ -2431,7 +2431,7 @@ namespace mkfit {
       algo_seed_ceff_ = 0;
 
       for (auto aa : cmsswextra.seedAlgos())
-        algo_seed_ceff_ = (algo_seed_ceff_ | (1 << aa));
+        algo_seed_ceff_ = (algo_seed_ceff_ | (ULong64_t(1) << aa));
 
       if (Config::keepHitInfo)
         TTreeValidation::fillMinHitInfo(cmsswtrack, hitlyrs_cmssw_ceff_, hitidxs_cmssw_ceff_);
@@ -2444,8 +2444,8 @@ namespace mkfit {
         for (unsigned int ii = 0; ii < cmsswToBuildMap_[cmsswID_ceff_].size(); ii++) {
           const int theAlgo = evt_build_tracks[cmsswToBuildMap_[cmsswID_ceff_][ii]].algoint();
           if ((itermask_build_ceff_ >> theAlgo) & 1)
-            iterduplmask_build_ceff_ = (iterduplmask_build_ceff_ | (1 << theAlgo));  //filled at the second time
-          itermask_build_ceff_ = (itermask_build_ceff_ | (1 << theAlgo));
+            iterduplmask_build_ceff_ = (iterduplmask_build_ceff_ | (ULong64_t(1) << theAlgo));  //filled at the second time
+          itermask_build_ceff_ = (itermask_build_ceff_ | (ULong64_t(1) << theAlgo));
         }
 
         const auto& buildtrack =
@@ -2562,8 +2562,8 @@ namespace mkfit {
         for (unsigned int ii = 0; ii < cmsswToFitMap_[cmsswID_ceff_].size(); ii++) {
           const int theAlgo = evt_build_tracks[cmsswToFitMap_[cmsswID_ceff_][ii]].algoint();
           if ((itermask_fit_ceff_ >> theAlgo) & 1)
-            iterduplmask_fit_ceff_ = (iterduplmask_fit_ceff_ | (1 << theAlgo));  //filled at the second time
-          itermask_fit_ceff_ = (itermask_fit_ceff_ | (1 << theAlgo));
+            iterduplmask_fit_ceff_ = (iterduplmask_fit_ceff_ | (ULong64_t(1) << theAlgo));  //filled at the second time
+          itermask_fit_ceff_ = (itermask_fit_ceff_ | (ULong64_t(1) << theAlgo));
         }
 
         const auto& fittrack =

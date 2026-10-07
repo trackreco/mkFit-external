@@ -4,7 +4,7 @@
 
 #include "MkFitter.h"
 
-#ifdef WITH_ROOT
+#ifdef MKFIT_WITH_ROOT
 #include "TFile.h"
 #include "TTree.h"
 #include <mutex>

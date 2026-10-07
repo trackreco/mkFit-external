@@ -7,6 +7,7 @@
 
 #include "RecoTracker/MkFitCore/src/Debug.h"
 
+#include "RecoTracker/MkFitCore/src/MkFitTbb.h"
 #include "oneapi/tbb/parallel_for.h"
 
 namespace mkfit {

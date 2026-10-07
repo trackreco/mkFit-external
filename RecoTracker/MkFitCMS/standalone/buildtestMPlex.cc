@@ -309,6 +309,10 @@ namespace mkfit {
       ev.relabel_bad_seedtracks();  //necessary for the validation - PrepareSeeds
     }
 
+    // Choose building function - CloneEngine vs FinderV2p2
+    MkBuilder::FindTracks_foo FindTracks = &MkBuilder::findTracksCloneEngine;;
+    // MkBuilder::FindTracks_foo FindTracks = &MkBuilder::findTracksStandardv2p2;
+
     IterationMaskIfc mask_ifc;
 
     // To disable hit-masks, pass nullptr in place of &mask_ifc to MkJob ctor
@@ -333,7 +337,7 @@ namespace mkfit {
 
     double time = dtime();
 
-    builder.findTracksCloneEngine();
+    (builder.*FindTracks)(SteeringParams::IT_FwdSearch);
 
     time = dtime() - time;
 
@@ -362,6 +366,12 @@ namespace mkfit {
       // builder.quality_store_tracks(ev.fitTracks_);
 
       check_nan_n_silly_bkfit(ev);
+
+      if (itconf.m_backward_search) {
+        builder.beginBkwSearch();
+        (builder.*FindTracks)(SteeringParams::IT_BkwSearch);
+        builder.endBkwSearch();
+      }
     }
 
     // CCCC StdSeq::handle_duplicates(&ev);
@@ -436,6 +446,12 @@ namespace mkfit {
     TrackVec seeds;
     TrackVec tmp_tvec;
 
+    MkBuilder::FindTracks_foo FindTracks;
+    if (Config::mimiUseV2p2)
+      FindTracks = &MkBuilder::findTracksStandardv2p2;
+    else
+      FindTracks = &MkBuilder::findTracksCloneEngine;
+
     for (int it = 0; it <= n - 1; ++it) {
       const IterationConfig &itconf = Config::ItrInfo[it];
 
@@ -479,7 +495,7 @@ namespace mkfit {
 
       double time = dtime();
 
-      builder.findTracksCloneEngine();
+      (builder.*FindTracks)(SteeringParams::IT_FwdSearch);
 
       timevec[it] = dtime() - time;
       timevec[n] += timevec[it];
@@ -536,8 +552,7 @@ namespace mkfit {
 
         if (do_backward_search) {
           builder.beginBkwSearch();
-          builder.findTracksCloneEngine(SteeringParams::IT_BkwSearch);
-          builder.gateBkwSearch();
+          (builder.*FindTracks)(SteeringParams::IT_BkwSearch);
         }
 
         // Post backward-fit filtering.

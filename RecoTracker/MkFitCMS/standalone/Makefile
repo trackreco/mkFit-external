@@ -1,23 +1,23 @@
 include ${SADIR}/Makefile.config
 
-CPPFLAGS := -I. -I${SRCDIR} -I../mkFit-external ${CPPFLAGS}
+CPPFLAGS := -I. -I${SRCDIR} -I${BLDDIR}/mkFit-external ${CPPFLAGS}
 
 CMS_DIR := ${SRCDIR}/RecoTracker/MkFitCMS
 
-LIB_CMS := ../libMicCMS.so
+LIB_CMS := ../libMkFitCMS.so
 MAIN    := ../mkFit
 MAIN_DEPS := ${LIB_CMS}
-MAIN_LIBS := -lMicCore -lMicCMS
+MAIN_LIBS := -lMkFitCore -lMkFitCMS
 WRMEMF  := ../writeMemoryFile
 WMF_DICT_PCM := ../WriteMemFileDict_rdict.pcm
-SHELL_DICT_PCM := ../ShellDict_rdict.pcm
-ROOTOUT := WriteMemFileDict.cc ShellDict.cc
+SHELL_DICT_PCM := ../Shell_Dict_rdict.pcm
+ROOTOUT := WriteMemFileDict.cc Shell_Dict.cc
 
 TGTS := ${LIB_CMS} ${MAIN}
 
 ifdef WITH_ROOT
-MAIN_DEPS += ../libMicRntDump.so
-MAIN_LIBS += -lMicRntDump
+MAIN_DEPS += ../libMkFitRootDataFormats.so
+MAIN_LIBS += -lMkFitRootDataFormats
 TGTS += ${WRMEMF} ${WMF_DICT_PCM} ${SHELL_DICT_PCM}
 endif
 
@@ -30,15 +30,16 @@ SRCS := $(wildcard ${CMS_DIR}/src/*.cc) $(wildcard ${SACMS}/*.cc)
 ifdef WITH_ROOT
 SRCS += ${SACMS}/tkNtuple/WriteMemoryFile.cc
 WriteMemFileDict.cc ${WMF_DICT_PCM} &: ${SACMS}/tkNtuple/DictsLinkDef.h
-	rootcling ${CPPFLAGS} -I=${SRCDIR} -f WriteMemFileDict.cc $<
+	rootcling ${CPPFLAGS} -f WriteMemFileDict.cc $<
 	mv WriteMemFileDict_rdict.pcm ${WMF_DICT_PCM}
 
-SRCS += ShellDict.cc
-ShellDict.cc ${SHELL_DICT_PCM} &: ${SACMS}/ShellDict.h ${SACMS}/ShellLinkDef.h
-	rootcling ${CPPFLAGS} -I=${SRCDIR} -f ShellDict.cc $^
-	mv ShellDict_rdict.pcm ${SHELL_DICT_PCM}
+SRCS += Shell_Dict.cc
+SHELL_DICT_IN := ${SACMS}/Shell_Dict.h ${SACMS}/Shell_LinkDef.h
+Shell_Dict.cc ${SHELL_DICT_PCM} &: ${SHELL_DICT_IN}
+	rootcling --umbrellaHeader ${CPPFLAGS} -f Shell_Dict.cc ${SHELL_DICT_IN}
+	mv Shell_Dict_rdict.pcm ${SHELL_DICT_PCM}
 else
-SRCS := $(filter-out ${SACMS}/Shell.cc, ${SRCS})
+SRCS := $(filter-out ${SACMS}/Shell.cc ${SACMS}/Shell-LST.cc, ${SRCS})
 endif
 
 SRCB := $(notdir ${SRCS})
@@ -48,6 +49,10 @@ OBJS := $(SRCB:.cc=.o)
 CMS_OBJS := $(filter-out mkFit.o WriteMemoryFile.o, ${OBJS})
 
 vpath %.cc ${CMS_DIR}/src ${SACMS} ${SACMS}/tkNtuple
+
+ifdef WITH_ROOT
+DEPS += Shell_Dict.cc.d
+endif
 
 ifeq ($(filter clean-local clean distclean, ${MAKECMDGOALS}),)
 include ${DEPS}
@@ -79,6 +84,11 @@ ${OBJS}: %.o: %.cc %.d
 
 %.d: %.cc
 	${MAKEDEPEND} -o $@ $<
+
+ifdef WITH_ROOT
+Shell_Dict.cc.d: ${SACMS}/Shell_Dict.h
+	${MAKEDEPEND_BASE} -MQ Shell_Dict.cc -o $@ $<
+endif
 
 echo:
 	@echo "CXX=${CXX}"
