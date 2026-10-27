@@ -187,7 +187,15 @@ namespace {
     ic.m_backward_fit_min_hits = 99;
     auto &spv = ic.m_steering_params;
     // XXXX Recheck those limits !!!
-    // The bkw-search start layer is set for LST T5 seeds, mostly.
+    // The bkw-search start layer is where the finder starts its walk inward over
+    // the plan; a candidate is picked up when the walk reaches the layer of its
+    // innermost hit. So the start must lie at or outside the innermost hit of
+    // every candidate in the region, or the candidate is never picked up. A start
+    // too far out only costs passes over layers where nothing is picked up. The
+    // layers below cover naked LST T5 and T4 objects. The phase-2 JSONs in
+    // cms-data (2026-10) start at layers 41 / 7 / 7 / 7 / 19, from the P-before-S
+    // plan renumbering; there a T5 or T4 whose innermost hit lies outside
+    // OTLayer2 would not be picked up.
     //
     // These USED TO BE plan INDICES, spelled as arithmetic restating the plan's
     // structure ("4 + 8 + 2*6 + 3" = 27). That is not merely fragile, it is a
