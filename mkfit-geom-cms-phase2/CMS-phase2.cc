@@ -187,7 +187,15 @@ namespace {
     ic.m_backward_fit_min_hits = 99;
     auto &spv = ic.m_steering_params;
     // XXXX Recheck those limits !!!
-    // The bkw-search start layer is set for LST T5 seeds, mostly.
+    // The bkw-search start layer is where the finder starts its walk inward over
+    // the plan; a candidate is picked up when the walk reaches the layer of its
+    // innermost hit. So the start must lie at or outside the innermost hit of
+    // every candidate in the region, or the candidate is never picked up. A start
+    // too far out only costs passes over layers where nothing is picked up. The
+    // layers below cover naked LST T5 and T4 objects. The phase-2 JSONs in
+    // cms-data (2026-10) start at layers 41 / 7 / 7 / 7 / 19, from the P-before-S
+    // plan renumbering; there a T5 or T4 whose innermost hit lies outside
+    // OTLayer2 would not be picked up.
     //
     // These USED TO BE plan INDICES, spelled as arithmetic restating the plan's
     // structure ("4 + 8 + 2*6 + 3" = 27). That is not merely fragile, it is a
@@ -217,20 +225,18 @@ namespace {
   void SetupIterationParams(IterationParams &ip, unsigned int it = 0) {
     if (it == 0) {
       ip.nlayers_per_seed = 4;
-      // 3, not 6, since 2026-09-23: the in-layer combinatorial search
-      // (Config::V2p2::InLayer::comb, on by default) takes several hits per layer,
-      // so the beam width no longer has to carry the per-layer alternatives.
-      // Measured on 30 events of ttbar-PU200-D121-C22: with the search on, cap 3
-      // gives 89 % of cap 6's gain for 26 % of the extra build time, and 3 -> 6 is
-      // worth 39 found tracks in 18846. It applies to BOTH parameter sets, since
-      // SetupBackwardSearch() copies m_params into m_backward_params below, and
-      // the beam a candidate actually gets is MkJob::max_max_cands() = the max of
-      // the two -- so setting it here is the only place that takes effect.
-      // CAVEAT for V1/V2: they have no in-layer expansion, so a lower cap costs
-      // them a little. Measured with the search off, 3 / 6 / 10 moves found tracks
-      // 23783 / 23867 / 23888, i.e. -84 at cap 3. Restore it for a cross-check with
-      // val_max_cands(6) from the shell, which sets both parameter sets.
-      ip.maxCandsPerSeed = 3;
+      // 6, as the phase-2 initialStep JSON in cms-data, so that a standalone run
+      // uses the beam width CMSSW uses, and a JSON saved from here keeps it. The
+      // CMSSW MTV and the timing of the 2026-10-03 working point ran at 6.
+      // From 2026-09-23 to 2026-10-27 it was 3: with the in-layer combinatorial
+      // search on, 3 gave 89 % of 6's gain for 26 % of the extra build time, on 30
+      // events of ttbar-PU200-D121-C22 (3 -> 6: +39 found tracks of 18846).
+      // It applies to BOTH parameter sets, since SetupBackwardSearch() copies
+      // m_params into m_backward_params below, and the beam a candidate actually
+      // gets is MkJob::max_max_cands() = the max of the two -- so setting it here
+      // is the only place that takes effect. val_max_cands(n) from the shell sets
+      // both parameter sets.
+      ip.maxCandsPerSeed = 6;
       ip.maxHolesPerCand = 4;
       ip.maxConsecHoles = 2;
       ip.chi2Cut_min = 15.0;
@@ -275,7 +281,7 @@ namespace {
     else
       pconf.finding_intra_layer_pflags = PropagationFlags(PF_none);
     pconf.backward_fit_pflags = PropagationFlags(PF_use_param_b_field | PF_apply_material);
-    pconf.forward_fit_pflags = PropagationFlags(PF_use_param_b_field | PF_apply_material);
+    pconf.final_fit_pflags = PropagationFlags(PF_use_param_b_field | PF_apply_material | PF_use_fit_b_field);
     pconf.seed_fit_pflags = PropagationFlags(PF_none);
     pconf.pca_prop_pflags = PropagationFlags(PF_none);
     pconf.apply_tracker_info(&ti);
