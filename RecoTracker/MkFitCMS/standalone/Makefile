@@ -1,6 +1,6 @@
-include ${SADIR}/Makefile.config
+include ${BLDDIR}/Makefile.config
 
-CPPFLAGS := -I. -I${SRCDIR} -I${BLDDIR}/mkFit-external ${CPPFLAGS}
+CPPFLAGS := -I. -I${SRCDIR} -I${EXTDIR} ${CPPFLAGS}
 
 CMS_DIR := ${SRCDIR}/RecoTracker/MkFitCMS
 

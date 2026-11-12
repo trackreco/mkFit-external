@@ -1,10 +1,10 @@
-include ${SADIR}/Makefile.config
+include ${BLDDIR}/Makefile.config
 
-CPPFLAGS := -I${SRCDIR} -I${BLDDIR}/mkFit-external ${CPPFLAGS}
+CPPFLAGS := -I${SRCDIR} -I${EXTDIR} ${CPPFLAGS}
 
 .PHONY: all clean distclean echo
 
-SRCS := ${SACMS}/Geoms/CMS-phase1.cc ${SACMS}/Geoms/CMS-phase2.cc
+SRCS := ${EXTDIR}/mkfit-geom-cms-phase1/CMS-phase1.cc ${EXTDIR}/mkfit-geom-cms-phase2/CMS-phase2.cc
 SRCB := $(notdir ${SRCS})
 DEPS := $(SRCB:.cc=.d)
 OBJS := $(SRCB:.cc=.o)
@@ -15,7 +15,7 @@ TGTS := $(addprefix ../, $(addsuffix .so, ${TGTS}))
 GEO_phase1_BIN = ../CMS-phase1.bin
 GEO_phase2_BIN = ../CMS-phase2.bin
 
-vpath %.cc ${SACMS}/Geoms
+vpath %.cc ${EXTDIR}/mkfit-geom-cms-phase1 ${EXTDIR}/mkfit-geom-cms-phase2
 
 all: ${TGTS} ${GEO_phase1_BIN} ${GEO_phase2_BIN}
 

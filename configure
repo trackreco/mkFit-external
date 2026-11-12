@@ -1,0 +1,103 @@
+#!/bin/bash
+
+# Sets up a standalone build of mkFit in the current directory.
+
+ext=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+
+usage() {
+    cat <<END
+Usage: $ext/configure <src-dir>
+
+Sets up a standalone build of mkFit in the current directory, which must be
+outside this checkout. RecoTracker/MkFitCore, RecoTracker/MkFitCMS and
+FWCore/Utilities come from <src-dir>, a CMSSW src directory. Everything else comes
+from this mkFit-external checkout: the standalone trees
+RecoTracker/MkFitCore/standalone and RecoTracker/MkFitCMS/standalone, at the same
+paths as they had in CMSSW, the external headers and the geometry plugins.
+
+configure writes Makefile and creates the objs-* directories the sub-makes run
+in. It copies the build options, Makefile.config, into the current directory
+when there is none yet; edit that copy. Then run make here.
+
+Options:
+  -h, --help    print this and exit.
+END
+}
+
+case "$1" in
+    -h|--help) usage; exit 0 ;;
+esac
+
+if [ $# -ne 1 ]; then
+    usage
+    exit 1
+fi
+
+if ! path=$(cd "$1" 2>/dev/null && pwd); then
+    echo "configure: $1 is not a directory."
+    echo
+    usage
+    exit 1
+fi
+
+if [ ! -d "$path/RecoTracker/MkFitCore" ] || [ ! -d "$path/RecoTracker/MkFitCMS" ] ||
+   [ ! -d "$path/FWCore/Utilities" ]; then
+    echo "configure: $path must contain RecoTracker/MkFitCore/, RecoTracker/MkFitCMS/ and FWCore/Utilities/."
+    echo
+    usage
+    exit 1
+fi
+
+# A source tree from before the move still has its own standalone trees. The
+# include path would then find the same file names in two places, and the -I
+# order would pick one silently.
+for d in RecoTracker/MkFitCore/standalone RecoTracker/MkFitCMS/standalone; do
+    if [ -e "$path/$d" ]; then
+        echo "configure: $path still has $d."
+        echo "Its files would shadow the ones in $ext."
+        echo "Configure such a tree with its own $path/RecoTracker/MkFitCore/standalone/configure."
+        exit 1
+    fi
+done
+
+bld=$(pwd)
+
+case "$bld/" in
+    "$ext/"*)
+        echo "configure: run it from a build directory outside $ext."
+        exit 1 ;;
+esac
+
+mkdir -p objs-Core objs-Core-Geoms objs-CMS objs-CMS-Geoms
+
+if [ -e Makefile.config ]; then
+    echo "Kept the existing Makefile.config."
+else
+    cp "$ext/RecoTracker/MkFitCore/standalone/Makefile.config" .
+fi
+
+# All paths must be absolute: they end up as rootcling -I arguments, which are
+# baked into the dictionaries and re-resolved against the working directory at
+# run time.
+cat > Makefile <<END
+export SRCDIR := $path
+export EXTDIR := $ext
+export SADIR  := $ext/RecoTracker/MkFitCore/standalone
+export SACMS  := $ext/RecoTracker/MkFitCMS/standalone
+export BLDDIR := $bld
+
+all:
+
+# Explicit rule, so it beats the catch-all below and does not fan out to the
+# four sub-makes (only Core defines it).  Consumed by ACLiC-based studies.
+echo-aclic:
+	@\${MAKE} -s --no-print-directory -C objs-Core -f \${SADIR}/Makefile echo-aclic
+
+%:
+	\${MAKE} -C objs-Core -f \${SADIR}/Makefile \$@
+	\${MAKE} -C objs-Core-Geoms -f \${SADIR}/Geoms/Makefile \$@
+	\${MAKE} -C objs-CMS -f \${SACMS}/Makefile \$@
+	\${MAKE} -C objs-CMS-Geoms -f \${SACMS}/Geoms/Makefile \$@
+END
+
+echo "Configured $bld: sources from $path, standalone from $ext."

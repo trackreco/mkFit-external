@@ -28,7 +28,7 @@ export LD_LIBRARY_PATH=.
 N=${1:-30}
 SAMPLE=${2:-/foo/matevz/mic-dev/ttbar-PU200-D121-C22-100ev-rt.bin}
 OUT=${3:-eff-v2-vs-v2p2}
-T=../RecoTracker/MkFitCore/standalone/test
+T=$(sed -n 's/^export SADIR *:= *//p' Makefile)/test
 
 CMD=(./mkFit --geom CMS-phase2 --seed-input cmssw --read-cmssw-tracks --input-file "$SAMPLE"
      --num-events "$N" --num-thr 1 --build-mimi --build-mimi-v2p2

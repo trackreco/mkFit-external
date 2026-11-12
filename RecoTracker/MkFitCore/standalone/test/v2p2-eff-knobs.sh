@@ -11,7 +11,7 @@ cd /foo/matevz/mic-dev/current/src/standalone
 unset DISPLAY
 export LD_LIBRARY_PATH=.
 N=$1; SAMPLE=$2; OUT=$3; shift 3
-T=../RecoTracker/MkFitCore/standalone/test
+T=$(sed -n 's/^export SADIR *:= *//p' Makefile)/test
 REF=${1%%=*}
 CMD=(./mkFit --geom CMS-phase2 --seed-input cmssw --read-cmssw-tracks --input-file "$SAMPLE"
      --num-events "$N" --num-thr 1 --build-mimi --build-mimi-v2p2 ${FLAGS:-} --shell
