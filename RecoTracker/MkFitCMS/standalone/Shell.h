@@ -73,6 +73,10 @@ namespace mkfit {
     // This is the exact denominator for "did the inward search put them back":
     // these hits were found by the upstream reconstruction, so they are known
     // findable, and no truth matching is involved in the comparison.
+    // Shell owns it: RunLSTintoPix() fills it and GoToEvent() clears it, so it
+    // holds the chopped hits of the current event; readers only read it. With
+    // several events in flight (collect_events_hlt() with n_thr > 1) the worker
+    // threads all fill this one map, so it is usable only with one.
     static std::map<int, std::vector<HitOnTrack>> s_chopped_hits;
 
     // Copy the seeds of one algo into `out`, honouring the SS_* selector.

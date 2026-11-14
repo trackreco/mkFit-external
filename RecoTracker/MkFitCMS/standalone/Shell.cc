@@ -150,6 +150,7 @@ namespace mkfit {
     }
     m_ctx.ev->resetCurrentSeedTracks(); // left after ProcessEvent() for debugging etc
     m_ctx.ev->reset(eid);
+    s_chopped_hits.clear();  // the previous event's, keyed by labels this one reuses
     m_ctx.ev->read_in(*m_data_file);
     StdSeq::loadHitsAndBeamSpot(*m_ctx.ev, *m_ctx.eoh);
     if (Config::useDeadModules) {
