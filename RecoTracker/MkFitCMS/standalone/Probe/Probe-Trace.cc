@@ -50,6 +50,36 @@ namespace mkfit {
            mode, mode & 1, (mode >> 1) & 1);
   }
 
+  namespace {
+    // Seed truth of a trace meta, from the copy Event::build_trace_maps_etc()
+    // keeps: trSIFHforSeedByMeta_[meta] is the truth of seed TrCandMeta::seed of
+    // Event::trSeeds_. Not from Event::currentSeedTracks(), the driver's
+    // per-iteration seed vector, which may be a temporary that is gone or reset
+    // by the time a probe runs.
+    //
+    // Event::reset() clears trSeeds_ and build_trace_maps_etc() fills it, so an
+    // empty trSeeds_ under non-empty metas means that the maps were not built
+    // for this event: s.ProcessEventStd() does not build them, the collecting
+    // drivers (TraceFwdSearch(), ...) do.
+    bool trace_seed_truth_built(const Event *ev, const char *who) {
+      if (ev->trCandMetas_.empty())
+        return true;
+      if (!ev->trSeeds_.empty() && ev->trSIFHforSeedByMeta_.size() == ev->trCandMetas_.size())
+        return true;
+      printf("%s: the trace maps of this event are not built, so there is no seed truth;\n"
+             "  call Event::build_trace_maps_etc() after processing the event.\n",
+             who);
+      return false;
+    }
+
+    const Event::SimInfoFromHits *trace_seed_truth(const Event *ev, int meta_id) {
+      if (meta_id < 0 || meta_id >= (int)ev->trSIFHforSeedByMeta_.size())
+        return nullptr;
+      const Event::SimInfoFromHits &si = ev->trSIFHforSeedByMeta_[meta_id];
+      return si.is_set() ? &si : nullptr;
+    }
+  }  // namespace
+
   // ==========================================================================
   // Flatten the MKFIT_TRACE graph of ONE event's hit matches into a TTree.
   //
@@ -153,7 +183,8 @@ namespace mkfit {
   void probe_search_event(const Event *ev, int event_idx) {
     if (ev == nullptr) return;
     // Seed truth, keyed by TrCandMeta::seed -- the index into the seed vector the
-    // builder was given, which Event::currentSeedTracks() is.
+    // builder was given, of which Event::build_trace_maps_etc() keeps a copy,
+    // trSeeds_, and the truth, trSIFHforSeedByMeta_ (trace_seed_truth() above).
     //
     // NOT by TrCandMeta::global_seed. MkBuilder.cc:425 sets that to
     // currentSeed(cm.seed).label(), a seed's LABEL, and a label equals its index
@@ -164,21 +195,7 @@ namespace mkfit {
     // indexing the seed array with it is silently WRONG rather than empty. This
     // key is correct on both paths and retires the relabel dependency, the same
     // trap val_bkfit_seed_truth() was removed for.
-    const TrackVec *cseeds = nullptr;
-    try { cseeds = &ev->currentSeedTracks(); } catch (...) { cseeds = nullptr; }
-    const size_t n_seed = cseeds ? cseeds->size() : 0;
-    std::vector<int> seed_sim(n_seed, -1);
-    std::vector<float> seed_gf(n_seed, -1.f);
-    std::vector<int> seed_nv(n_seed, -1), seed_nm(n_seed, -1);
-    for (size_t i = 0; i < n_seed; ++i) {
-      auto si = ev->simInfoForCurrentSeed((int) i);
-      if (si.is_set()) {
-        seed_sim[i] = si.label;
-        seed_gf[i]  = (float) si.good_frac();
-        seed_nv[i]  = si.n_valid;
-        seed_nm[i]  = si.n_match;
-      }
-    }
+    const bool have_truth = trace_seed_truth_built(ev, "probe_search_event");
     g_sh_evt = event_idx;
     const int n_ls = (int) ev->trLayerSearches_.size();
     const int n_ku = (int) ev->trKalmanUpdates_.size();
@@ -239,11 +256,12 @@ namespace mkfit {
           if (cs.meta_id >= 0 && cs.meta_id < (int) ev->trCandMetas_.size()) {
             const TrCandMeta &cm = ev->trCandMetas_[cs.meta_id];
             v.seed = cm.seed;  v.global_seed = cm.global_seed;  v.sim = cm.sim;
-            if (cm.seed >= 0 && cm.seed < (int) seed_sim.size()) {
-              v.sim_label = seed_sim[cm.seed];
-              v.seed_good_frac = seed_gf[cm.seed];
-              v.seed_n_valid   = seed_nv[cm.seed];
-              v.seed_n_match   = seed_nm[cm.seed];
+            const Event::SimInfoFromHits *si = have_truth ? trace_seed_truth(ev, cs.meta_id) : nullptr;
+            if (si) {
+              v.sim_label = si->label;
+              v.seed_good_frac = (float) si->good_frac();
+              v.seed_n_valid   = si->n_valid;
+              v.seed_n_match   = si->n_match;
               if (v.sim_label >= 0 && hm.layer >= 0)
                 v.n_sim_hits_in_layer = ev->countSimHitsInLayer(v.sim_label, hm.layer);
             }
@@ -412,11 +430,9 @@ namespace mkfit {
       m.n_pass = roll[isub].npass;  m.n_pass_wrong = roll[isub].npass_wrong;  m.n_kept_wrong = roll[isub].nkept_wrong;
       if (roll[isub].wrong_c2 < 1e29f) m.best_wrong_chi2 = roll[isub].wrong_c2;
       if (roll[isub].wrong_c2a < 1e29f) m.best_wrong_chi2_acc = roll[isub].wrong_c2a;
-      if (cs.meta_id >= 0 && cs.meta_id < (int) ev->trCandMetas_.size()) {
-        const TrCandMeta &cm = ev->trCandMetas_[cs.meta_id];
-        if (cm.seed >= 0 && cm.seed < (int) seed_sim.size())
-          m.sim_label = seed_sim[cm.seed];
-      }
+      if (have_truth)
+        if (const Event::SimInfoFromHits *si = trace_seed_truth(ev, cs.meta_id))
+          m.sim_label = si->label;
       if (m.sim_label < 0) { g_sm.push_back(m); continue; }
 
       // Reconstruct the window centre in 3-D. q_center() is z (barrel) or r
@@ -496,8 +512,9 @@ namespace mkfit {
   //
   // Two things come for free that the TTree version had to build by hand:
   // the per-track grouping (records carry state_id_in -> TrCandState.meta_id,
-  // so a track IS a meta) and the seed truth (TrCandMeta::global_seed indexes
-  // seedTracks_ directly, so no label->truth map and no relabel trap).
+  // so a track IS a meta) and the seed truth (Event::trSIFHforSeedByMeta_ holds
+  // the truth of each meta's seed, TrCandMeta::seed of Event::trSeeds_, so no
+  // label->truth map and no relabel trap).
   //
   // Step 0 is EXCLUDED throughout: the seed state already sits on the outermost
   // hit's plane, so that update re-uses the hit that produced the state and its
@@ -520,6 +537,7 @@ namespace mkfit {
   void probe_bkfit_trace_event(const Event *ev) {
     if (ev == nullptr) return;
     ++g_bt.n_ev;
+    const bool have_truth = trace_seed_truth_built(ev, "probe_bkfit_trace_event");
     // group records by meta -- i.e. by track
     std::map<int, std::vector<const TrBkFitUpdate*>> by_meta;
     for (const auto &t : ev->trBkFitUpdates_) {
@@ -544,15 +562,14 @@ namespace mkfit {
       const double r = c2 / (2.0 * n);
       g_bt.red.push_back(r);
 
-      // Seed truth, straight off the meta. No label->truth map, no relabel.
-      const TrCandMeta &cm = ev->trCandMetas_[meta_id];
-      if (cm.global_seed < 0 || cm.global_seed >= (int) ev->seedTracks_.size()) {
-        ++g_bt.n_nogf; continue;
-      }
-      auto si = ev->simInfoForTrack(ev->seedTracks_[cm.global_seed]);
-      if (!si.is_set()) { ++g_bt.n_nogf; continue; }
-      const float gf = si.good_frac();
-      const int sim_label = si.label;   // THE namespace for mc_track_id
+      // Seed truth by the meta, as in probe_search_event(). Not by
+      // TrCandMeta::global_seed: MkBuilder sets that to the seed's LABEL, which
+      // indexes seedTracks_ only after relabelSeedTracksSequentially(), and
+      // ProcessEventStd() does not call it.
+      const Event::SimInfoFromHits *si = have_truth ? trace_seed_truth(ev, meta_id) : nullptr;
+      if (!si) { ++g_bt.n_nogf; continue; }
+      const float gf = si->good_frac();
+      const int sim_label = si->label;   // THE namespace for mc_track_id
       const int cat = gf >= 0.9999f ? 0 : (gf >= 0.8f ? 1 : 2);
 
       g_bt.red_cat[cat].push_back(r);
