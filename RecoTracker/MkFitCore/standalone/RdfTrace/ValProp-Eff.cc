@@ -38,7 +38,6 @@
 #include "RecoTracker/MkFitCore/interface/Track.h"
 #include "RecoTracker/MkFitCore/standalone/Event.h"
 #include "RecoTracker/MkFitCore/standalone/TrackExtra.h"
-#include "RecoTracker/MkFitCMS/standalone/Shell.h"
 #include "RecoTracker/MkFitCore/standalone/ConfigStandalone.h"
 #include "RecoTracker/MkFitCore/interface/TrackerInfo.h"
 #include "RecoTracker/MkFitCore/interface/IterationConfig.h"
@@ -511,23 +510,6 @@ namespace mkfit {
   // selectHitIndicesV2. Needs --read-cmssw-tracks AND a .bin converted with
   // --write-rec-tracks; without the latter the section is not in the file at all
   // and this reports an empty collection rather than failing quietly.
-  //--------------------------------------------------------------------------
-  // val_hitpur -- per mkFit layer, the hits on the reconstructed tracks: how
-  // many belong to the track's own particle (TrackExtra's mcTrackID, MTV rule
-  // when val_assoc_mtv is on) and how many to another or to none. Only tracks
-  // matched to a particle (mcTrackID >= 0) are counted, so "wrong" means a
-  // foreign hit on a track that is otherwise that particle's. Seed hits
-  // included. For comparing layer plans: where do the wrong hits enter.
-  //--------------------------------------------------------------------------
-  namespace {
-    struct HpCfg {
-      std::string name;
-      long n_trk = 0;
-      long own[64] = {}, wrong[64] = {}, none[64] = {};
-    };
-    std::vector<HpCfg> g_hp;
-  }  // namespace
-
   //============================================================================
   // val_rank -- the worst end-of-layer selection rank along the ancestry of each
   // seed's final forward-search candidate (TrCandMeta::fwd_rank_*, MKFIT_TRACE,
@@ -668,54 +650,6 @@ namespace mkfit {
           printf("  %-5s -> %-5s  %10ld %10ld %12ld %12ld\n", cls_name[a], cls_name[b], tf[a][b][1][0],
                  tf[a][b][1][1], tf[a][b][0][0], tf[a][b][0][1]);
     }
-  }
-
-  void val_hitpur_reset() { g_hp.clear(); }
-
-  void val_hitpur_event(const Event *ev, const char *cfg) {
-    if (ev == nullptr) return;
-    HpCfg *C = nullptr;
-    for (auto &c : g_hp) if (c.name == cfg) C = &c;
-    if (!C) { g_hp.push_back(HpCfg()); g_hp.back().name = cfg; C = &g_hp.back(); }
-    for (const Track &c : ev->candidateTracks_) {
-      TrackExtra extra(c.label());
-      extra.setMCTrackIDInfo(c, ev->layerHits_, ev->simHitsInfo_, ev->simTracks_, false, false);
-      const int mc = extra.mcTrackID();
-      if (mc < 0 || mc >= (int) ev->simTracks_.size()) continue;
-      ++C->n_trk;
-      for (int h = 0; h < c.nTotalHits(); ++h) {
-        const HitOnTrack hot = c.getHitOnTrack(h);
-        if (hot.index < 0 || hot.layer < 0 || hot.layer >= 64) continue;
-        const Hit &hit = ev->layerHits_[hot.layer][hot.index];
-        const int id = hit.mcHitID();
-        const int st = (id >= 0 && id < (int) ev->simHitsInfo_.size()) ? ev->simHitsInfo_[id].mcTrackID() : -1;
-        if (st == mc) ++C->own[hot.layer];
-        else if (st < 0) ++C->none[hot.layer];
-        else ++C->wrong[hot.layer];
-      }
-    }
-  }
-
-  void val_hitpur_report() {
-    printf("\n--- val_hitpur: hits on particle-matched tracks, per mkFit layer: own / foreign / none ---\n");
-    printf("%-6s", "layer");
-    for (auto &c : g_hp) printf(" | %-30s", c.name.c_str());
-    printf("\n");
-    for (int l = 0; l < 64; ++l) {
-      bool any = false;
-      for (auto &c : g_hp) any |= (c.own[l] + c.wrong[l] + c.none[l]) > 0;
-      if (!any) continue;
-      printf("%-6d", l);
-      for (auto &c : g_hp) {
-        const long t = c.own[l] + c.wrong[l] + c.none[l];
-        printf(" | %8ld %6.2f%% %5.2f%% %5.3f", c.own[l], t ? 100.0 * c.wrong[l] / t : 0.0,
-               t ? 100.0 * c.none[l] / t : 0.0, c.n_trk ? (double) t / c.n_trk : 0.0);
-      }
-      printf("\n");
-    }
-    printf("  per config: own hits, foreign %%, none %%, hits per matched track; tracks:");
-    for (auto &c : g_hp) printf(" %s %ld", c.name.c_str(), c.n_trk);
-    printf("\n");
   }
 
   void val_eff_cmssw_event(const Event *ev, const char *cfg) {
@@ -1271,184 +1205,6 @@ namespace mkfit {
               rootf.c_str(), txt.c_str(), g_ve.size());
     if (g_ve_log) { fclose(g_ve_log); g_ve_log = nullptr; }
   }
-
-  // ==========================================================================
-  // val_chopres -- the pT5 pixel-chop recovery, RESOLVED.
-  //
-  // Same measurement as val_chop_recovery_* and the same reason for preferring
-  // it on this sample: the chopped hits were found by the upstream
-  // reconstruction, so the comparison is an exact (layer, index) match and NO
-  // TRUTH IS INVOLVED. That matters here beyond the usual mc_match caution --
-  // the HLT March sample predates the split-cluster arbitration fix, so its
-  // rec->sim links are stale and any truth-matched efficiency on it is biased.
-  // This metric is immune to that.
-  //
-  // Resolved in |eta| and pT of the candidate itself, and in chopped hits per
-  // chopped LAYER, which is the axis the one-hit-per-layer ceiling lives on.
-  namespace {
-    struct ChopCfg {
-      std::string name;
-      VeBins hden, hnum;             // chopped hits, recovered hits
-      VeBins tden, tnum;             // tracks with chopped hits, fully recovered
-      std::vector<VeBins> ev_hnum, ev_tnum;
-      long n_ev = 0;
-    };
-    std::vector<ChopCfg> g_cr;
-    std::string g_cr_ref;
-
-    ChopCfg &cr_cfg(const char *name) {
-      for (auto &c : g_cr) if (c.name == name) return c;
-      g_cr.push_back(ChopCfg());  g_cr.back().name = name;  return g_cr.back();
-    }
-    void ve_fill_n(VeBins &v, int be, int bp, int bh, int reg, long n) {  // chopres: no MTV gate
-      if (be >= 0) v.b[0][be] += n;
-      if (bp >= 0) v.b[1][bp] += n;
-      if (bh >= 0) v.b[2][bh] += n;
-      if (reg >= 0) v.reg[reg] += n;
-      v.tot += n;
-    }
-  }
-
-  void val_chopres_reset() { g_cr.clear(); g_cr_ref.clear(); }
-  void val_chopres_ref(const char *cfg) { g_cr_ref = cfg; }
-
-  void val_chopres_event(const Event *ev, const char *cfg) {
-    if (ev == nullptr) return;
-    ChopCfg &C = cr_cfg(cfg);
-    VeBins e_hnum, e_tnum;
-    for (const Track &c : ev->candidateTracks_) {
-      auto it = Shell::s_chopped_hits.find(c.label());
-      if (it == Shell::s_chopped_hits.end() || it->second.empty()) continue;
-      const auto &chopped = it->second;
-      std::set<int> clay;
-      for (const HitOnTrack &ch : chopped) clay.insert(ch.layer);
-      const float ae = std::abs(c.momEta());
-      const int be = ve_bin_eta(ae), bp = ve_bin_pt(c.pT()), reg = ve_region(ae);
-      const int bh = ve_bin_hpl((float) chopped.size() / (float) std::max<size_t>(1, clay.size()));
-      int back = 0;
-      for (const HitOnTrack &ch : chopped) {
-        for (int i = 0; i < c.nTotalHits(); ++i) {
-          const HitOnTrack hot = c.getHitOnTrack(i);
-          if (hot.layer == ch.layer && hot.index == ch.index) { ++back; break; }
-        }
-      }
-      ve_fill_n(C.hden, be, bp, bh, reg, (long) chopped.size());
-      ve_fill_n(e_hnum, be, bp, bh, reg, back);
-      ve_fill(C.tden, be, bp, bh, reg, 0.0f, 1e9f);   // chopres is not MTV-gated
-      if (back == (int) chopped.size()) ve_fill(e_tnum, be, bp, bh, reg, 0.0f, 1e9f);
-    }
-    ve_add(C.hnum, e_hnum);  ve_add(C.tnum, e_tnum);
-    C.ev_hnum.push_back(e_hnum);  C.ev_tnum.push_back(e_tnum);
-    ++C.n_ev;
-    Shell::s_chopped_hits.clear();
-  }
-
-  namespace {
-    void cr_table(int ax, const ChopCfg *ref, bool track_level) {
-      const int nb = (ax == 3) ? 3 : ve_nbin[ax];
-      ve_printf("\n--- %s vs %s ---\n",
-                track_level ? "tracks FULLY recovered" : "chopped hits recovered",
-                ax == 3 ? "region" : (ax == 2 ? "chopped hits / chopped layer" : ve_axname[ax]));
-      ve_printf("%-20s %9s", ax == 3 ? "region" : "bin", track_level ? "tracks" : "hits");
-      for (const auto &c : g_cr) ve_printf(" | %-10.10s", c.name.c_str());
-      ve_printf("\n");
-      for (int b = 0; b < nb; ++b) {
-        const VeBins &D = track_level ? ref->tden : ref->hden;
-        const long den = (ax == 3) ? D.reg[b] : D.b[ax][b];
-        if (den < 20) continue;
-        std::string lab = (ax == 3) ? ve_regname[b] : ve_binlabel(ax, b);
-        ve_printf("%-20s %9ld", lab.c_str(), den);
-        for (const auto &c : g_cr) {
-          const VeBins &Dc = track_level ? c.tden : c.hden;
-          const VeBins &Nc = track_level ? c.tnum : c.hnum;
-          const long d = (ax == 3) ? Dc.reg[b] : Dc.b[ax][b];
-          const long n = (ax == 3) ? Nc.reg[b] : Nc.b[ax][b];
-          if (&c == ref) ve_printf(" |   %6.2f%% ", d ? 100.0*n/d : 0.0);
-          else {
-            double sum, sig;
-            ve_paired(ve_series(track_level ? c.ev_tnum : c.ev_hnum, ax == 3 ? 3 : ax, b),
-                      ve_series(track_level ? ref->ev_tnum : ref->ev_hnum, ax == 3 ? 3 : ax, b),
-                      sum, sig);
-            const double dp = d ? 100.0*sum/d : 0.0;
-            const double sp = d ? 100.0*sig/d : 0.0;
-            ve_printf(" | %+6.2f%s%-3.3s", dp,
-                      sp > 0 && std::abs(dp) > 3*sp ? "*" : " ",
-                      sp > 0 && std::abs(dp) > 3*sp ? "sig" : "");
-          }
-        }
-        ve_printf("\n");
-      }
-    }
-  }
-
-  void val_chopres_report(const char *prefix) {
-    if (g_cr.empty()) { printf("val_chopres_report: nothing accumulated.\n"); return; }
-    const ChopCfg *ref = &g_cr[0];
-    if (!g_cr_ref.empty())
-      for (const auto &c : g_cr) if (c.name == g_cr_ref) ref = &c;
-
-    const std::string txt = std::string(prefix) + ".txt";
-    g_ve_log = fopen(txt.c_str(), "w");
-
-    ve_printf("\n================================================================\n");
-    ve_printf("  val_chopres -- pT5 pixel-chop recovery, resolved\n");
-    ve_printf("================================================================\n");
-    ve_printf("Truth-FREE: exact (layer, index) match against the hits the chop removed.\n");
-    ve_printf("Reference configuration: %s\n", ref->name.c_str());
-    ve_printf("\n--- totals ---\n");
-    ve_printf("%-22s %7s %9s %9s %8s %9s %9s %8s\n", "configuration", "events",
-              "hits", "recovered", "frac", "tracks", "full", "frac");
-    for (const auto &c : g_cr)
-      ve_printf("%-22s %7ld %9ld %9ld %7.2f%% %9ld %9ld %7.2f%%\n",
-                c.name.c_str(), c.n_ev, c.hden.tot, c.hnum.tot,
-                c.hden.tot ? 100.0*c.hnum.tot/c.hden.tot : 0.0,
-                c.tden.tot, c.tnum.tot, c.tden.tot ? 100.0*c.tnum.tot/c.tden.tot : 0.0);
-    for (const auto &c : g_cr)
-      if (c.hden.tot != ref->hden.tot)
-        ve_printf("  !! %s: chopped-hit denominator differs from the reference by %ld\n",
-                  c.name.c_str(), c.hden.tot - ref->hden.tot);
-
-    cr_table(3, ref, false);  cr_table(0, ref, false);
-    cr_table(1, ref, false);  cr_table(2, ref, false);
-    cr_table(3, ref, true);   cr_table(2, ref, true);
-    ve_printf("  reference column is absolute; the others are the PAIRED difference in\n"
-              "  points, * = |delta| > 3 sigma of the per-event spread.\n");
-
-    const std::string rootf = std::string(prefix) + ".root";
-    TFile f(rootf.c_str(), "RECREATE");
-    for (int ax = 0; ax < VE_NAX; ++ax) {
-      const int nb = ve_nbin[ax];
-      TCanvas *cv = new TCanvas(Form("c_chop_ax%d", ax), Form("chop recovery vs axis %d", ax), 900, 600);
-      TLegend *lg = new TLegend(0.60, 0.15, 0.98, 0.15 + 0.05*g_cr.size());
-      int ic = 0;
-      for (const auto &c : g_cr) {
-        TH1D *hn = new TH1D(Form("cnum_ax%d_%d", ax, ic), "", nb, -0.5, nb - 0.5);
-        TH1D *hd = new TH1D(Form("cden_ax%d_%d", ax, ic), "", nb, -0.5, nb - 0.5);
-        for (int b = 0; b < nb; ++b) {
-          hn->SetBinContent(b+1, (double) c.hnum.b[ax][b]);
-          hd->SetBinContent(b+1, (double) c.hden.b[ax][b]);
-        }
-        TH1D *he = (TH1D*) hn->Clone(Form("chop_ax%d_%s", ax, c.name.c_str()));
-        he->SetTitle(Form("chopped hits recovered vs %s;%s;recovered",
-                          ax == 2 ? "chopped hits / layer" : ve_axname[ax],
-                          ax == 2 ? "chopped hits / layer" : ve_axname[ax]));
-        he->Divide(hn, hd, 1.0, 1.0, "B");
-        for (int b = 0; b < nb; ++b) he->GetXaxis()->SetBinLabel(b+1, ve_binlabel(ax, b).c_str());
-        he->SetLineColor(1 + ic);  he->SetMarkerColor(1 + ic);  he->SetMarkerStyle(20 + ic);
-        he->SetMinimum(0.0);  he->SetMaximum(1.05);
-        he->Write();
-        cv->cd();  he->Draw(ic == 0 ? "E1" : "E1 SAME");
-        lg->AddEntry(he, c.name.c_str(), "lp");
-        delete hn;  delete hd;  ++ic;
-      }
-      lg->Draw();  cv->Write();
-    }
-    f.Close();
-    ve_printf("\nval_chopres_report: wrote %s and %s (%zu configurations)\n",
-              rootf.c_str(), txt.c_str(), g_cr.size());
-    if (g_ve_log) { fclose(g_ve_log); g_ve_log = nullptr; }
-  }
-
 
   //--------------------------------------------------------------------------
   // val_trkdump -- one row per (configuration, event, sim track): the best-

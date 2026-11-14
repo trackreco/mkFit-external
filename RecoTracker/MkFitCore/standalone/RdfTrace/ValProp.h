@@ -30,8 +30,6 @@
 
 namespace mkfit {
 
-  class EventOfHits;
-
   class Event;
 
 
@@ -87,38 +85,21 @@ namespace mkfit {
   // is measured on it.
   void val_sample_info(const Event *ev);
 
-  // Where are a sim track's parameters given? At the production vertex, or at
-  // its first hit? Everything built on the truth helix depends on the answer.
-  void val_simtrack_anchor(const Event *ev, int n_print = 5);
-
-  // Seed diagnostics, before any fit: is the input covariance a fit result or a
-  // canned matrix, is it positive definite, and where is the state anchored?
-  // `kind`: 0 = pT5 (pix->strip), 1 = T5 (strip->strip), 2 = pix, -1 = all.
-  void val_seed_cov(const Event *ev, int kind = 1);
-
   void val_cov_transport(const char *out_file, int n_samp = 10000, unsigned seed = 20260913);
 
   void val_max_cands(int n);
   void val_search_material(bool on);
   void val_mkbins_surface_q(bool on);
-  void val_extra_dq(float f);
   void val_dq(float trk_fac, float hit_fac, int extra_bins);
   void val_phi_per_hit(bool on, float fac);
-  void val_hit_extents(const EventOfHits *eoh, int lay_beg, int lay_end);
   void val_dphi(float trk_fac, float hit_rad, int extra_bins);
   void val_precut(bool q, bool phi);
   void val_hit_chi2(float cut, float trk_fac);
   void val_assoc_mtv(bool on);
-  void val_hitorder_reset();
-  void val_hitorder_event(const Event *ev, const char *cfg);
-  void val_hitorder_report();
   void val_track_scorer(const char *name);
   void val_track_scorer_task(const char *task, const char *name);
   void val_dupl_drth(float central, float obarrel, float forward);
   void val_bkw_pickups(int r0, int r1, int r2, int r3, int r4);
-  void val_qprecut_reset();
-  void val_qprecut_event(const Event *ev);
-  void val_qprecut_report(const char *tag);
   void val_surf_q_hit(bool on);
   // MkFinderV2p2 in-layer combinatorial search and its score, so a scan costs one
   // build and every configuration sees identical events and seeds in one process.
@@ -128,7 +109,6 @@ namespace mkfit {
   void val_sister_hole(bool on, float chi2 = 0.0f);
   void val_max_cands_fb(int n_fwd, int n_bkw);
   void val_bkfit_outliers(float chi2, int max_outliers, float min_pt);
-  void val_dup_drth(float central, float obarrel, float forward);
   void val_reserve_hole_slot(bool on);
   void val_score_mode(int mode, float hit_eff);
   void val_eff_signal_only(bool on);
@@ -142,16 +122,9 @@ namespace mkfit {
   void val_score_term_stats(bool on);
   void val_score(float hit_bonus, float chi2_weight, float miss_fwd, float miss_bkw);
   void val_search_lite(int mode);
-  void val_cluster_sizes(const Event *ev);
-  void val_material_profile(float z);
-  void val_kgain_reset();
-  void val_kgain_event(const Event *ev);
-  void val_kgain_report();
   void val_kinfo_reset();
   void val_kinfo_event(const Event *ev);
   void val_kinfo_report();
-  void val_chop_recovery_event(const Event *ev);
-  void val_chop_recovery_report(const char *tag);
   void val_track_eff_reset();
   void val_track_eff_event(const Event *ev);
   void val_track_eff_report(const char *tag);
@@ -165,20 +138,9 @@ namespace mkfit {
   void val_bkfit_trace_report(const char *prefix);
   void val_bkfit_material(bool on);
 
-  // Are cmsswTracks_ independent of the seeds in the same file, or are they
-  // built FROM them? If each track contains its seed's hits, the collection is
-  // downstream of the seeds and cannot serve as an independent reference.
-  void val_seed_vs_cmssw(const Event *ev);
-
-  // How often a hit has a sister in the partner sub-layer of the same physical
-  // layer, and how far away. Decides whether in-layer processing may anchor on
-  // one sensor. See ValProp.cc.
   // Per-sim-track efficiency, resolved in |eta|, pT and hits-per-layer, paired
   // across configurations. val_eff_ref() names the configuration everything else
   // is differenced against; without it the first one accumulated is used.
-  void val_hitpur_reset();
-  void val_hitpur_event(const Event *ev, const char *cfg);
-  void val_hitpur_report();
   void val_rank_reset();
   void val_rank_event(const Event *ev, const char *cfg);
   void val_rank_report();
@@ -191,21 +153,6 @@ namespace mkfit {
   void val_eff_event(const Event *ev, const char *cfg);
   void val_eff_cmssw_event(const Event *ev, const char *cfg);
   void val_eff_report(const char *prefix);
-
-  // pT5 pixel-chop recovery, resolved and paired. Truth-free.
-  void val_chopres_reset();
-  void val_chopres_ref(const char *cfg);
-  void val_chopres_event(const Event *ev, const char *cfg);
-  void val_chopres_report(const char *prefix);
-
-  void val_qbins_reset();
-  void val_qbins_event(const Event *ev);
-  void val_qbins_report();
-
-  void val_sister_reset();
-  void val_sister_mcfilter(bool on);
-  void val_sister_event(const Event *ev, float pt_min = 0.5f);
-  void val_sister_report();
 
 }  // namespace mkfit
 

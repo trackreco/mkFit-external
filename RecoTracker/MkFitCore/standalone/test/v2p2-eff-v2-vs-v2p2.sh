@@ -1,9 +1,7 @@
 #!/bin/bash
 # V2 against v2p2 in one process, same events and seeds: the standalone
 # counterpart of the CMSSW MTV comparison (standard V2 vs the v2p2 branch).
-# Production defaults otherwise; the switch is Shell::SetUseV2p2(). Also
-# reports val_hitorder: whether the hits the CMSSW refit would get, after
-# MkFitOutputConverter's sort, are in propagation order.
+# Production defaults otherwise; the switch is Shell::SetUseV2p2().
 #
 #   usage:  v2p2-eff-v2-vs-v2p2.sh [n_events] [sample] [out_prefix]
 #   ASSOC=mtv associates by MTV's rule (> 75 % of all hits true) instead of
@@ -51,9 +49,8 @@ for c in v2 v2p2; do
   for ((i=1;i<=N;i++)); do
     CMD+=(--shell-command "s.GoToEvent($i)"
           --shell-command 's.ProcessEventStd()'
-          --shell-command "val_eff_ev(s.event(), \"$c\")"
-          --shell-command "val_ho_ev(s.event(), \"$c\")")
+          --shell-command "val_eff_ev(s.event(), \"$c\")")
   done
 done
-CMD+=(--shell-command "val_eff_report(\"$OUT\")" --shell-command 'val_ho_report()')
+CMD+=(--shell-command "val_eff_report(\"$OUT\")")
 echo .q | "${CMD[@]}"
