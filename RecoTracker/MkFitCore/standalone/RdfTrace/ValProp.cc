@@ -1601,20 +1601,6 @@ namespace mkfit {
   }
   void val_final_beam_report() { v2p2_final_beam_diag_report(); }
 
-  // The pixel-seed duplicate cleaner's decisions against truth: val_dupclean(true) resets
-  // and starts recording, val_dupclean_event() classifies the event's pairs (call it after
-  // the event is processed), val_dupclean_report() prints.
-  void v2p2_dupclean_diag(const Event *ev);
-  void v2p2_dupclean_diag_reset();
-  void v2p2_dupclean_diag_report();
-  void val_dupclean(bool on) {
-    V2p2::Diag::dupclean_pairs = on;
-    v2p2_dupclean_diag_reset();
-    printf("val_dupclean: %d (duplicate-cleaner decisions against truth, reset)\n", (int) on);
-  }
-  void val_dupclean_event(const Event *ev) { v2p2_dupclean_diag(ev); }
-  void val_dupclean_report() { v2p2_dupclean_diag_report(); }
-
   void val_hit_eff(float fwd, float bkw) {
     for_each_v2p2_params([fwd, bkw](V2p2Params &p) {
       p.score_outward.hit_eff = fwd;

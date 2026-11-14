@@ -23,11 +23,6 @@ namespace mkfit {
     std::atomic<long> n_quadrant_skip{0};  // pull-in: coarse rz check said the layer is behind us
     std::atomic<long> n_stop_minpt{0};     // pull-in: pT below minPtCut
     std::atomic<long> n_stop_looper{0};    // pull-in: past pi/2 - 0.2 to the radial direction
-    std::atomic<long> n_wsr_inside{0};     // crossing wholly in sensitive q
-    std::atomic<long> n_wsr_edge{0};       // within dq of a boundary, or turning inside the layer
-    std::atomic<long> n_wsr_outside{0};    // does not reach the layer
-    std::atomic<long> n_wsr_in_gap{0};     // ... because of the endcap r hole
-    std::atomic<long> n_layer_skipped{0};  // WSR_Outside and therefore no HoT added
     std::atomic<long> n_hole{0};           // kHitMissIdx -- a real hole, counted against the limits
     std::atomic<long> n_hot_edge{0};       // kHitEdgeIdx -- not counted
     std::atomic<long> n_hot_gap{0};        // kHitInGapIdx -- not counted
@@ -50,38 +45,13 @@ namespace mkfit {
     std::atomic<long> n_kalman_lanes{0};
     std::atomic<long> n_kalman_calls_d0{0};   // depth 0 only
     std::atomic<long> n_kalman_lanes_d0{0};
-    // CandNode arena size at end of layer, which is its high water in that
-    // layer: summed over layers, with the largest seen.
-    std::atomic<long> n_arena_layers{0};
-    std::atomic<long> n_arena_hw_sum{0};
-    std::atomic<long> n_arena_hw_max{0};
-    std::atomic<long> n_early_selections{0};  // selections run before end of layer
     std::atomic<long> n_late_max_cands{0};          // CombCandidate activations at InLayer::late_max_cands
     std::atomic<long> n_late_max_cands_dropped{0};  // ... TrackCands dropped by it at activation
     std::atomic<long> n_late_max_cands_long{0};     // activations kept at full width by a long step
     std::atomic<long> n_sister_hole_dropped{0};     // holes dropped for a sister-sensor sibling
-    // Beam slots held by dominated competitors after the end-of-layer selection,
-    // per layer of the selection. "sub": a kept in-layer path whose hits are a
-    // strict prefix of another kept path of the same TrackCand. "hole": a kept
-    // hole of a TrackCand that also kept a path. "sister": of the holes, those in
-    // the second sub-layer of an OT pair where the path's first hit is on the
-    // sister sensor (detid + 1) of the TrackCand's last hit. "full": selections
-    // that dropped competitors, where a dominated slot cost an alternative.
-    static constexpr int k_dom_layers = 64;
-    std::atomic<long> n_dom_sel[k_dom_layers]{};
-    std::atomic<long> n_dom_kept[k_dom_layers]{};
-    std::atomic<long> n_dom_sel_full[k_dom_layers]{};
-    std::atomic<long> n_dom_kept_full[k_dom_layers]{};
-    std::atomic<long> n_dom_sub[k_dom_layers]{};
-    std::atomic<long> n_dom_hole[k_dom_layers]{};
-    std::atomic<long> n_dom_sister[k_dom_layers]{};
-    std::atomic<long> n_dom_sub_full[k_dom_layers]{};
-    std::atomic<long> n_dom_hole_full[k_dom_layers]{};
-    std::atomic<long> n_dom_sister_full[k_dom_layers]{};
 
     void reset();
     void print(const char *tag) const;
-    void print_dominance() const;
   };
   extern V2p2PolicyCounters g_v2p2_policy_counters;
 
@@ -98,16 +68,6 @@ namespace mkfit {
   void v2p2_final_beam_diag(const Event *ev, const EventOfCombCandidates &eoccs);
   void v2p2_final_beam_diag_reset();
   void v2p2_final_beam_diag_report();
-
-  // Diag::dupclean_pairs: each pair clean_duplicates_sharedhits_pixelseed() or
-  // clean_duplicates_sharedhits_pixelpriority() marks, kept and dropped track, by the dR
-  // rule (0) or the shared-hit rule (1). Recorded in the cleaner, classified by truth per
-  // event in v2p2_dupclean_diag().
-  class Track;
-  void v2p2_dupclean_record(const Track &kept, const Track &dropped, int rule);
-  void v2p2_dupclean_diag(const Event *ev);
-  void v2p2_dupclean_diag_reset();
-  void v2p2_dupclean_diag_report();
 
 }  // namespace mkfit
 

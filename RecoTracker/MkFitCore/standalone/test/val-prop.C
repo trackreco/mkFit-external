@@ -80,9 +80,6 @@ void val_final_pick_llh(bool on, float h, float t) { mkfit::val_final_pick_llh(o
 void val_eff_signal_only(bool on) { mkfit::val_eff_signal_only(on); }
 void val_final_beam(bool on) { mkfit::val_final_beam(on); }
 void val_final_beam_report() { mkfit::val_final_beam_report(); }
-void val_dupclean(bool on) { mkfit::val_dupclean(on); }
-void val_dupclean_ev(const mkfit::Event *ev) { mkfit::val_dupclean_event(ev); }
-void val_dupclean_report() { mkfit::val_dupclean_report(); }
 void val_score_mode(int m, float e) { mkfit::val_score_mode(m, e); }
 void val_score(float b, float c, float mf, float mb) { mkfit::val_score(b, c, mf, mb); }
 void val_search_lite(int mode) { mkfit::val_search_lite(mode); }

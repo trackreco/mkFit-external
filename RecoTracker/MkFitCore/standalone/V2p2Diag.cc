@@ -1,6 +1,6 @@
 // Standalone diagnostics of the v2p2 finder, moved out of the core sources: the
-// policy counters, the dominance count of the end-of-layer selection, the MkBins
-// surface reference of dq_track, and the end-of-search beam purity. See V2p2Diag.h.
+// policy counters, the MkBins surface reference of dq_track, and the end-of-search
+// beam purity. See V2p2Diag.h.
 
 #include "RecoTracker/MkFitCore/standalone/V2p2Diag.h"
 
@@ -30,8 +30,6 @@ namespace mkfit {
 
   void V2p2PolicyCounters::reset() {
     n_quadrant_skip = 0; n_stop_minpt = 0; n_stop_looper = 0;
-    n_wsr_inside = 0; n_wsr_edge = 0; n_wsr_outside = 0; n_wsr_in_gap = 0;
-    n_layer_skipped = 0;
     n_hole = 0; n_hot_edge = 0; n_hot_gap = 0; n_stop_holes = 0;
     n_ccand_retired = 0;
     n_nodes = 0; n_nodes_deep = 0; n_path_taken = 0; n_extra_hits = 0;
@@ -39,56 +37,14 @@ namespace mkfit {
     n_same_module_vetoed = 0;
     n_hole_slot_reserved = 0; n_best_short_offered = 0; n_best_short_taken = 0;
     n_kalman_calls = 0; n_kalman_lanes = 0; n_kalman_calls_d0 = 0; n_kalman_lanes_d0 = 0;
-    n_arena_layers = 0; n_arena_hw_sum = 0; n_arena_hw_max = 0; n_early_selections = 0;
     n_late_max_cands = 0; n_late_max_cands_dropped = 0; n_late_max_cands_long = 0;
     n_sister_hole_dropped = 0;
-    for (int l = 0; l < k_dom_layers; ++l) {
-      n_dom_sel[l] = 0; n_dom_kept[l] = 0; n_dom_sel_full[l] = 0; n_dom_kept_full[l] = 0;
-      n_dom_sub[l] = 0; n_dom_hole[l] = 0; n_dom_sister[l] = 0;
-      n_dom_sub_full[l] = 0; n_dom_hole_full[l] = 0; n_dom_sister_full[l] = 0;
-    }
-  }
-
-  void V2p2PolicyCounters::print_dominance() const {
-    // Phase-2 layer groups; the OT pairs split into their first (even) and second
-    // (odd) sub-layer, the one where a sister hit follows.
-    struct G { const char *name; int lo, hi, parity; };  // parity -1: all layers
-    const G groups[] = {{"PixB 0-3", 0, 3, -1},           {"TBPS 1st (4,6,8)", 4, 9, 0},
-                        {"TBPS 2nd (5,7,9)", 4, 9, 1},    {"TB2S 1st", 10, 15, 0},
-                        {"TB2S 2nd", 10, 15, 1},          {"FPix +-", 16, 27, -1},
-                        {"TEDD 1st", 28, 37, 0},          {"TEDD 2nd", 28, 37, 1}};
-    printf("  dominated beam slots after the end-of-layer selection (all / in full selections):\n"
-           "    %-18s %9s %10s %7s %7s %7s %10s %10s %7s %7s %7s\n", "layers", "sel", "kept", "sub%",
-           "hole%", "sist%", "sel full", "kept full", "sub%", "hole%", "sist%");
-    for (const G &g : groups) {
-      long a[10] = {0};
-      for (int l = 0; l < k_dom_layers; ++l) {
-        int lm = l;
-        if (g.lo == 16) lm = (l >= 38 && l <= 49) ? l - 22 : l;   // FPix- onto FPix+
-        if (g.lo == 28) lm = (l >= 50 && l <= 59) ? l - 22 : l;   // TEDD- onto TEDD+
-        if (lm < g.lo || lm > g.hi || (g.parity >= 0 && (lm & 1) != g.parity))
-          continue;
-        a[0] += n_dom_sel[l]; a[1] += n_dom_kept[l]; a[2] += n_dom_sub[l]; a[3] += n_dom_hole[l];
-        a[4] += n_dom_sister[l]; a[5] += n_dom_sel_full[l]; a[6] += n_dom_kept_full[l];
-        a[7] += n_dom_sub_full[l]; a[8] += n_dom_hole_full[l]; a[9] += n_dom_sister_full[l];
-      }
-      auto pc = [](long x, long n) { return n > 0 ? 100.0 * x / n : 0.0; };
-      printf("    %-18s %9ld %10ld %7.1f %7.1f %7.1f %10ld %10ld %7.1f %7.1f %7.1f\n", g.name, a[0], a[1],
-             pc(a[2], a[1]), pc(a[3], a[1]), pc(a[4], a[1]), a[5], a[6], pc(a[7], a[6]), pc(a[8], a[6]),
-             pc(a[9], a[6]));
-    }
   }
 
   void V2p2PolicyCounters::print(const char *tag) const {
-    const long n_wsr = n_wsr_inside + n_wsr_edge + n_wsr_outside;
-    // Denominator is layer searches that got as far as a WSR verdict, i.e. after
-    // the pull-in skips. Those are reported separately because they are a
-    // different population: a candidate skipped at pull-in never became one.
-    const double f = n_wsr > 0 ? 100.0 / n_wsr : 0.0;
     printf("MkFinderV2p2 layer policy (%s):\n"
            "  pull-in    : rz-quadrant skip %ld, stop-minPt %ld, stop-looper %ld\n"
-           "  WSR of %ld : inside %ld (%.1f%%), edge %ld (%.1f%%), outside %ld (%.1f%%), in-gap %ld\n"
-           "  no-hit HoT : hole %ld, edge %ld, gap %ld, stop-out-of-holes %ld; layers skipped %ld\n"
+           "  no-hit HoT : hole %ld, edge %ld, gap %ld, stop-out-of-holes %ld\n"
            "  retired    : %ld CombCandidates\n"
            "  in-layer   : %ld tree nodes (%ld at depth >= 2), %ld paths taken, %ld extra hits\n"
            "  selection  : %ld of them, %ld competitors -> %ld kept (%.2f -> %.2f per seed)\n"
@@ -96,14 +52,10 @@ namespace mkfit {
            "  hole slots : %ld reserved for an outranked decliner\n"
            "  best-short : %ld stopped cands left the beam, %ld became the seed's best short\n"
            "  Mplex lanes: depth 0 %.2f of %d over %ld calls; deeper %.2f over %ld calls\n"
-           "  arena      : high water per layer %.1f nodes mean, %ld max; %ld of %ld selections early\n"
            "  late max_cands: %ld activations at it, %ld TrackCands dropped, %ld kept wide by a long step\n",
            tag,
            n_quadrant_skip.load(), n_stop_minpt.load(), n_stop_looper.load(),
-           n_wsr, n_wsr_inside.load(), f * n_wsr_inside, n_wsr_edge.load(), f * n_wsr_edge,
-           n_wsr_outside.load(), f * n_wsr_outside, n_wsr_in_gap.load(),
            n_hole.load(), n_hot_edge.load(), n_hot_gap.load(), n_stop_holes.load(),
-           n_layer_skipped.load(),
            n_ccand_retired.load(),
            n_nodes.load(), n_nodes_deep.load(), n_path_taken.load(), n_extra_hits.load(),
            n_selections.load(), n_sel_entries.load(), n_sel_kept.load(),
@@ -116,73 +68,8 @@ namespace mkfit {
            (n_kalman_calls - n_kalman_calls_d0) > 0 ?
              (double)(n_kalman_lanes - n_kalman_lanes_d0) / (n_kalman_calls - n_kalman_calls_d0) : 0.0,
            (long)(n_kalman_calls - n_kalman_calls_d0),
-           n_arena_layers > 0 ? (double) n_arena_hw_sum / n_arena_layers : 0.0, n_arena_hw_max.load(),
-           n_early_selections.load(), n_selections.load(),
            n_late_max_cands.load(), n_late_max_cands_dropped.load(), n_late_max_cands_long.load());
     printf("  sister hole: %ld holes dropped for a sibling on the sister sensor\n", n_sister_hole_dropped.load());
-    print_dominance();
-  }
-
-  // Counts the dominated entries among the kept m_sel[0, n_keep), see
-  // V2p2PolicyCounters::n_dom_*. Measurement only: nothing is changed.
-  void MkFinderV2p2::count_dominated_kept(const CombCandidate &ccand, int n_keep) const {
-    auto &C = g_v2p2_policy_counters;
-    const int lay = m_rz_limits.layer_info_1().layer_id();
-    if (lay < 0 || lay >= V2p2PolicyCounters::k_dom_layers)
-      return;
-    const bool full = (int) m_sel.size() > n_keep;
-    ++C.n_dom_sel[lay];
-    C.n_dom_kept[lay] += n_keep;
-    if (full) {
-      ++C.n_dom_sel_full[lay];
-      C.n_dom_kept_full[lay] += n_keep;
-    }
-    auto detid_of = [this](int layer, int idx) {
-      const LayerOfHits &L = mp_job->m_event_of_hits[layer];
-      return L.layer_info().module_info(L.refHit(idx).detIDinLayer()).detid;
-    };
-    for (int k = 0; k < n_keep; ++k) {
-      const SelEntry &e = m_sel[k];
-      bool sub = false, hole = false, sister = false;
-      if (e.node_idx >= 0) {
-        for (int j = 0; j < n_keep && !sub; ++j) {
-          if (j == k || m_sel[j].node_idx < 0 || m_sel[j].tcand_idx != e.tcand_idx)
-            continue;
-          for (int ci = m_node_arena[m_sel[j].node_idx].m_parent_idx; ci >= 0; ci = m_node_arena[ci].m_parent_idx)
-            if (ci == e.node_idx) {
-              sub = true;
-              break;
-            }
-        }
-      } else if (e.add_fake) {
-        for (int j = 0; j < n_keep && !sister; ++j) {
-          if (j == k || m_sel[j].node_idx < 0 || m_sel[j].tcand_idx != e.tcand_idx)
-            continue;
-          hole = true;
-          const TrackCand &tc = ccand[e.tcand_idx];
-          const int pl = tc.getLastHitLyr(), pi = tc.getLastHitIdx();
-          if (pi < 0 || pl != lay - 1 || (lay & 1) == 0 || lay < 4 || (lay > 15 && lay < 28))
-            continue;
-          int root = m_sel[j].node_idx;
-          while (m_node_arena[root].m_parent_idx >= 0)
-            root = m_node_arena[root].m_parent_idx;
-          const auto &hot = m_node_arena[root].m_hot;
-          sister = detid_of(hot.layer, hot.index) == detid_of(pl, pi) + 1;
-        }
-      }
-      if (sub) {
-        ++C.n_dom_sub[lay];
-        if (full) ++C.n_dom_sub_full[lay];
-      }
-      if (hole) {
-        ++C.n_dom_hole[lay];
-        if (full) ++C.n_dom_hole_full[lay];
-      }
-      if (sister) {
-        ++C.n_dom_sister[lay];
-        if (full) ++C.n_dom_sister_full[lay];
-      }
-    }
   }
 
   //----------------------------------------------------------------------------
@@ -756,144 +643,6 @@ namespace mkfit {
           snprintf(nm, sizeof(nm), "llh eps search, h %g, t %g", h, t);
         line(ord[i], nm);
       }
-    }
-  }
-
-  //==============================================================================
-  // Diag::dupclean_pairs: the pixel-seed duplicate cleaner's decisions against truth
-  //==============================================================================
-
-  // Each pair the cleaner marks: the track it kept and the one it dropped. A track is
-  // clean when more than 3/4 of its found hits are one particle's (the MTV rule, all
-  // hits counted). When exactly one of the two is clean, the rules below say which one
-  // they would have kept, from what the cleaner can see on a Track.
-  namespace {
-    struct DcTrk {
-      std::vector<std::pair<int, int>> hits;  // (layer, index) of found hits
-      int nfound, nholes, ntail;
-      float chi2, pt, eta, score;
-    };
-    struct DcPair {
-      DcTrk kept, dropped;
-      int rule;
-    };
-    std::vector<DcPair> g_dc_pending;
-
-    constexpr int DC_NP = 3;  // populations by the kept track: all, 1.7-2.7 pT < 0.9, 1.7-2.7 pT >= 0.9
-    constexpr int DC_NC = 5;  // same particle, two particles, kept clean, kept dirty, both dirty
-    constexpr int DC_NR = 6;  // alternative rules, see dc_rule_names
-    const char *dc_class_names[DC_NC] = {
-        "both clean, same particle", "both clean, two particles", "kept clean, dropped dirty",
-        "kept dirty, dropped clean", "both dirty"};
-    const char *dc_rule_names[DC_NR] = {"score (the cleaner)",  "more found hits",
-                                        "fewer inside holes",   "lower chi2",
-                                        "lower chi2 / hit",     "more hits, then chi2"};
-    long g_dc_n[DC_NP][2][DC_NC] = {};      // [pop][rule dR / shared][class]
-    double g_dc_keep_clean[DC_NP][DC_NR] = {};  // on mixed pairs, ties count 0.5
-    long g_dc_mixed[DC_NP] = {};
-    long g_dc_events = 0;
-
-    // +1: the rule keeps a, -1: b, 0: tie.
-    int dc_rule(int r, const DcTrk &a, const DcTrk &b) {
-      auto cmp = [](float x, float y) { return x > y ? 1 : (x < y ? -1 : 0); };
-      const float ca = a.nfound > 0 ? a.chi2 / a.nfound : 0.f, cb = b.nfound > 0 ? b.chi2 / b.nfound : 0.f;
-      switch (r) {
-        case 0: return cmp(a.score, b.score);
-        case 1: return cmp(a.nfound, b.nfound);
-        case 2: return cmp(b.nholes, a.nholes);
-        case 3: return cmp(b.chi2, a.chi2);
-        case 4: return cmp(cb, ca);
-        default: {
-          const int c = cmp(a.nfound, b.nfound);
-          return c != 0 ? c : cmp(b.chi2, a.chi2);
-        }
-      }
-    }
-
-    DcTrk dc_trk(const Track &t) {
-      DcTrk d;
-      for (int h = 0; h < t.nTotalHits(); ++h)
-        if (t.getHitIdx(h) >= 0) d.hits.emplace_back(t.getHitLyr(h), t.getHitIdx(h));
-      d.nfound = t.nFoundHits();
-      d.nholes = t.nInsideMinusOneHits();
-      d.ntail = t.nTailMinusOneHits();
-      d.chi2 = t.chi2();
-      d.pt = t.pT();
-      d.eta = t.momEta();
-      d.score = t.score();
-      return d;
-    }
-  }  // namespace
-
-  void v2p2_dupclean_record(const Track &kept, const Track &dropped, int rule) {
-    g_dc_pending.push_back({dc_trk(kept), dc_trk(dropped), rule});
-  }
-
-  void v2p2_dupclean_diag(const Event *ev) {
-    auto label_of = [&](int lyr, int idx) {
-      const int id = ev->layerHits_[lyr][idx].mcHitID();
-      return id >= 0 ? ev->simHitsInfo_[id].mcTrackID() : -1;
-    };
-    // Majority particle and whether it holds more than 3/4 of the found hits.
-    auto truth = [&](const DcTrk &t, int &L) {
-      std::map<int, int> cnt;
-      for (auto &[l, i] : t.hits) {
-        const int lab = label_of(l, i);
-        if (lab >= 0) ++cnt[lab];
-      }
-      int nL = 0;
-      L = -1;
-      for (auto &[l, c] : cnt)
-        if (c > nL) { L = l; nL = c; }
-      return 4 * nL > 3 * (int)t.hits.size();
-    };
-    ++g_dc_events;
-    for (const DcPair &p : g_dc_pending) {
-      int lk, ld;
-      const bool ck = truth(p.kept, lk), cd = truth(p.dropped, ld);
-      const int cls = ck && cd ? (lk == ld ? 0 : 1) : ck ? 2 : cd ? 3 : 4;
-      const float aeta = std::abs(p.kept.eta);
-      const int pops[2] = {0, aeta >= 1.7f && aeta < 2.7f ? (p.kept.pt < 0.9f ? 1 : 2) : -1};
-      for (int k : pops) {
-        if (k < 0) continue;
-        ++g_dc_n[k][p.rule][cls];
-        if (cls == 2 || cls == 3) {
-          ++g_dc_mixed[k];
-          const DcTrk &cl = cls == 2 ? p.kept : p.dropped, &di = cls == 2 ? p.dropped : p.kept;
-          for (int r = 0; r < DC_NR; ++r) {
-            const int c = dc_rule(r, cl, di);
-            g_dc_keep_clean[k][r] += c > 0 ? 1.0 : (c == 0 ? 0.5 : 0.0);
-          }
-        }
-      }
-    }
-    g_dc_pending.clear();
-  }
-
-  void v2p2_dupclean_diag_reset() {
-    g_dc_pending.clear();
-    for (auto &a : g_dc_n) for (auto &b : a) for (auto &c : b) c = 0;
-    for (auto &a : g_dc_keep_clean) for (auto &b : a) b = 0;
-    for (auto &a : g_dc_mixed) a = 0;
-    g_dc_events = 0;
-  }
-
-  void v2p2_dupclean_diag_report() {
-    const char *pn[DC_NP] = {"all pairs", "kept 1.7-2.7 pT < 0.9", "kept 1.7-2.7 pT >= 0.9"};
-    printf("\nDUPLICATE CLEANER DECISIONS, clean_duplicates_sharedhits_pixelseed, %ld events (clean = > 3/4\n"
-           "of the found hits from one particle). Each marked pair, by the dR rule and the shared-hit rule;\n"
-           "on mixed pairs (one clean), how often each rule keeps the clean one (ties 0.5).\n",
-           g_dc_events);
-    for (int k = 0; k < DC_NP; ++k) {
-      long tot[2] = {0, 0};
-      for (int r = 0; r < 2; ++r) for (int c = 0; c < DC_NC; ++c) tot[r] += g_dc_n[k][r][c];
-      printf("  %-24s  pairs dR %ld, shared %ld\n", pn[k], tot[0], tot[1]);
-      for (int c = 0; c < DC_NC; ++c)
-        printf("    %-28s dR %7ld  shared %7ld\n", dc_class_names[c], g_dc_n[k][0][c], g_dc_n[k][1][c]);
-      printf("    mixed pairs %ld, kept the clean one:\n", g_dc_mixed[k]);
-      for (int r = 0; r < DC_NR; ++r)
-        printf("      %-24s %6.2f %%\n", dc_rule_names[r],
-               g_dc_mixed[k] > 0 ? 100.0 * g_dc_keep_clean[k][r] / g_dc_mixed[k] : 0.0);
     }
   }
 

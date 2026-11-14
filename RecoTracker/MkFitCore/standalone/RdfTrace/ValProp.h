@@ -134,9 +134,6 @@ namespace mkfit {
   void val_eff_signal_only(bool on);
   void val_final_beam(bool on);
   void val_final_beam_report();
-  void val_dupclean(bool on);
-  void val_dupclean_event(const Event *ev);
-  void val_dupclean_report();
   void val_hit_eff(float fwd, float bkw);
   void val_mini_prop_param_b(int on);
   void val_hit_eff_grp(float pix_brl, float pix_ec, float strip_brl_ps, float strip_brl_2s, float strip_ec);
