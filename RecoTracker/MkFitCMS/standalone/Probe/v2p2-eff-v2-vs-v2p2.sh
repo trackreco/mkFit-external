@@ -10,9 +10,10 @@
 #   quality-val's (>= 50 % of the non-seed hits).
 #   ITCONF=cmssw sets the things in which the CMSSW release's
 #   mkfit-phase2-initialStep.json (data-RecoTracker-MkFit V00-20-00) differs
-#   from the plugin: maxCandsPerSeed 6 (plugin 3), the phase1:default track
-#   scorer (the plugin's default too since 2026-10-04; it was phase2:LstIntoPix
-#   before), backward-search pickups at plan index
+#   from the plugin: maxCandsPerSeed 6 (the plugin's too since 2026-10-27; it
+#   was 3 before), the phase1:default track scorer (the plugin's default too
+#   since 2026-10-04; it was phase2:LstIntoPix before), backward-search pickups
+#   at plan index
 #   5 15 7 15 5 (plugin 7 27 10 27 7). Found by diffing --json-save-iterations
 #   against the release file. The script names them by layer, 41 7 7 7 19, which
 #   are the layers at those indices of the plugin's plans (its own pickups are
