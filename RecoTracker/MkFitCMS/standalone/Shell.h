@@ -329,11 +329,11 @@ namespace mkfit {
     // V2p2Params::hit_chi2_cut and chi2_trk_fac.
     void SetHitChi2(float cut, float trk_fac);
 
-    // V2p2::Score::mode (0 linear, 1 log-likelihood), and hit_eff for both directions.
-    void SetScoreMode(int mode, float hit_eff);
+    // V2p2::Score::mode (0 linear, 1 log-likelihood), and nothing else.
+    void SetScoreMode(int mode);
     // Likelihood hit_eff, forward and backward; the per-group values are left alone.
     void SetHitEff(float fwd, float bkw);
-    // Forward per-group hit_eff; negative takes hit_eff.
+    // Forward per-group hit_eff; a negative value (-1) takes the forward hit_eff.
     void SetHitEffGroups(float pix_brl, float pix_ec, float strip_brl_ps, float strip_brl_2s, float strip_ec);
     // V2p2::Score term switches: rho and det V per step, or a constant.
     void SetScoreTerms(bool use_rho, float rho_const, bool use_detv, float detv_const);

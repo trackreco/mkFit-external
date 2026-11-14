@@ -209,10 +209,12 @@ namespace mkfit {
   // Score and track scorers
   //===========================================================================
 
-  void Shell::SetScoreMode(int mode, float hit_eff) {
+  // The three hit_eff setters each set one thing: SetScoreMode() the mode only,
+  // SetHitEff() the base hit_eff of each direction, SetHitEffGroups() the forward
+  // per-group values, of which a negative one takes the base.
+  void Shell::SetScoreMode(int mode) {
     V2p2::Score::mode = mode;
-    for_each_v2p2_params([hit_eff](V2p2Params &p) { p.score_outward.hit_eff = p.score_inward.hit_eff = hit_eff; });
-    printf("Shell::SetScoreMode: V2p2::Score::mode = %d (0 linear, 1 loglh), hit_eff = %g\n", mode, hit_eff);
+    printf("Shell::SetScoreMode: V2p2::Score::mode = %d (0 linear, 1 loglh)\n", mode);
   }
 
   void Shell::SetHitEff(float fwd, float bkw) {
@@ -220,7 +222,7 @@ namespace mkfit {
       p.score_outward.hit_eff = fwd;
       p.score_inward.hit_eff = bkw;
     });
-    printf("Shell::SetHitEff: hit_eff fwd %g, bkw %g\n", fwd, bkw);
+    printf("Shell::SetHitEff: hit_eff fwd %g, bkw %g (per-group values unchanged)\n", fwd, bkw);
   }
 
   void Shell::SetHitEffGroups(float pix_brl, float pix_ec, float strip_brl_ps, float strip_brl_2s, float strip_ec) {
