@@ -6,7 +6,7 @@
 
 ## Instruction sets defined with "make" command line settings
 export SSE3="CPPUSERFLAGS+=\"-march=core2\" CXXUSERFLAGS+=\"-march=core2\" VEC_GCC=\"-march=core2\" VEC_ICC=\"-march=core2\""
-export AVX=""
+export AVX="AVX:=1"
 export AVX2="AVX2:=1"
 export AVX512="AVX_512:=1"
 
