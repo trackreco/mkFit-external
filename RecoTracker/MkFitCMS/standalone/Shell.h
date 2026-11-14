@@ -285,6 +285,89 @@ namespace mkfit {
     ROOT::Experimental::REveTrackPropagator *m_reve_track_prop = nullptr;
 #endif
 
+  public:
+    // --------------------------------------------------------
+    // Knobs
+    //
+    // A knob changes what the algorithm does, from the next event processed on.
+    // Bodies in Shell-Knobs.cc. Per-iteration ones write every IterationConfig
+    // of Config::ItrInfo; the others write the standalone knobs of Config::V2p2
+    // (src/V2p2Config.h) or the PropagationConfig.
+
+    // maxCandsPerSeed, forward and backward; bkw < 0 takes fwd.
+    void SetMaxCands(int fwd, int bkw = -1);
+    // Hits one path may take per layer, V2p2Params::max_hits_per_layer.
+    void SetMaxHitsPerLayer(int n);
+    // V2p2::Policy: the within-sensitive-region verdict, the hole limits, the stop cuts.
+    void SetLayerPolicy(bool wsr, bool hole_limits, bool stop_cuts);
+    // V2p2::InLayer::late_max_cands*: the beam cap once the best candidate has more than
+    // `hits` found hits, except on steps longer than step_cm; 0 = off.
+    void SetLateMaxCands(int max_cands, int hits, float step_cm = 0.0f);
+    // V2p2::InLayer::sister_hole_drop and sister_hole_chi2.
+    void SetSisterHole(bool on, float chi2 = 0.0f);
+    // V2p2::InLayer::reserve_hole_slot.
+    void SetReserveHoleSlot(bool on);
+    // Backward-search pickup per region of iteration 0, as a plan index; -1 keeps it.
+    void SetBkwSearchPickups(int r0, int r1, int r2, int r3, int r4);
+
+    // V2p2::Window: the dq cut and q fetch margin; the dphi cut, flat hit term and
+    // phi fetch margin; the per-hit phi extent; the per-hit surface reference of dq.
+    void SetWindowDq(float trk_fac, float hit_fac, int extra_bins);
+    void SetWindowDphi(float trk_fac, float flat_rad, int extra_bins);
+    void SetWindowPhiPerHit(bool on, float fac);
+    void SetWindowSurfaceQ(bool on);
+    // V2p2::Diag::mkbins_surface_q, the layer-surface reference of dq_track in MkBins.
+    void SetMkBinsSurfaceQ(bool on);
+    // V2p2::Window::mini_prop_param_b: 0 uniform field, 1 bFieldFromZR, 2 as the Kalman.
+    void SetMiniPropParamB(int mode);
+    // V2p2::PreCut::q and phi.
+    void SetPreCut(bool q, bool phi);
+    // V2p2Params::hit_chi2_cut and chi2_trk_fac.
+    void SetHitChi2(float cut, float trk_fac);
+
+    // V2p2::Score::mode (0 linear, 1 log-likelihood), and hit_eff for both directions.
+    void SetScoreMode(int mode, float hit_eff);
+    // Likelihood hit_eff, forward and backward; the per-group values are left alone.
+    void SetHitEff(float fwd, float bkw);
+    // Forward per-group hit_eff; negative takes hit_eff.
+    void SetHitEffGroups(float pix_brl, float pix_ec, float strip_brl_ps, float strip_brl_2s, float strip_ec);
+    // V2p2::Score term switches: rho and det V per step, or a constant.
+    void SetScoreTerms(bool use_rho, float rho_const, bool use_detv, float detv_const);
+    // The score of Score::mode 0.
+    void SetLinearScore(float hit_bonus, float chi2_weight, float miss_fwd, float miss_bkw);
+    // Default track scorer, and the scorer of one task ("final_pick", "post_bkfit",
+    // "duplicate_cleaner"; "" restores the fallback), by registered name.
+    void SetTrackScorer(const char *name);
+    void SetTrackScorerTask(const char *task, const char *name);
+    // Final pick by "v2p2:llh" (on) or by the search scorer (off), with its penalties.
+    void SetFinalPickLlh(bool on, float hole_penalty, float tail_penalty);
+
+    // Material on the search's inter-layer propagation, and on the backward fit's.
+    void SetSearchMaterial(bool on);
+    void SetBkFitMaterial(bool on);
+    // Backward-fit outlier rejection; chi2 0 = off.
+    void SetBkFitOutliers(float chi2, int max_outliers, float min_pt);
+    // The duplicate cleaner's dR rule thresholds; 0 switches the rule off.
+    void SetDuplDrth(float central, float obarrel, float forward);
+
+    // HLT seeds for ProcessEventHlt(): kind 0 = pT5, 1 = T5, 2 = pix; chop_pixels strips
+    // a pT5's pixel hits before the search.
+    void SetHltSeeds(int kind, bool chop_pixels);
+
+    // Taps: in-core instrumentation that collects during the run. Switching any
+    // on sets tap mode: one event in flight in collect_events_std() and
+    // collect_events_hlt(), and one thread inside the event. Switching all off
+    // clears it. The tap readers are in Probe/Probe-Taps.cc.
+    void SetTapFinalBeam(bool on);
+    void SetTapScoreStats(bool on);
+    bool TapMode() const { return m_tap_mode; }
+
+  private:
+    void update_tap_mode();
+
+    bool m_tap_final_beam = false;
+    bool m_tap_score_stats = false;
+    bool m_tap_mode = false;
   };
 
 }  // namespace mkfit

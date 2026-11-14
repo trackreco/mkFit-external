@@ -1,4 +1,3 @@
-#include "RecoTracker/MkFitCMS/standalone/Shell.h"
 // Driver for the synthetic propagation / Kalman / fit validation.
 //
 // Same pattern as prop-kalman-validation.C: the work is in the compiled
@@ -17,7 +16,8 @@
 
 #include "RecoTracker/MkFitCMS/standalone/Probe/Probe.h"
 
-// The probes and knobs are called by their library names, without mkfit::.
+// The probes are called by their library names, without mkfit::. The knobs
+// are Shell methods, s.SetMaxCands(6) and so on (Shell.h, section Knobs).
 using namespace mkfit;
 
 void probe_gen(const char *out = "probe-closure.root") { probe_gen_closure(out); }
@@ -27,19 +27,10 @@ void probe_dalpha_ev(const Event *ev, int which = 0, float pt_min = 0.5) { probe
 void probe_info(const Event *ev) { probe_sample_info(ev); }
 
 void probe_covx(const char *f = "probe-covxport.root", int n = 10000) { probe_cov_transport(f, n); }
-void val_sr_mat(bool on) { val_search_material(on); }
-void val_surf_q(bool on) { val_mkbins_surface_q(on); }
 void probe_trkdump_ev(const Event *ev, const char *cfg) { probe_trkdump_event(ev, cfg); }
-// 0 = pT5, 1 = T5, 2 = pix.  chop = strip a pT5's pixel hits before searching.
-void val_seeds(int kind, bool chop) {
-  Shell::s_hlt_seed_kind = (Shell::HltSeedKind_e) kind;
-  Shell::s_hlt_chop_pixels = chop;
-  printf("val_seeds: kind=%s chop_pixels=%d\n", Shell::hlt_seed_kind_name(Shell::s_hlt_seed_kind), (int) chop);
-}
 void probe_te_reset() { probe_track_eff_reset(); }
 void probe_te_ev(const Event *e) { probe_track_eff_event(e); }
 void probe_te_report(const char *t) { probe_track_eff_report(t); }
-void val_bk_mat(bool on) { val_bkfit_material(on); }
 
 void probe_geom_reset() { probe_geom_check_reset(); }
 void probe_geom_ev(const Event *ev) { probe_geom_check_event(ev); }

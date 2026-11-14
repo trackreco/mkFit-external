@@ -234,7 +234,7 @@ namespace {
       // It applies to BOTH parameter sets, since SetupBackwardSearch() copies
       // m_params into m_backward_params below, and the beam a candidate actually
       // gets is MkJob::max_max_cands() = the max of the two -- so setting it here
-      // is the only place that takes effect. val_max_cands(n) from the shell sets
+      // is the only place that takes effect. s.SetMaxCands(n) from the shell sets
       // both parameter sets.
       ip.maxCandsPerSeed = 6;
       ip.maxHolesPerCand = 4;
@@ -306,7 +306,7 @@ namespace {
     // Per-task scorers, as the CMSSW initialStep JSON: the final pick of the forward search by
     // "v2p2:llh", the v2p2 search's likelihood minus the hole penalties; the score after the
     // backward fit by the search scorer above; the duplicate cleaner ranks by the score it gets,
-    // without re-scoring. val_final_pick_llh() / val_track_scorer_task() change them in the shell.
+    // without re-scoring. s.SetFinalPickLlh() / s.SetTrackScorerTask() change them in the shell.
     ii[0].m_final_pick_track_scorer_name = "v2p2:llh";
     ii[0].m_post_bkfit_track_scorer_name = "";
     ii[0].m_duplicate_cleaner_track_scorer_name = "";

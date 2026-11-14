@@ -51,9 +51,9 @@ CMD=(./mkFit --geom CMS-phase2 --seed-input cmssw --read-cmssw-tracks --input-fi
      --shell-command 'probe_eff_ref("v2")')
 
 if [ "${ITCONF:-}" = cmssw ]; then
-  CMD+=(--shell-command 'val_max_cands(6)'
-        --shell-command 'val_track_scorer("phase1:default")'
-        --shell-command 'val_bkw_pickups(5, 15, 7, 15, 5)'
+  CMD+=(--shell-command 's.SetMaxCands(6)'
+        --shell-command 's.SetTrackScorer("phase1:default")'
+        --shell-command 's.SetBkwSearchPickups(5, 15, 7, 15, 5)'
         --shell-command 's.SetBkwSearchV2p2(true)')
 fi
 

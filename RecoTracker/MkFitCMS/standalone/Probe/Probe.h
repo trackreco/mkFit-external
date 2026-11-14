@@ -139,45 +139,11 @@ namespace mkfit {
 #endif
 
   //--------------------------------------------------------------------------
-  // Tap readers: Probe-Taps.cc
+  // Tap readers: Probe-Taps.cc. The taps are switched by Shell::SetTapFinalBeam()
+  // and Shell::SetTapScoreStats().
 
-  void probe_final_beam(bool on);
   void probe_final_beam_report();
-  void probe_score_term_stats(bool on);
-
-  //--------------------------------------------------------------------------
-  // Knobs: Probe-Knobs.cc
-
-  void val_max_cands(int n);
-  void val_search_material(bool on);
-  void val_mkbins_surface_q(bool on);
-  void val_dq(float trk_fac, float hit_fac, int extra_bins);
-  void val_phi_per_hit(bool on, float fac);
-  void val_dphi(float trk_fac, float hit_rad, int extra_bins);
-  void val_precut(bool q, bool phi);
-  void val_hit_chi2(float cut, float trk_fac);
-  void val_track_scorer(const char *name);
-  void val_track_scorer_task(const char *task, const char *name);
-  void val_dupl_drth(float central, float obarrel, float forward);
-  void val_bkw_pickups(int r0, int r1, int r2, int r3, int r4);
-  void val_surf_q_hit(bool on);
-  // MkFinderV2p2 in-layer combinatorial search and its score, so a scan costs one
-  // build and every configuration sees identical events and seeds in one process.
-  void val_max_hits_per_layer(int n);
-  void val_layer_policy(bool wsr, bool hole_limits, bool stop_cuts);
-  void val_late_max_cands(int max_cands, int hits, float step_cm = 0.0f);
-  void val_sister_hole(bool on, float chi2 = 0.0f);
-  void val_max_cands_fb(int n_fwd, int n_bkw);
-  void val_bkfit_outliers(float chi2, int max_outliers, float min_pt);
-  void val_reserve_hole_slot(bool on);
-  void val_score_mode(int mode, float hit_eff);
-  void val_hit_eff(float fwd, float bkw);
-  void val_mini_prop_param_b(int on);
-  void val_hit_eff_grp(float pix_brl, float pix_ec, float strip_brl_ps, float strip_brl_2s, float strip_ec);
-  void val_final_pick_llh(bool on, float hole_penalty, float tail_penalty);
-  void val_score_terms(bool use_rho, float rho_const, bool use_detv, float detv_const);
-  void val_score(float hit_bonus, float chi2_weight, float miss_fwd, float miss_bkw);
-  void val_bkfit_material(bool on);
+  void probe_score_term_stats_report();
 
 }  // namespace mkfit
 

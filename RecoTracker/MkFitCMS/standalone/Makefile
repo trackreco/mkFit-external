@@ -42,7 +42,7 @@ Shell_Dict.cc ${SHELL_DICT_PCM} &: ${SHELL_DICT_IN}
 # The probes, Probe/*.cc. Probe-Trace.cc compiles to nothing without MKFIT_TRACE.
 SRCS += $(wildcard ${SACMS}/Probe/*.cc)
 else
-SRCS := $(filter-out ${SACMS}/Shell.cc ${SACMS}/Shell-LST.cc, ${SRCS})
+SRCS := $(filter-out ${SACMS}/Shell.cc ${SACMS}/Shell-LST.cc ${SACMS}/Shell-Knobs.cc, ${SRCS})
 endif
 
 SRCB := $(notdir ${SRCS})

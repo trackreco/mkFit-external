@@ -43,7 +43,7 @@ namespace mkfit {
   namespace {
     // Track scorer "phase2:LstIntoPix", for LST T5 tracks extended into the pixels:
     // a found hit is worth more than the largest chi2 (30), and tail holes cost as
-    // much as inside holes. Select it with val_track_scorer("phase2:LstIntoPix").
+    // much as inside holes. Select it with s.SetTrackScorer("phase2:LstIntoPix").
     float trackScoreLstIntoPixels(const TrackScoreInput &in) {
       const int ntailholes = in.penalize_tail_holes ? in.n_tail_holes : 0;
       float bonus = 30;
@@ -496,6 +496,12 @@ namespace mkfit {
   void Shell::collect_events_hlt(int ev_first, int ev_last, int n_thr, int wanted_algo,
                                  std::vector<const Event *> &out)
   {
+    // The taps are correct only with one event in flight, see Shell::update_tap_mode().
+    if (m_tap_mode && n_thr > 1) {
+      printf("Shell::collect_events_hlt: tap mode is on, running one event in flight instead of %d.\n", n_thr);
+      n_thr = 1;
+    }
+
     const int n_ev = ev_last - ev_first + 1;
     out.assign(n_ev, nullptr);
 
@@ -803,6 +809,12 @@ namespace mkfit {
   void Shell::collect_events_std(int ev_first, int ev_last, int n_thr,
                                  std::vector<const Event *> &out)
   {
+    // The taps are correct only with one event in flight, see Shell::update_tap_mode().
+    if (m_tap_mode && n_thr > 1) {
+      printf("Shell::collect_events_std: tap mode is on, running one event in flight instead of %d.\n", n_thr);
+      n_thr = 1;
+    }
+
     const int n_ev = ev_last - ev_first + 1;
     out.assign(n_ev, nullptr);
 
