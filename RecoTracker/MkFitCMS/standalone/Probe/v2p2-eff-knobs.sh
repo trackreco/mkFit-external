@@ -36,7 +36,7 @@ CMD=(./mkFit --geom CMS-phase2 --seed-input cmssw --read-cmssw-tracks --input-fi
 if [ "${ITCONF:-}" = cmssw ]; then
   CMD+=(--shell-command 's.SetMaxCands(6)'
         --shell-command 's.SetTrackScorer("phase1:default")'
-        --shell-command 's.SetBkwSearchPickups(5, 15, 7, 15, 5)'
+        --shell-command 's.SetBkwSearchPickups(41, 7, 7, 7, 19)'
         --shell-command 's.SetBkwSearchV2p2(true)')
 fi
 for cfg in "$@"; do

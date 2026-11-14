@@ -311,8 +311,8 @@ namespace mkfit {
     void SetSisterHole(bool on, float chi2 = 0.0f);
     // V2p2::InLayer::reserve_hole_slot.
     void SetReserveHoleSlot(bool on);
-    // Backward-search pickup per region of iteration 0, as a plan index; -1 keeps it.
-    void SetBkwSearchPickups(int r0, int r1, int r2, int r3, int r4);
+    // Backward-search pickup per region, as a layer, in every iteration config; -1 keeps it.
+    void SetBkwSearchPickups(int l0, int l1, int l2, int l3, int l4);
 
     // V2p2::Window: the dq cut and q fetch margin; the dphi cut, flat hit term and
     // phi fetch margin; the per-hit phi extent; the per-hit surface reference of dq.

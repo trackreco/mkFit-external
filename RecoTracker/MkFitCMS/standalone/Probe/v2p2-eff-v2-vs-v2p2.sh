@@ -14,7 +14,9 @@
 #   scorer (the plugin's default too since 2026-10-04; it was phase2:LstIntoPix
 #   before), backward-search pickups at plan index
 #   5 15 7 15 5 (plugin 7 27 10 27 7). Found by diffing --json-save-iterations
-#   against the release file. It also runs the backward search with v2p2 for
+#   against the release file. The script names them by layer, 41 7 7 7 19, which
+#   are the layers at those indices of the plugin's plans (its own pickups are
+#   at layers 43 53 10 31 21). It also runs the backward search with v2p2 for
 #   the v2p2 configuration (Shell::SetBkwSearchV2p2), as run_OneIteration()
 #   does in CMSSW; the shell's default is the clone engine. (--json-load parses a file and DROPS it, and
 #   --json-patch does not know these keys, hence the shell setters.)
@@ -53,7 +55,7 @@ CMD=(./mkFit --geom CMS-phase2 --seed-input cmssw --read-cmssw-tracks --input-fi
 if [ "${ITCONF:-}" = cmssw ]; then
   CMD+=(--shell-command 's.SetMaxCands(6)'
         --shell-command 's.SetTrackScorer("phase1:default")'
-        --shell-command 's.SetBkwSearchPickups(5, 15, 7, 15, 5)'
+        --shell-command 's.SetBkwSearchPickups(41, 7, 7, 7, 19)'
         --shell-command 's.SetBkwSearchV2p2(true)')
 fi
 

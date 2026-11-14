@@ -108,19 +108,38 @@ namespace mkfit {
     printf("Shell::SetReserveHoleSlot: V2p2::InLayer::reserve_hole_slot = %d\n", (int)on);
   }
 
-  // Backward-search pickup of iteration 0, as a PLAN INDEX per region (the
-  // form the JSON stores; the plugin derives it from a layer). -1 keeps it.
-  void Shell::SetBkwSearchPickups(int r0, int r1, int r2, int r3, int r4) {
-    auto &sps = Config::ItrInfo[0].m_steering_params;
-    const int v[5] = {r0, r1, r2, r3, r4};
-    for (int r = 0; r < 5 && r < (int)sps.size(); ++r) {
-      if (v[r] < 0)
-        continue;
-      if (v[r] >= (int)sps[r].m_layer_plan.size())
-        throw std::runtime_error("Shell::SetBkwSearchPickups: plan index out of range");
-      sps[r].m_bkw_search_pickup = v[r];
+  // Backward-search pickup per region, named by LAYER and set through
+  // SteeringParams::set_bkw_search_pickup_at_layer(), which finds the plan entry
+  // covering the layer (either member of a paired entry). A layer, unlike a plan
+  // index, does not move when the plan is rebuilt. -1 keeps a region's pickup.
+  // Every iteration config is checked before any is changed; a layer missing
+  // from a plan throws.
+  void Shell::SetBkwSearchPickups(int l0, int l1, int l2, int l3, int l4) {
+    const int lay[5] = {l0, l1, l2, l3, l4};
+    const int ni = Config::ItrInfo.size();
+    for (int i = 0; i < ni; ++i) {
+      const auto &sps = Config::ItrInfo[i].m_steering_params;
+      for (int r = 0; r < 5 && r < (int)sps.size(); ++r) {
+        if (lay[r] >= 0 && sps[r].plan_index_of_layer(lay[r]) == -1) {
+          printf("Shell::SetBkwSearchPickups: layer %d is not in the plan of iteration config %d, region %d\n",
+                 lay[r], i, r);
+          throw std::runtime_error("Shell::SetBkwSearchPickups: layer not in the layer plan");
+        }
+      }
     }
-    printf("Shell::SetBkwSearchPickups: %d %d %d %d %d\n", r0, r1, r2, r3, r4);
+    for (int i = 0; i < ni; ++i) {
+      auto &sps = Config::ItrInfo[i].m_steering_params;
+      for (int r = 0; r < 5 && r < (int)sps.size(); ++r) {
+        if (lay[r] >= 0)
+          sps[r].set_bkw_search_pickup_at_layer(lay[r]);
+      }
+    }
+    printf("Shell::SetBkwSearchPickups: layers %d %d %d %d %d for %d iteration configs; plan indices of config 0:",
+           l0, l1, l2, l3, l4, ni);
+    if (ni > 0)
+      for (const auto &sp : Config::ItrInfo[0].m_steering_params)
+        printf(" %d", sp.m_bkw_search_pickup);
+    printf("\n");
   }
 
   //===========================================================================
