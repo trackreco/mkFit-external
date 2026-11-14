@@ -64,10 +64,11 @@ namespace mkfit {
     // per-iteration seed vector, which may be a temporary that is gone or reset
     // by the time a probe runs.
     //
-    // Event::reset() clears trSeeds_ and build_trace_maps_etc() fills it, so an
-    // empty trSeeds_ under non-empty metas means that the maps were not built
-    // for this event: s.ProcessEventStd() does not build them, the collecting
-    // drivers (TraceFwdSearch(), ...) do.
+    // Event::reset() clears trSeeds_ and the truth maps, build_trace_maps_etc()
+    // fills them, so an empty trSeeds_ under non-empty metas means that the maps
+    // were not built for this event. s.ProcessEventStd() and s.ProcessEventHlt()
+    // build them at their end; s.ProcessEvent() and s.ProcessEventSimSeeded() do
+    // not.
     bool trace_seed_truth_built(const Event *ev, const char *who) {
       if (ev->trCandMetas_.empty())
         return true;

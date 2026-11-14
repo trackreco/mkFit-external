@@ -260,6 +260,14 @@ namespace mkfit {
       printf("// NOTE: these are labels, sequntial ids before cleaning (as seeds are relabeled at the start).\n");
     }
 
+#ifdef MKFIT_TRACE
+    // The trace maps, with the trace's own copy of the seeds and their truth, while
+    // the current seeds (ctx.seeds) are still those of this event's search and
+    // candidateTracks_ holds its tracks. Without a search there are no seeds.
+    if (ctx.ev->currentSeedTracks_)
+      ctx.ev->build_trace_maps_etc();
+#endif
+
     printf("\n##### END Event %d ##### HLT seeds\n", ctx.ev->evtID());
   }
 
@@ -511,9 +519,6 @@ namespace mkfit {
       for (int i = 0; i < n_ev; ++i) {
         GoToEvent(ev_first + i);
         ProcessEventHlt(m_ctx, wanted_algo);
-#ifdef MKFIT_TRACE
-        m_ctx.ev->build_trace_maps_etc();
-#endif
         m_ctx.ev->printMemUsage();
         out[i] = RelinquishEvent();
       }
@@ -585,9 +590,6 @@ namespace mkfit {
               StdSeq::loadDeads(*ctx.eoh, m_deadvectors);
 
             ProcessEventHlt(ctx, wanted_algo);
-#ifdef MKFIT_TRACE
-            ctx.ev->build_trace_maps_etc();
-#endif
 
             // Hand the Event over and take a fresh one for the next round.
             out[idx] = ctx.ev;
@@ -800,6 +802,14 @@ namespace mkfit {
       qval.quality_val(ctx.ev);
     }
 
+#ifdef MKFIT_TRACE
+    // The trace maps, with the trace's own copy of the seeds and their truth, while
+    // the current seeds (ctx.seeds) are still those of this event's search and
+    // candidateTracks_ holds its tracks. Without a search there are no seeds.
+    if (ctx.ev->currentSeedTracks_)
+      ctx.ev->build_trace_maps_etc();
+#endif
+
     printf("\n##### END Event %d ##### standard forward search\n\n", ctx.ev->evtID());
   }
 
@@ -824,9 +834,6 @@ namespace mkfit {
       for (int i = 0; i < n_ev; ++i) {
         GoToEvent(ev_first + i);
         ProcessEventStd(m_ctx);
-#ifdef MKFIT_TRACE
-        m_ctx.ev->build_trace_maps_etc();
-#endif
         out[i] = RelinquishEvent();
       }
       StdSeq::Quality::s_quality_sum.quality_print();
@@ -879,9 +886,6 @@ namespace mkfit {
               StdSeq::loadDeads(*ctx.eoh, m_deadvectors);
 
             ProcessEventStd(ctx);
-#ifdef MKFIT_TRACE
-            ctx.ev->build_trace_maps_etc();
-#endif
 
             out[idx] = ctx.ev;
             ctx.ev = new Event(0, Config::TrkInfo.n_layers());

@@ -214,7 +214,9 @@ namespace mkfit {
     void LoopNEvents(int N_events);
 
     // One event: seed classification + RunLSTintoPix + quality-val + reports.
-    // Assumes ctx is already loaded with the wanted event.
+    // Assumes ctx is already loaded with the wanted event. With MKFIT_TRACE it
+    // ends by building the trace maps (Event::build_trace_maps_etc()), as
+    // ProcessEventStd() below does.
     void ProcessEventHlt(EvCtx &ctx, const int wanted_algo = 4);
     void ProcessEventHlt(const int wanted_algo = 4) { ProcessEventHlt(m_ctx, wanted_algo); }
     void LoopNEventsHlt(int N_events = -1, const int wanted_algo = 4);

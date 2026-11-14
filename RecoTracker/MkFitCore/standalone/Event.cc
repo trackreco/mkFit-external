@@ -66,6 +66,8 @@ namespace mkfit {
     trKalmanUpdates_.clear();
     trBkFitUpdates_.clear();
     trSeeds_.clear();
+    trSIFHforSeedByMeta_.clear();
+    trSIFHforCandByMeta_.clear();
   #endif
   }
 

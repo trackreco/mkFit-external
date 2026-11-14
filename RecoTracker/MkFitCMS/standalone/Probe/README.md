@@ -49,10 +49,11 @@ take `s.event()` after `s.ProcessEventStd()`:
     probe_eff_report("eff");
 
 The trace probes take a seed's truth from the trace's own copy of the seeds,
-which `Event::build_trace_maps_etc()` makes. The collecting drivers
-(`s.TraceFwdSearch()`, ...) call it; `s.ProcessEventStd()` does not, so call
-`s.event()->build_trace_maps_etc()` after it. Without it the trace probes say
-so and record no seed truth.
+which `Event::build_trace_maps_etc()` makes. `s.ProcessEventStd()` and
+`s.ProcessEventHlt()` call it at their end, and with them every driver built on
+them (`s.TraceFwdSearch()`, `s.LoopNEventsHlt()`, ...). `s.ProcessEvent()` and
+`s.ProcessEventSimSeeded()` do not, as they do not publish their tracks into
+`candidateTracks_`; after them the trace probes say so and record no seed truth.
 
 The scripts run from a build directory and load `probe.C` themselves:
 
