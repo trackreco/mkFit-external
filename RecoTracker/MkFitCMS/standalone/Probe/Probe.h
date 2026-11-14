@@ -10,7 +10,7 @@
 //   trace    Probe-Trace.cc    the Tr* records of a trace build (MKFIT_TRACE)
 //   taps     Probe-Taps.cc     the readers of the in-core taps
 // The knobs and the tap switches are Shell methods, in the section "Knobs" of
-// Shell.h.
+// Shell.h. README.md in this directory has the map.
 //
 // The records the probes write are Probe* structs (DataFormats/ProbeStructs.h)
 // with a dictionary in libMkFitRootDataFormats.so, so a bare root.exe session

@@ -71,6 +71,16 @@ Up to date samples for running standalone are listed below (tracking ntuples and
 /ceph/cms/store/user/legianni/generate-phase1/ttbar-phase1-newgeom/ntuple_ttbar_PU.bin
 ```
 
+## Probes, knobs and tracing
+
+Two READMEs map the tools for measuring the v2p2 finder from the standalone shell
+(builds with `WITH_ROOT`):
+- [RecoTracker/MkFitCMS/standalone/Probe/README.md](RecoTracker/MkFitCMS/standalone/Probe/README.md):
+  the probes, which read after the event and change nothing, the knobs and the
+  taps, which are `Shell` methods, and the driver scripts;
+- [RecoTracker/MkFitCore/standalone/RdfTrace/README.md](RecoTracker/MkFitCore/standalone/RdfTrace/README.md):
+  the trace of the v2p2 search (`EVENT_RDF_TRACE`) and its RDataFrame analysis.
+
 ## RntDumpers -- ROOT NTuple Dumpers
 
 This is the latest attempt to have a somewhat standard way of dumping tunbing / debugging information directly into ROOT RNTuples or TTrees. Before we had dumpers via ROOT text tree files (slurped into ROOT via `TTree::ReadFile()`) -- this was slow and produced HUGE intermediate files. This resides in `MkFitCore/standalone/RntDumpers`.
