@@ -23,14 +23,26 @@
 # --num-iters-cmssw 1 is REQUIRED: without it runBtpCe_MultiIter walks
 # Config::ItrInfo past what the phase-2 plugin filled and segfaults.
 #
-#   usage:  v2p2-timing.sh [n_events] [n_reps] [sample]
+#   usage:  v2p2-timing.sh <n_events> <n_reps> <sample>
+# Run it from the build directory whose ./mkFit is to be timed.
 set -e
-cd /foo/matevz/mic-dev/current/src/standalone
+if [ ! -x ./mkFit ] || [ ! -f Makefile ]; then
+  echo "v2p2-timing.sh: run it from a build directory, one with ./mkFit and the Makefile of configure." >&2
+  exit 1
+fi
+if [ $# -lt 3 ]; then
+  echo "usage: v2p2-timing.sh <n_events> <n_reps> <sample>" >&2
+  exit 1
+fi
 unset DISPLAY
 export LD_LIBRARY_PATH=.
-N=${1:-100}
-REPS=${2:-3}
-SAMPLE=${3:-/foo/matevz/mic-dev/ttbar-PU200-D121-C22-100ev.bin}
+N=$1
+REPS=$2
+SAMPLE=$3
+if [ ! -f "$SAMPLE" ]; then
+  echo "v2p2-timing.sh: sample '$SAMPLE' not found." >&2
+  exit 1
+fi
 OUT=${TMPDIR:-/tmp}/mkfit-timing-$$
 
 if ./mkFit --help 2>&1 | head -40 | grep -q 'shell'; then :; fi

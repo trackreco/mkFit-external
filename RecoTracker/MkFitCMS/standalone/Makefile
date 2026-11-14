@@ -38,6 +38,9 @@ SHELL_DICT_IN := ${SACMS}/Shell_Dict.h ${SACMS}/Shell_LinkDef.h
 Shell_Dict.cc ${SHELL_DICT_PCM} &: ${SHELL_DICT_IN}
 	rootcling --umbrellaHeader ${CPPFLAGS} -f Shell_Dict.cc ${SHELL_DICT_IN}
 	mv Shell_Dict_rdict.pcm ${SHELL_DICT_PCM}
+
+# The probes, Probe/*.cc. Probe-Trace.cc compiles to nothing without MKFIT_TRACE.
+SRCS += $(wildcard ${SACMS}/Probe/*.cc)
 else
 SRCS := $(filter-out ${SACMS}/Shell.cc ${SACMS}/Shell-LST.cc, ${SRCS})
 endif
@@ -48,7 +51,7 @@ OBJS := $(SRCB:.cc=.o)
 
 CMS_OBJS := $(filter-out mkFit.o WriteMemoryFile.o, ${OBJS})
 
-vpath %.cc ${CMS_DIR}/src ${SACMS} ${SACMS}/tkNtuple
+vpath %.cc ${CMS_DIR}/src ${SACMS} ${SACMS}/tkNtuple ${SACMS}/Probe
 
 ifdef WITH_ROOT
 DEPS += Shell_Dict.cc.d

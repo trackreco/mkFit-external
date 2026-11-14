@@ -1,5 +1,5 @@
 // ===========================================================================
-// ValProp-Eff.cc -- PER-SIM-TRACK RESULTS: val_eff_* and val_chopres_*.
+// Probe-Perf.cc -- PER-SIM-TRACK RESULTS: probe_eff_* and val_chopres_*.
 //
 // Split out of ValProp.cc, which had reached 3764 lines holding a dozen
 // unrelated instrument families. This is the one that answers "where does the
@@ -9,69 +9,187 @@
 //
 // It is a self-contained unit -- its accumulators, binning and helpers are all
 // in the anonymous namespace below, and it shares nothing with the rest of
-// ValProp.cc but the includes and the declarations in ValProp.h.
+// ValProp.cc but the includes and the declarations in Probe.h.
 //
 // Drivers: test/v2p2-eff-cap.sh (the maxCandsPerSeed scan and the production
 // reference), v2p2-eff-score.sh (the score-term study), v2p2-eff-fwd.sh,
 // v2p2-eff-chop.sh. Output is <prefix>.root + <prefix>.txt; the deck reads a
 // copy of the .root directly, see ~/mic-dev/inlayer-slides/plots/420-eff.html.
 // ===========================================================================
-#include <array>
-#include "RecoTracker/MkFitCore/standalone/RdfTrace/ValProp.h"
-#include "RecoTracker/MkFitCore/standalone/DataFormats/ValStructs.h"
-#include "RecoTracker/MkFitCore/standalone/DataFormats/RntConversions.h"
-#include "RecoTracker/MkFitCore/standalone/ConfigStandalone.h"
+#include "RecoTracker/MkFitCMS/standalone/Probe/Probe.h"
 
 #include "RecoTracker/MkFitCore/interface/Config.h"
-#include "RecoTracker/MkFitCore/interface/cms_common_macros.h"
-#include "RecoTracker/MkFitCore/interface/PropagationConfig.h"
-
-#include "RecoTracker/MkFitCore/src/Matrix.h"
-#include "RecoTracker/MkFitCore/src/PropagationMPlex.h"
-#include "RecoTracker/MkFitCore/src/KalmanUtilsMPlex.h"
-#include "RecoTracker/MkFitCore/src/MkFinder.h"
-#include "RecoTracker/MkFitCore/src/MkFinderV2p2.h"
-#include "RecoTracker/MkFitCore/src/V2p2Score.h"
-#include "RecoTracker/MkFitCore/src/MkBins.h"
-
 #include "RecoTracker/MkFitCore/interface/Hit.h"
 #include "RecoTracker/MkFitCore/interface/Track.h"
+#include "RecoTracker/MkFitCore/interface/TrackerInfo.h"
+#include "RecoTracker/MkFitCore/standalone/ConfigStandalone.h"
 #include "RecoTracker/MkFitCore/standalone/Event.h"
 #include "RecoTracker/MkFitCore/standalone/TrackExtra.h"
-#include "RecoTracker/MkFitCore/standalone/ConfigStandalone.h"
-#include "RecoTracker/MkFitCore/interface/TrackerInfo.h"
-#include "RecoTracker/MkFitCore/interface/IterationConfig.h"
 
-#include <map>
-#include <set>
-#include <algorithm>
-#include <iterator>
-#include <numeric>
-#include <array>
-
-#include "TFile.h"
-#include "TTree.h"
-#include "TNamed.h"
-#include "TH1D.h"
 #include "TCanvas.h"
+#include "TFile.h"
+#include "TH1D.h"
 #include "TLegend.h"
-#include "TVectorD.h"
-#include "TMatrixD.h"
-#include "TMatrixDSymEigen.h"
-#include "TMatrixDSym.h"
+#include "TNamed.h"
+#include "TString.h"
+#include "TTree.h"
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdarg>
 #include <cstdio>
-#include <cstring>
-#include <random>
+#include <map>
+#include <set>
+#include <string>
 #include <vector>
-
 
 namespace mkfit {
 
+  // Truth association for probe_eff and anything else on setMCTrackIDInfo. false
+  // is quality-val's rule, 2*mccount >= nCandHits over the non-seed hits. true
+  // is CMSSW MTV's quickTrackAssociatorByHits: shared / valid reco hits > 0.75,
+  // strictly, over all hits, seed hits included. Only the association: the
+  // --mtv-like-val option also changes the sim selection, this does not.
+  //
+  // MTV has no minimum track length, so MTV mode also sets nMinFoundHits = 0
+  // (as --mtv-like-val does): otherwise modifyRefTrackID() turns a correctly
+  // matched track with fewer than 10 non-seed hits into code -2, which
+  // probe_eff then counted as a fake -- and a finder that builds longer tracks
+  // looked cleaner for it. The previous value is restored on switching off.
+  void probe_assoc_mtv(bool on) {
+    static int saved_min_found_hits = Config::nMinFoundHits;
+    if (on && !Config::mtvLikeValidation)
+      saved_min_found_hits = Config::nMinFoundHits;
+    Config::mtvLikeValidation = on;
+    Config::nMinFoundHits = on ? 0 : saved_min_found_hits;
+    printf("probe_assoc_mtv: %s, nMinFoundHits %d\n",
+           on ? "MTV, 4*mccount > 3*nCandHits over all hits" : "quality-val, 2*mccount >= nCandHits over non-seed hits",
+           Config::nMinFoundHits);
+  }
+
   // ==========================================================================
-  // val_eff -- per-SIM-TRACK efficiency, resolved in |eta|, pT and hits-per-layer.
+  // Track-level true-hit efficiency of the inward search: of the sim track's
+  // hits in the pixel barrel and the forward disks, how many did the FINAL
+  // candidate actually collect? This is the quantity "the backward search gets
+  // true hits down to the first pixel layers with 75% efficiency" refers to,
+  // and unlike any per-layer-search measure it is not survivorship-biased: a
+  // candidate that dies early simply has few matched hits.
+  namespace {
+    struct TEff { long n_trk = 0;
+                  long sim_pix = 0, got_pix = 0, sim_dsk = 0, got_dsk = 0;
+                  long deepest_ok = 0;
+                  // "any true pixel-barrel hit" is only a fair question for a
+                  // track that HAS one to find. High-|eta| tracks largely miss
+                  // the pixel barrel (~1 hit each against ~3 for barrel-only),
+                  // so counting them in the denominator understates the rate.
+                  long n_trk_with_pix = 0;
+                  // Distinct LAYERS with a sim hit, against the hit count. The
+                  // search took at most one hit per layer before the in-layer
+                  // search, so layers/hits was a hard ceiling on the efficiency above --
+                  // and phase-2 disks carry module overlaps, so it is well below 1.
+                  long sim_pix_lay = 0, sim_dsk_lay = 0; };
+    TEff g_te[2];   // [0] barrel-only sim track, [1] touches the disks
+    // Split by how many pixel-barrel hits the SIM track offers. A plain T5 is a
+    // track whose pixel match FAILED upstream (pT5 = LST T5 + Patatrack pixels),
+    // so the sharp question is: when the pixel hits are genuinely there, does
+    // the inward search get them?
+    TEff g_tp[3];   // spix 0 / 1-2 / >=3
+    long g_te_ntrk = 0, g_te_nolbl = 0;
+  }
+
+  void probe_track_eff_reset() { g_te[0] = g_te[1] = TEff();
+                               g_tp[0] = g_tp[1] = g_tp[2] = TEff();
+                               g_te_ntrk = g_te_nolbl = 0; }
+
+  void probe_track_eff_event(const Event *ev) {
+    if (ev == nullptr) return;
+    for (const Track &c : ev->candidateTracks_) {
+      ++g_te_ntrk;
+      auto si = ev->simInfoForTrack(c);
+      if (!si.is_set()) { ++g_te_nolbl; continue; }
+      const int L = si.label;
+      const Track &st = ev->simTracks_[L];
+      // the sim track's own hit content, by region
+      long spix = 0, sdsk = 0;
+      std::set<int> lpix, ldsk;
+      for (int i = 0; i < st.nTotalHits(); ++i) {
+        const HitOnTrack hot = st.getHitOnTrack(i);
+        if (hot.index < 0) continue;
+        if (hot.layer < 4) { ++spix; lpix.insert(hot.layer); }
+        else if (hot.layer >= 16) { ++sdsk; ldsk.insert(hot.layer); }
+      }
+      if (spix == 0 && sdsk == 0) continue;
+      const int cls = (sdsk > 0) ? 1 : 0;
+      // what the candidate actually holds there, TRUTH-checked per hit
+      long gpix = 0, gdsk = 0; int deepest = -1;
+      for (int i = 0; i < c.nTotalHits(); ++i) {
+        const HitOnTrack hot = c.getHitOnTrack(i);
+        if (hot.index < 0 || hot.layer < 0) continue;
+        const Hit &h = ev->layerHits_[hot.layer][hot.index];
+        const int hl = ev->simHitsInfo_[h.mcHitID()].mcTrackID();
+        if (hl != L) continue;
+        if (hot.layer < 4)  { ++gpix; if (hot.layer > deepest) deepest = hot.layer; }
+        else if (hot.layer >= 16) ++gdsk;
+      }
+      TEff &tp = g_tp[spix == 0 ? 0 : (spix < 3 ? 1 : 2)];
+      ++tp.n_trk;  tp.sim_pix += spix;  tp.got_pix += gpix;
+      tp.sim_dsk += sdsk;  tp.got_dsk += gdsk;
+      if (spix > 0) { ++tp.n_trk_with_pix; if (gpix > 0) ++tp.deepest_ok; }
+      tp.sim_pix_lay += (long) lpix.size();
+
+      TEff &t = g_te[cls];
+      ++t.n_trk;  t.sim_pix += spix;  t.got_pix += gpix;
+      if (spix > 0) ++t.n_trk_with_pix;
+      t.sim_pix_lay += (long) lpix.size();  t.sim_dsk_lay += (long) ldsk.size();
+      t.sim_dsk += sdsk;  t.got_dsk += gdsk;
+      if (gpix > 0) ++t.deepest_ok;
+    }
+  }
+
+  void probe_track_eff_report(const char *tag) {
+    printf("\n=== TRACK-LEVEL TRUE-HIT EFFICIENCY [%s] ===\n", tag);
+    printf("%ld candidate tracks, %ld with no sim label.\n", g_te_ntrk, g_te_nolbl);
+    printf("  %-14s %7s | %9s %9s %7s | %9s %9s %7s | %8s %9s\n",
+           "sim track","tracks","sim pixB","got","eff","sim disks","got","eff",
+           "w/ pixB","any pixB*");
+    printf("  (* fraction of tracks that HAVE a pixel-barrel hit and got at least one)\n");
+    printf("  CEILING = distinct layers / hits. It was a hard ceiling while the search\n");
+    printf("  added at most ONE hit per layer (the best-hit path); with the in-layer\n");
+    printf("  combinatorial search it is a soft one -- a path may take\n");
+    printf("  several hits in a layer, so read these as a FRACTION OF CEILING, not against\n");
+    printf("  100%%. Overlaps are what put the ceiling well below 100%% in the first place.\n");
+    const char *nm[2] = {"barrel-only", "touches disks"};
+    for (int c = 0; c < 2; ++c) {
+      const TEff &t = g_te[c];
+      if (t.n_trk == 0) continue;
+      printf("  %-14s %7ld | %9ld %9ld %6.1f%% | %9ld %9ld %6.1f%% | %8ld %8.1f%%\n",
+             nm[c], t.n_trk, t.sim_pix, t.got_pix,
+             t.sim_pix ? 100.0*t.got_pix/t.sim_pix : 0.0,
+             t.sim_dsk, t.got_dsk, t.sim_dsk ? 100.0*t.got_dsk/t.sim_dsk : 0.0,
+             t.n_trk_with_pix,
+             t.n_trk_with_pix ? 100.0*t.deepest_ok/t.n_trk_with_pix : 0.0);
+      printf("  %-14s %7s | CEILING pixB %5.1f%% (of %ld) | CEILING disks %5.1f%% (of %ld)\n",
+             "", "", t.sim_pix ? 100.0*t.sim_pix_lay/t.sim_pix : 0.0, t.sim_pix_lay,
+             t.sim_dsk ? 100.0*t.sim_dsk_lay/t.sim_dsk : 0.0, t.sim_dsk_lay);
+    }
+    printf("\n  SPLIT BY HOW MANY PIXEL-BARREL HITS THE SIM TRACK OFFERS:\n");
+    printf("  %-14s %7s | %8s %8s %7s %9s | %9s\n",
+           "sim pixB hits","tracks","sim","got","eff","of ceiling","any pixB");
+    const char *pn[3] = {"0 (none to find)", "1 - 2", ">= 3"};
+    for (int c = 0; c < 3; ++c) {
+      const TEff &t = g_tp[c];
+      if (t.n_trk == 0) continue;
+      const double eff = t.sim_pix ? 100.0*t.got_pix/t.sim_pix : 0.0;
+      const double cei = t.sim_pix ? 100.0*t.sim_pix_lay/t.sim_pix : 0.0;
+      printf("  %-14s %7ld | %8ld %8ld %6.1f%% %8.0f%% | %8.1f%%\n",
+             pn[c], t.n_trk, t.sim_pix, t.got_pix, eff, cei > 0 ? 100.0*eff/cei : 0.0,
+             t.n_trk_with_pix ? 100.0*t.deepest_ok/t.n_trk_with_pix : 0.0);
+    }
+  }
+
+  // ==========================================================================
+  // probe_eff -- per-SIM-TRACK efficiency, resolved in |eta|, pT and hits-per-layer.
   //
   // WHY THIS AND NOT THE STANDARD COUNTERS. Everything measured for the in-layer
   // combinatorial search so far is a scalar summed over a run, so none of it says
@@ -82,7 +200,7 @@ namespace mkfit {
   // THE METRIC, and why each piece is safe:
   //  - Association is `TrackExtra::setMCTrackIDInfo`, i.e. `2*mccount >= nCandHits`
   //    over the non-seed hits -- exactly what quality-val's "found tracks" counts.
-  //    With val_assoc_mtv(true) it is MTV's rule instead, `4*mccount > 3*nCandHits`
+  //    With probe_assoc_mtv(true) it is MTV's rule instead, `4*mccount > 3*nCandHits`
   //    over all hits, seed hits included; the report header says which.
   //    A WRONG extra hit raises the denominator only, so a gain here cannot be
   //    bought by taking more hits. `nH >= 80 %` is NOT used anywhere: it tests raw
@@ -318,15 +436,15 @@ namespace mkfit {
   // Signal-only denominator: only sim tracks with Track::ProdType::Signal (in-time, event 0),
   // as CMSSW MTV's efficiency (signalOnly). The reco side, and so the fake rate, is unchanged.
   static bool g_ve_signal_only = false;
-  void val_eff_signal_only(bool on) {
+  void probe_eff_signal_only(bool on) {
     g_ve_signal_only = on;
-    printf("val_eff_signal_only: %d (efficiency denominator %s)\n", (int) on,
+    printf("probe_eff_signal_only: %d (efficiency denominator %s)\n", (int) on,
            on ? "signal sim tracks only" : "every selected sim track");
   }
 
-  void val_eff_reset() { g_ve.clear(); g_ve_ref.clear(); }
-  void val_eff_ref(const char *cfg) { g_ve_ref = cfg; }
-  void val_eff_ref2(const char *cfg) { g_ve_ref2 = cfg; }
+  void probe_eff_reset() { g_ve.clear(); g_ve_ref.clear(); }
+  void probe_eff_ref(const char *cfg) { g_ve_ref = cfg; }
+  void probe_eff_ref2(const char *cfg) { g_ve_ref2 = cfg; }
 
   // tracks is the collection under test. It is candidateTracks_ for a v2p2
   // configuration and cmsswTracks_ for the production reference; everything else
@@ -500,7 +618,7 @@ namespace mkfit {
     ++C.n_ev;
   }
 
-  void val_eff_event(const Event *ev, const char *cfg) {
+  void probe_eff_event(const Event *ev, const char *cfg) {
     if (ev == nullptr) return;
     ve_accumulate(ev, ev->candidateTracks_, ve_cfg(cfg));
   }
@@ -510,154 +628,12 @@ namespace mkfit {
   // selectHitIndicesV2. Needs --read-cmssw-tracks AND a .bin converted with
   // --write-rec-tracks; without the latter the section is not in the file at all
   // and this reports an empty collection rather than failing quietly.
-  //============================================================================
-  // val_rank -- the worst end-of-layer selection rank along the ancestry of each
-  // seed's final forward-search candidate (TrCandMeta::fwd_rank_*, MKFIT_TRACE,
-  // MkFinderV2p2). The layer-step score is additive, so a candidate whose
-  // ancestors all ranked <= R at beam width W > R also survives at width R: its
-  // competitors at width R are a subset of those at W. So in a run at width 10,
-  // the final tracks with fwd_rank_max > 6 are the ones width 6 cannot make.
-  // Track-to-meta by TrCandMeta::cand, the export index: run WITHOUT
-  // --remove-dup, which erases tracks and shifts it. Truth as val_eff, by the
-  // association mode in force (val_assoc_mtv).
-  //============================================================================
-
-  namespace {
-    struct RkCfg {
-      std::string name;
-      // [class][rank bin]: class 0 good, 1 fake, 2 other; rank bin 0: <= rank_over,
-      // 1..4: rank_over + 1 .. + 4 and above.
-      long n[3][5] = {};
-      // first layer above rank_over, by group, per class
-      long over_grp[3][9] = {};
-      // per |eta| region of the reco track: tracks, of them above rank_over
-      long reg[3][3][2] = {};
-      long n_nometa = 0;
-      // per event (in call order), seed index -> (class, hash of the hit list,
-      // worst rank), for the per-seed comparison against the first config.
-      struct Fin { int cls; size_t hash; int rank; unsigned long long fwd_hash; };
-      std::vector<std::map<int, Fin>> per_ev;
-    };
-    std::vector<RkCfg> g_rk;
-
-    int rk_group(int l) {
-      // 0 PixB, 1 TBPS 1st, 2 TBPS 2nd, 3 TB2S 1st, 4 TB2S 2nd, 5 FPix, 6 TEDD 1st, 7 TEDD 2nd
-      if (l < 0) return 8;
-      if (l >= 38 && l <= 59) l -= 22;
-      if (l <= 3) return 0;
-      if (l <= 9) return 1 + (l & 1);
-      if (l <= 15) return 3 + (l & 1);
-      if (l <= 27) return 5;
-      return 6 + (l & 1);
-    }
-  }
-
-  void val_rank_reset() { g_rk.clear(); }
-
-  void val_rank_event(const Event *ev, const char *cfg) {
-    if (ev == nullptr) return;
-    RkCfg *C = nullptr;
-    for (auto &c : g_rk) if (c.name == cfg) C = &c;
-    if (!C) { g_rk.push_back(RkCfg()); g_rk.back().name = cfg; C = &g_rk.back(); }
-    const int R = Config::V2p2::Diag::rank_over;
-    C->per_ev.emplace_back();
-    auto &fin = C->per_ev.back();
-    std::vector<int> meta_of(ev->candidateTracks_.size(), -1);
-    for (int m = 0; m < (int) ev->trCandMetas_.size(); ++m) {
-      const int ci = ev->trCandMetas_[m].cand;
-      if (ci >= 0 && ci < (int) meta_of.size()) meta_of[ci] = m;
-    }
-    for (int ci = 0; ci < (int) ev->candidateTracks_.size(); ++ci) {
-      if (meta_of[ci] < 0) { ++C->n_nometa; continue; }
-      const TrCandMeta &cm = ev->trCandMetas_[meta_of[ci]];
-      const Track &c = ev->candidateTracks_[ci];
-      TrackExtra extra(c.label());
-      extra.setMCTrackIDInfo(c, ev->layerHits_, ev->simHitsInfo_, ev->simTracks_, false, false);
-      const int mc = extra.mcTrackID();
-      const bool fake = Config::mtvLikeValidation ? (mc == -1 || (mc <= -5 && mc >= -9))
-                                                  : (mc < 0 || mc >= (int) ev->simTracks_.size());
-      const int cls = fake ? 1 : (mc >= 0 && mc < (int) ev->simTracks_.size()) ? 0 : 2;
-      const int rb = cm.fwd_rank_max <= R ? 0 : std::min(4, cm.fwd_rank_max - R);
-      ++C->n[cls][rb];
-      if (rb > 0) ++C->over_grp[cls][rk_group(cm.fwd_rank_over_layer)];
-      const float ae = std::abs(c.momEta());
-      const int reg = ae < 0.9f ? 0 : ae < 1.7f ? 1 : 2;
-      ++C->reg[cls][reg][0];
-      if (rb > 0) ++C->reg[cls][reg][1];
-      fin[cm.seed] = {cls, hits_hash(c), cm.fwd_rank_max, cm.fwd_hits_hash};
-    }
-  }
-
-  void val_rank_report() {
-    const int R = Config::V2p2::Diag::rank_over;
-    const char *cls_name[3] = {"good", "fake", "other"};
-    const char *grp_name[9] = {"PixB", "TBPS1", "TBPS2", "TB2S1", "TB2S2", "FPix", "TEDD1", "TEDD2", "none"};
-    printf("\n--- val_rank: worst end-of-layer rank along the final candidate's ancestry (rank_over %d) ---\n", R);
-    for (auto &C : g_rk) {
-      printf("config %s (tracks without a trace meta: %ld)\n", C.name.c_str(), C.n_nometa);
-      printf("  %-6s %9s %9s   rank %d / %d / %d / >=%d\n", "class", "tracks", "<=", R + 1, R + 2, R + 3, R + 4);
-      for (int k = 0; k < 3; ++k) {
-        long t = 0;
-        for (int b = 0; b < 5; ++b) t += C.n[k][b];
-        printf("  %-6s %9ld %9ld   %6ld %6ld %6ld %6ld\n", cls_name[k], t, C.n[k][0], C.n[k][1], C.n[k][2],
-               C.n[k][3], C.n[k][4]);
-      }
-      printf("  first layer above rank %d, by group:\n  %-6s", R, "class");
-      for (int g = 0; g < 9; ++g) printf(" %6s", grp_name[g]);
-      printf("\n");
-      for (int k = 0; k < 3; ++k) {
-        printf("  %-6s", cls_name[k]);
-        for (int g = 0; g < 9; ++g) printf(" %6ld", C.over_grp[k][g]);
-        printf("\n");
-      }
-      printf("  by reco |eta|, tracks / above rank %d:   barrel        transition    endcap\n", R);
-      for (int k = 0; k < 3; ++k)
-        printf("  %-6s %32s %6ld / %-5ld %6ld / %-5ld %6ld / %-5ld\n", cls_name[k], "", C.reg[k][0][0],
-               C.reg[k][0][1], C.reg[k][1][0], C.reg[k][1][1], C.reg[k][2][0], C.reg[k][2][1]);
-    }
-    // Per seed against the first configuration: the same seeds in every config.
-    if (g_rk.size() < 2) return;
-    const RkCfg &A = g_rk[0];
-    for (size_t ic = 1; ic < g_rk.size(); ++ic) {
-      const RkCfg &B = g_rk[ic];
-      // [class A][class B][same hits][B rank above]; tf: the same, split by the
-      // forward search's final candidate instead of the final track.
-      long t[3][3][2][2] = {}, tf[3][3][2][2] = {};
-      long only_a = 0, only_b = 0;
-      const size_t ne = std::min(A.per_ev.size(), B.per_ev.size());
-      for (size_t e = 0; e < ne; ++e) {
-        for (auto &[s, fa] : A.per_ev[e]) {
-          auto it = B.per_ev[e].find(s);
-          if (it == B.per_ev[e].end()) { ++only_a; continue; }
-          const auto &fb = it->second;
-          ++t[fa.cls][fb.cls][fa.hash == fb.hash][fb.rank > R];
-          ++tf[fa.cls][fb.cls][fa.fwd_hash == fb.fwd_hash][fb.rank > R];
-        }
-        for (auto &[s, fb] : B.per_ev[e])
-          if (A.per_ev[e].find(s) == A.per_ev[e].end()) ++only_b;
-      }
-      printf("per seed, %s -> %s (%zu events; seeds only in %s %ld, only in %s %ld):\n", A.name.c_str(),
-             B.name.c_str(), ne, A.name.c_str(), only_a, B.name.c_str(), only_b);
-      printf("  %-14s %10s %10s %12s %12s\n", "", "same hits", "", "other hits", "");
-      printf("  %-14s %10s %10s %12s %12s\n", "", "rank<=", "rank>", "rank<=", "rank>");
-      for (int a = 0; a < 2; ++a)
-        for (int b = 0; b < 2; ++b)
-          printf("  %-5s -> %-5s  %10ld %10ld %12ld %12ld\n", cls_name[a], cls_name[b], t[a][b][1][0],
-                 t[a][b][1][1], t[a][b][0][0], t[a][b][0][1]);
-      printf("  split by the FORWARD search's final candidate (same / other forward hits):\n");
-      for (int a = 0; a < 2; ++a)
-        for (int b = 0; b < 2; ++b)
-          printf("  %-5s -> %-5s  %10ld %10ld %12ld %12ld\n", cls_name[a], cls_name[b], tf[a][b][1][0],
-                 tf[a][b][1][1], tf[a][b][0][0], tf[a][b][0][1]);
-    }
-  }
-
-  void val_eff_cmssw_event(const Event *ev, const char *cfg) {
+  void probe_eff_cmssw_event(const Event *ev, const char *cfg) {
     if (ev == nullptr) return;
     if (ev->cmsswTracks_.empty()) {
       static bool warned = false;
       if (!warned) {
-        printf("val_eff_cmssw_event: cmsswTracks_ is EMPTY. Needs --read-cmssw-tracks,\n"
+        printf("probe_eff_cmssw_event: cmsswTracks_ is EMPTY. Needs --read-cmssw-tracks,\n"
                "  and a .bin written with --write-rec-tracks -- check the header's\n"
                "  'Extra sections' line for CmsswTracks.\n");
         warned = true;
@@ -789,8 +765,8 @@ namespace mkfit {
     }
   }
 
-  void val_eff_report(const char *prefix) {
-    if (g_ve.empty()) { printf("val_eff_report: nothing accumulated.\n"); return; }
+  void probe_eff_report(const char *prefix) {
+    if (g_ve.empty()) { printf("probe_eff_report: nothing accumulated.\n"); return; }
     const VeCfg *ref = &g_ve[0];
     if (!g_ve_ref.empty())
       for (const auto &c : g_ve) if (c.name == g_ve_ref) ref = &c;
@@ -799,7 +775,7 @@ namespace mkfit {
     g_ve_log = fopen(txt.c_str(), "w");
 
     ve_printf("\n================================================================\n");
-    ve_printf("  val_eff -- per-sim-track efficiency, resolved\n");
+    ve_printf("  probe_eff -- per-sim-track efficiency, resolved\n");
     ve_printf("================================================================\n");
     ve_printf("DENOMINATOR -- CMSSW MTV's convention. Sim tracks that are findable, have a\n");
     ve_printf("  CENTRAL production vertex (tip < 3.5 cm, lip < 30 cm, as\n");
@@ -813,7 +789,7 @@ namespace mkfit {
     if (Config::mtvLikeValidation) {
       ve_printf("NUMERATOR: >= 1 reco track associated to it by 4*mccount > 3*nCandHits over\n");
       ve_printf("  ALL the track's hits, seed hits included (TrackExtra::setMCTrackIDInfo with\n");
-      ve_printf("  Config::mtvLikeValidation, set by val_assoc_mtv()). That is MTV's\n");
+      ve_printf("  Config::mtvLikeValidation, set by probe_assoc_mtv()). That is MTV's\n");
       ve_printf("  quickTrackAssociatorByHits: shared / valid reco hits > 0.75, strictly, so\n");
       ve_printf("  3 of 4 FAILS. Fakes use the same rule: a FAKE is a track matched to no sim\n");
       ve_printf("  track at all; one matched to a non-findable (e.g. unseeded pileup) sim\n");
@@ -1201,14 +1177,14 @@ namespace mkfit {
     }
     f.Close();
 
-    ve_printf("\nval_eff_report: wrote %s and %s (%zu configurations)\n",
+    ve_printf("\nprobe_eff_report: wrote %s and %s (%zu configurations)\n",
               rootf.c_str(), txt.c_str(), g_ve.size());
     if (g_ve_log) { fclose(g_ve_log); g_ve_log = nullptr; }
   }
 
   //--------------------------------------------------------------------------
-  // val_trkdump -- one row per (configuration, event, sim track): the best-
-  // matched reco track (most matched hits, as val_eff), its pT, its state's
+  // probe_trkdump -- one row per (configuration, event, sim track): the best-
+  // matched reco track (most matched hits, as probe_eff), its pT, its state's
   // position and its hits in HoT order (layer << 20 | index, -1 - layer for a
   // hole). For comparing two configurations track by track on the same sim
   // tracks: same hits and a different pT is the state, different hits the
@@ -1226,9 +1202,9 @@ namespace mkfit {
     std::vector<TdRow> g_td;
   }  // namespace
 
-  void val_trkdump_reset() { g_td_cfg.clear(); g_td.clear(); }
+  void probe_trkdump_reset() { g_td_cfg.clear(); g_td.clear(); }
 
-  void val_trkdump_event(const Event *ev, const char *cfg) {
+  void probe_trkdump_event(const Event *ev, const char *cfg) {
     if (ev == nullptr) return;
     int ci = std::find(g_td_cfg.begin(), g_td_cfg.end(), std::string(cfg)) - g_td_cfg.begin();
     if (ci == (int) g_td_cfg.size()) g_td_cfg.push_back(cfg);
@@ -1265,7 +1241,7 @@ namespace mkfit {
     }
   }
 
-  void val_trkdump_write(const char *fn) {
+  void probe_trkdump_write(const char *fn) {
     TFile f(fn, "RECREATE");
     TTree t("trk", "best-matched reco track per sim track");
     TdRow r;
@@ -1287,7 +1263,7 @@ namespace mkfit {
     for (auto &c : g_td_cfg) cs += c + " ";
     n.SetTitle(cs.c_str());
     n.Write();
-    printf("val_trkdump_write: %zu rows, configs %s-> %s\n", g_td.size(), cs.c_str(), fn);
+    printf("probe_trkdump_write: %zu rows, configs %s-> %s\n", g_td.size(), cs.c_str(), fn);
   }
 
 }  // namespace mkfit

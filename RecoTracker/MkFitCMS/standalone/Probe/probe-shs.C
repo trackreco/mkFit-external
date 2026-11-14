@@ -6,7 +6,7 @@
 // because the sim hit is the true crossing while the rec hit is the cluster
 // centroid, so they differ along the strip by up to its half length.
 //
-//   val_shs_reset();  val_shs_event(s.event()); ... ; val_shs_report();
+//   probe_shs_reset();  probe_shs_event(s.event()); ... ; probe_shs_report();
 
 #include <algorithm>
 #include <cmath>
@@ -34,10 +34,10 @@ namespace {
   }
 }  // namespace
 
-void val_shs_reset() { g_shs = ShsAcc(); }
+void probe_shs_reset() { g_shs = ShsAcc(); }
 
-void val_shs_event(mkfit::Event *ev) {
-  if (ev == nullptr) { printf("val_shs_event: null event\n"); return; }
+void probe_shs_event(mkfit::Event *ev) {
+  if (ev == nullptr) { printf("probe_shs_event: null event\n"); return; }
   const mkfit::TrackerInfo &ti = mkfit::Config::TrkInfo;
   g_shs.n_states += (long)ev->simHitStates_.size();
   g_shs.n_hitinfo += (long)ev->simHitsInfo_.size();
@@ -62,7 +62,7 @@ void val_shs_event(mkfit::Event *ev) {
   }
 }
 
-void val_shs_report() {
+void probe_shs_report() {
   printf("\n=== sim-hit truth states ===\n");
   printf("  states %ld, simHitsInfo %ld  -- %s\n", g_shs.n_states, g_shs.n_hitinfo,
          g_shs.n_states == g_shs.n_hitinfo ? "parallel, as required" : "*** SIZES DISAGREE ***");

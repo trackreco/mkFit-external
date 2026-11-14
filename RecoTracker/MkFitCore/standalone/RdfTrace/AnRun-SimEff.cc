@@ -26,7 +26,7 @@
 // matters on a difference is the spread of the per-EVENT difference between two
 // configurations, which is a join across separate runs on event id, not a
 // projection within one -- and the Event only ever holds the last
-// configuration's candidateTracks_. That half lives in mkfit::val_eff_*.
+// configuration's candidateTracks_. That half lives in mkfit::probe_eff_*.
 
 namespace {
   // sim label -> number of reco tracks associated to it by quality-val's rule,
@@ -111,7 +111,7 @@ void AnRun::RunSimTrackEfficiency() {
     .Define("hpl_den",    "sim_hpl[sel_all]")
     .Define("hpl_num",    "sim_hpl[sel_all && sim_found]")
     // Counts on the FULL selection, both cuts applied, so the summary below is
-    // the same population mkfit::val_eff_* reports and the two cannot disagree.
+    // the same population mkfit::probe_eff_* reports and the two cannot disagree.
     .Define("n_sel",      "(int) Sum(sel_all)")
     .Define("n_seeded",   "(int) Sum(sel_all && sim_seeded)")
     .Define("n_found",    "(int) Sum(sel_all && sim_found)")
@@ -158,12 +158,12 @@ void AnRun::RunSimTrackEfficiency() {
             n_sel.GetValue() ? 100.0*n_seeded.GetValue()/n_sel.GetValue() : 0.0);
   an_printf("  ... found           : %d   (%.2f%%)\n", n_found.GetValue(),
             n_sel.GetValue() ? 100.0*n_found.GetValue()/n_sel.GetValue() : 0.0);
-  an_printf("  Both cuts applied here, so this is the same population val_eff_* reports;\n"
+  an_printf("  Both cuts applied here, so this is the same population probe_eff_* reports;\n"
             "  the eta and pT PLOTS each release their own cut, which is why their\n"
             "  integrals are larger.\n");
   an_printf("  A configuration COMPARISON does not belong here -- the Event holds only the\n"
             "  last configuration's candidateTracks_, and a paired error bar is a join\n"
-            "  across runs on event id. That is mkfit::val_eff_*.\n");
+            "  across runs on event id. That is mkfit::probe_eff_*.\n");
 }
 
 #pragma endregion

@@ -1,8 +1,8 @@
-#ifndef RecoTracker_MkFitCore_standalone_DataFormats_ValStructs_h
-#define RecoTracker_MkFitCore_standalone_DataFormats_ValStructs_h
+#ifndef RecoTracker_MkFitCore_standalone_DataFormats_ProbeStructs_h
+#define RecoTracker_MkFitCore_standalone_DataFormats_ProbeStructs_h
 
 // ===========================================================================
-// Val* -- persistent records of the synthetic validation of propagation,
+// Probe* -- persistent records of the synthetic validation of propagation,
 // Kalman operations and fitting.
 //
 // These deliberately hold PLAIN members only (scalars and fixed float arrays),
@@ -15,7 +15,7 @@
 // columns, so a residual can be redefined without regenerating the sample.
 // ===========================================================================
 
-// ValClosure -- ONE round trip, i.e. one (track, plane configuration) trial.
+// ProbeClosure -- ONE round trip, i.e. one (track, plane configuration) trial.
 //
 //   O -> A   conditioning leg, result kept as the input state
 //   A -> B   the step under test
@@ -42,11 +42,11 @@
 // With material OFF and a uniform field the propagation is a diffeomorphism,
 // so the exact answer for A vs A' is ZERO -- every non-zero value is float
 // arithmetic. Units: cm, rad, GeV.
-struct ValClosure {
+struct ProbeClosure {
   // ----- identity
   int id = -1;
   int track_id = -1;
-  int cfg = -1;  // plane-configuration index, see ValCfgInfo
+  int cfg = -1;  // plane-configuration index, see ProbeCfgInfo
 
   // ----- the truth track (duplicated here so no join is ever needed)
   float pt = 0, eta = 0, phi0 = 0;
@@ -82,22 +82,22 @@ struct ValClosure {
   float par_c[6] = {0}, err_c[21] = {0};  // back at A'
 };
 
-// ValCfgInfo -- what a cfg index means. One entry per configuration, written
+// ProbeCfgInfo -- what a cfg index means. One entry per configuration, written
 // to its own tree so a plot can label itself without a hardcoded legend.
-struct ValCfgInfo {
+struct ProbeCfgInfo {
   int cfg = -1;
   float dalpha = 0;   // requested turn angle A->B  [rad]
   float cos_inc = 0;  // requested |p^ . n| at plane B; 1 = plane normal to the track
 };
 
-// ValStep -- one propagation step as a REAL track actually presents it.
+// ProbeStep -- one propagation step as a REAL track actually presents it.
 //
 // The synthetic scans choose a turn angle; a detector does not. This records
 // what turn angles occur between consecutive hits of reconstructed tracks, so
 // that any response measured against turn angle can be weighted by the
 // distribution that actually happens. Without it a scan is uniform over a
 // variable the experiment is not uniform in.
-struct ValStep {
+struct ProbeStep {
   int   event = -1;
   int   track = -1;      // index in the track collection
   int   step = -1;       // which consecutive-hit step along the track
@@ -110,7 +110,7 @@ struct ValStep {
 };
 
 // ---------------------------------------------------------------------------
-// ValCovXport -- ENSEMBLE covariance transport, one step.
+// ProbeCovXport -- ENSEMBLE covariance transport, one step.
 //
 // The question: propagate a covariance C_A through the production code path to
 // get C_B, and separately propagate 10^4 SAMPLES drawn from C_A and form their
@@ -128,7 +128,7 @@ struct ValStep {
 // transport is right in every direction and correlation, not just on average.
 // `null_sig` is the sample spread ALONG C_B's null direction, in units of the
 // smallest kept sigma -- it is how a wrong rank would show up.
-struct ValCovXport {
+struct ProbeCovXport {
   int   cfg = -1;
   int   n_samp = 0;       // samples that propagated without a fail flag
   int   n_fail = 0;
@@ -183,7 +183,7 @@ struct ValCovXport {
 
 
 // ---------------------------------------------------------------------------
-// ValSearchHit -- one scanned hit in the BACKWARD (inward) search, flattened
+// ProbeSearchHit -- one scanned hit in the BACKWARD (inward) search, flattened
 // out of the MKFIT_TRACE graph so it can be read in a bare root session.
 //
 // The two questions it exists to answer, on a geometry-verified sample:
@@ -191,7 +191,7 @@ struct ValCovXport {
 //   (2) why is the chi2 of MC-matched hits too big?
 // Both need the residual AND the error it should be judged against, per hit,
 // which is why sigma_q_trk / hit_q_half_len / sigma_phi_trk all travel with it.
-struct ValSearchHit {
+struct ProbeSearchHit {
   int   event = -1;
   int   layer = -1;
   int   hit = -1;
@@ -307,8 +307,8 @@ struct ValSearchHit {
 
 
 // ---------------------------------------------------------------------------
-// ValSearchMiss -- ONE ROW PER LAYER-SEARCH, asking the opposite question to
-// ValSearchHit: not "of the hits we scanned, which were true", but "where was
+// ProbeSearchMiss -- ONE ROW PER LAYER-SEARCH, asking the opposite question to
+// ProbeSearchHit: not "of the hits we scanned, which were true", but "where was
 // the sim track's own hit, and why did we not even consider it".
 //
 // Every measurement conditioned on a hit being scanned is blind to the case
@@ -320,7 +320,7 @@ struct ValSearchHit {
 // phi in [phi_center +- phi_delta] and q in [q_min, q_max], where q is z in the
 // barrel and r in the endcap. dphi_track / dq_track are 3 sigma of the TRACK
 // alone; the q cut additionally allows the hit's own extent.
-struct ValSearchMiss {
+struct ProbeSearchMiss {
   int   event = -1;
   int   search_id = -1;
   int   step = -1;
@@ -383,7 +383,7 @@ struct ValSearchMiss {
 
 
 // ---------------------------------------------------------------------------
-// ValCovStep -- ONE KALMAN UPDATE in the search, with the covariance BEFORE and
+// ProbeCovStep -- ONE KALMAN UPDATE in the search, with the covariance BEFORE and
 // AFTER it. This is the instrument for "where does the q covariance contract".
 //
 // Per layer the covariance should do two things, in opposite directions:
@@ -402,7 +402,7 @@ struct ValSearchMiss {
 // (exx+eyy) for the HIT extent, which is a different, looser quantity (see
 // doc/MkFinderV2p2-DesignNotes.md, "Hit extents"). Do not compare the two
 // without saying which is which.
-struct ValCovStep {
+struct ProbeCovStep {
   int   event = -1;
   int   layer = -1;
   int   step = -1;          // depth of the candidate in this search

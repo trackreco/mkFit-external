@@ -55,28 +55,28 @@
 
 // #pragma link C++ class KalmanInfo + ;
 
-// Val -- synthetic propagation / Kalman / fit validation
+// Probe -- records written by the probes, MkFitCMS/standalone/Probe
 
-#pragma link C++ class ValClosure + ;
-#pragma link C++ class std::vector < ValClosure > +;
+#pragma link C++ class ProbeClosure + ;
+#pragma link C++ class std::vector < ProbeClosure > +;
 
-#pragma link C++ class ValStep + ;
-#pragma link C++ class std::vector < ValStep > +;
+#pragma link C++ class ProbeStep + ;
+#pragma link C++ class std::vector < ProbeStep > +;
 
 
-#pragma link C++ class ValCfgInfo + ;
-#pragma link C++ class std::vector < ValCfgInfo > +;
+#pragma link C++ class ProbeCfgInfo + ;
+#pragma link C++ class std::vector < ProbeCfgInfo > +;
 
-#pragma link C++ class ValCovXport + ;
-#pragma link C++ class std::vector < ValCovXport > +;
+#pragma link C++ class ProbeCovXport + ;
+#pragma link C++ class std::vector < ProbeCovXport > +;
 
-#pragma link C++ class ValSearchHit + ;
-#pragma link C++ class std::vector < ValSearchHit > +;
+#pragma link C++ class ProbeSearchHit + ;
+#pragma link C++ class std::vector < ProbeSearchHit > +;
 
-#pragma link C++ class ValSearchMiss + ;
-#pragma link C++ class std::vector < ValSearchMiss > +;
+#pragma link C++ class ProbeSearchMiss + ;
+#pragma link C++ class std::vector < ProbeSearchMiss > +;
 
-#pragma link C++ class ValCovStep + ;
-#pragma link C++ class std::vector < ValCovStep > +;
+#pragma link C++ class ProbeCovStep + ;
+#pragma link C++ class std::vector < ProbeCovStep > +;
 
 #pragma link C++ class SeedVecInsp + ;
