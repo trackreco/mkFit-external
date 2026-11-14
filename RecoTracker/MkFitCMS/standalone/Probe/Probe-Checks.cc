@@ -1,3 +1,8 @@
+// Probe-Checks.cc -- CHECKS of the input, each with a verdict.
+//   probe_geom_check_*   is a sample's geometry the one this build has?
+//   probe_sample_info    what is in a sample
+// probe-shs.C, a cling macro next to this file, checks the per-sim-hit truth
+// states.
 #include "RecoTracker/MkFitCMS/standalone/Probe/Probe.h"
 
 #include "RecoTracker/MkFitCore/interface/Config.h"

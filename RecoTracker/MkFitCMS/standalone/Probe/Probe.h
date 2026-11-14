@@ -2,29 +2,29 @@
 #define RecoTracker_MkFitCMS_standalone_Probe_Probe_h
 
 // ===========================================================================
-// Synthetic validation of propagation, Kalman operations and fitting.
+// Probes: they read an event after it was processed, or a synthetic sample,
+// and change nothing. By what they read:
+//   closure  Probe-Closure.cc  synthetic tracks with an exact answer, no event
+//   checks   Probe-Checks.cc   the input, with a verdict
+//   perf     Probe-Perf.cc     the final tracks against truth
+//   trace    Probe-Trace.cc    the Tr* records of a trace build (MKFIT_TRACE)
+//   taps     Probe-Taps.cc     the readers of the in-core taps
+// The knobs and the tap switches are Shell methods, in the section "Knobs" of
+// Shell.h.
 //
-// GENERATION lives here and needs the mkFit build (the propagator). ANALYSIS
-// does not: the output is a plain TTree of dictionary-ed Probe* structs, so a
-// bare root.exe session can read it after
-//     gSystem->Load("libMkFitRootDataFormats.so")
-// and run RDataFrame over it with no mkFit at all.
-//
-// No detector geometry is used. Closure is a property of the PROPAGATOR, not
-// of the detector, so the planes here are constructed analytically at chosen
-// radii. That also removes a whole class of contamination -- a synthetic plane
-// cannot be geometry-incompatible with a sample. Real modules earn their way
-// back in at a higher rung of the ladder.
+// The records the probes write are Probe* structs (DataFormats/ProbeStructs.h)
+// with a dictionary in libMkFitRootDataFormats.so, so a bare root.exe session
+// can read them after gSystem->Load("libMkFitRootDataFormats.so").
 //
 // Declaration-only on purpose: this header is parsed by cling through
-// Probe/probe.C, so it must pull in no Matriplex header.
+// probe.C, so it must pull in no Matriplex header. From a build directory,
+// with <SACMS> the directory its Makefile exports as SACMS:
 //
-//   cd /foo/matevz/mic-dev/current/src/standalone
 //   unset DISPLAY; export LD_LIBRARY_PATH=.
 //   echo .q | ./mkFit --geom CMS-phase2 --input-file <any .bin> --num-events 1
 //     --num-thr 1 --shell
 //     --shell-command 'gROOT->SetBatch(kTRUE)'
-//     --shell-command 'gROOT->ProcessLine(".L ../RecoTracker/MkFitCMS/standalone/Probe/probe.C")'
+//     --shell-command 'gROOT->ProcessLine(".L <SACMS>/Probe/probe.C")'
 //     --shell-command 'probe_gen("probe-closure.root")'
 // ===========================================================================
 

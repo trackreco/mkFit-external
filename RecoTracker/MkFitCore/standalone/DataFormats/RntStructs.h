@@ -145,8 +145,10 @@ struct FailedPropInfo {
 struct TrCandMeta {
   int id;
   int event;
-  int seed = -1;        // index of seed in event trSeeds_
-  int global_seed = -1; // index of seed in event seedTracks_ (from label of seed)
+  int seed = -1;        // index of seed in Event::trSeeds_
+  // The seed's label. It equals the seed's index in Event::seedTracks_ only after
+  // Event::relabelSeedTracksSequentially().
+  int global_seed = -1;
   int sim = -1;         // index of sim track in event simTracks_
   int cand = -1;        // candidateTracks_ index (valid for final stage)
   int stage_ids[3] {-1, -1, -1}; // indices of stages

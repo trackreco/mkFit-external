@@ -196,6 +196,9 @@ namespace mkfit {
     mutable std::vector<TrKalmanUpdate> trKalmanUpdates_;
     mutable std::vector<TrBkFitUpdate> trBkFitUpdates_;
 
+    // Copied from the current seeds in build_trace_maps_etc(), because the driver's
+    // per-iteration seed vector may be temporary. It holds the last traced iteration
+    // only, and the per-iteration copy keeps no link to a seed's index in seedTracks_.
     mutable TrackVec trSeeds_;
     /* *** for multiple iteration tracing ***
       could be made std::vector<TrackVec> trSeedsPerIter_;

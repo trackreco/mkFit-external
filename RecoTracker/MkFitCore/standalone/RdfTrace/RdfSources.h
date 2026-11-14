@@ -1,4 +1,3 @@
-// filepath: /foo/matevz/mic-dev/current/src/RecoTracker/MkFitCore/standalone/RntDumper/RntSources.h
 #ifndef RecoTracker_MkFitCore_standalone_RdfTrace_RdfSources_h
 #define RecoTracker_MkFitCore_standalone_RdfTrace_RdfSources_h
 

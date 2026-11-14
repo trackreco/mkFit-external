@@ -1,3 +1,21 @@
+// ===========================================================================
+// Probe-Closure.cc -- CLOSURE probes: synthetic tracks with an exact answer.
+//   probe_gen_closure     one step there and back through the plane propagator
+//   probe_cov_transport   ensemble test of the covariance transport
+//   probe_dalpha_*        the turn angles between consecutive hits of real
+//                         tracks, which weight the two scans above; it reads
+//                         events
+//
+// No detector geometry is used. Closure is a property of the PROPAGATOR, not
+// of the detector, so the planes here are constructed analytically at chosen
+// radii. That also removes a whole class of contamination -- a synthetic plane
+// cannot be geometry-incompatible with a sample.
+//
+// GENERATION needs the mkFit build (the propagator). ANALYSIS does not: the
+// output is a plain TTree of dictionary-ed Probe* structs, which RDataFrame
+// reads in a bare root.exe session after
+//     gSystem->Load("libMkFitRootDataFormats.so")
+// ===========================================================================
 #include "RecoTracker/MkFitCMS/standalone/Probe/Probe.h"
 #include "RecoTracker/MkFitCore/standalone/DataFormats/ProbeStructs.h"
 
@@ -458,7 +476,7 @@ namespace mkfit {
   }
 
   // ==========================================================================
-  // S11 step 1 -- ENSEMBLE COVARIANCE TRANSPORT, ONE STEP.
+  // ENSEMBLE COVARIANCE TRANSPORT, ONE STEP.
   //
   // Draw N samples from C_A, push each through the production propagator, and
   // compare their empirical covariance S against the ONE covariance C_B that

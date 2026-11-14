@@ -478,7 +478,7 @@ namespace mkfit {
   }
 
 #ifdef MKFIT_TRACE
-  void Shell::TestVectorSource() {
+  void Shell::TraceVectorSource() {
 
     LoopNEventsHlt(1, 4);
     event()->build_trace_maps_etc();
@@ -618,14 +618,14 @@ namespace mkfit {
   }
 
 #ifdef MKFIT_TRACE
-  void Shell::TestEventSource(int Nevents, const char *prefix, int n_thr) {
+  void Shell::TraceEventSource(int Nevents, const char *prefix, int n_thr) {
     std::vector<const Event*> ev_vec;
 
     int ev_first, ev_last;
     resolve_event_range(Nevents, ev_first, ev_last);
     if (n_thr < 0)
       n_thr = Config::numThreadsEvents; // --num-thr-ev
-    printf("\n######### Shell::TestEventSource() -- running over events [%d, %d], n_thr = %d.\n\n",
+    printf("\n######### Shell::TraceEventSource() -- running over events [%d, %d], n_thr = %d.\n\n",
            ev_first, ev_last, n_thr);
 
     // Track finding, optionally several events in flight. The RDF analysis

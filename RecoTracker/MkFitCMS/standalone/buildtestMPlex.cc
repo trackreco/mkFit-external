@@ -472,6 +472,8 @@ namespace mkfit {
             if (itconf.m_requires_seed_hit_sorting) {
               s.sortHitsByLayer();
             }
+            // The copy loses the seed's index in ev.seedTracks_; tracing several
+            // iterations would need it recorded here (Event.h, trSeedsPerIter_).
             seeds.push_back(s);
             ++nc;
           } else if (nc > 0)

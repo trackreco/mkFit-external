@@ -1,18 +1,18 @@
-// Driver for the synthetic propagation / Kalman / fit validation.
+// Shell driver of the probes, Probe.h. The work is in libMkFitCMS.so; this
+// file only gives cling the declarations to call through, so that no Matriplex
+// header has to be parsed by the interpreter. Load it in mkFit's --shell, from
+// a build directory, with <SACMS> the directory its Makefile exports as SACMS:
 //
-// Same pattern as prop-kalman-validation.C: the work is in the compiled
-// library, this file only gives cling a declaration to call through, so that
-// no Matriplex header has to be parsed by the interpreter.
-//
-//   cd /foo/matevz/mic-dev/current/src/standalone
 //   unset DISPLAY; export LD_LIBRARY_PATH=.
 //   echo .q | ./mkFit --geom CMS-phase2 --input-file <any .bin> --num-events 1 \
 //     --num-thr 1 --shell \
 //     --shell-command 'gROOT->SetBatch(kTRUE)' \
-//     --shell-command 'gROOT->ProcessLine(".L ../RecoTracker/MkFitCMS/standalone/Probe/probe.C")' \
+//     --shell-command 'gROOT->ProcessLine(".L <SACMS>/Probe/probe.C")' \
 //     --shell-command 'probe_gen("probe-closure.root")'
 //
 // No geometry is used by the generator; the shell just wants a file to start.
+// The probes of an event take s.event() after s.ProcessEventStd(), e.g.
+// probe_eff_ev(s.event(), "cfg").
 
 #include "RecoTracker/MkFitCMS/standalone/Probe/Probe.h"
 

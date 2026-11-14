@@ -1,3 +1,5 @@
+// Probe-Taps.cc -- the readers of the in-core taps. Shell::SetTapFinalBeam() and
+// Shell::SetTapScoreStats() switch the taps and set tap mode, Shell.h.
 #include "RecoTracker/MkFitCMS/standalone/Probe/Probe.h"
 #include "RecoTracker/MkFitCore/standalone/V2p2Diag.h"
 

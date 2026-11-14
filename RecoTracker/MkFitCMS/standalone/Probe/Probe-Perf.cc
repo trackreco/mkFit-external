@@ -1,20 +1,16 @@
 // ===========================================================================
-// Probe-Perf.cc -- PER-SIM-TRACK RESULTS: probe_eff_* and val_chopres_*.
+// Probe-Perf.cc -- PERF probes: the final tracks against truth.
+//   probe_assoc_mtv     the association rule every number below depends on
+//   probe_track_eff_*   of a sim track's pixel-barrel and disc hits, how many
+//                       the final candidate holds
+//   probe_eff_*         where the gain lands: efficiency, fakes, duplicates,
+//                       track length and momentum resolution per sim track,
+//                       resolved in |eta|, pT and hits-per-layer, with a paired
+//                       per-event error bar and a COMMON-subset restriction
+//   probe_trkdump_*     the best-matched reco track of each sim track, a TTree
 //
-// Split out of ValProp.cc, which had reached 3764 lines holding a dozen
-// unrelated instrument families. This is the one that answers "where does the
-// gain land": efficiency, fakes, duplicates, track length and momentum
-// resolution per sim track, resolved in |eta|, pT and hits-per-layer, with a
-// paired per-event error bar and a COMMON-subset restriction.
-//
-// It is a self-contained unit -- its accumulators, binning and helpers are all
-// in the anonymous namespace below, and it shares nothing with the rest of
-// ValProp.cc but the includes and the declarations in Probe.h.
-//
-// Drivers: test/v2p2-eff-cap.sh (the maxCandsPerSeed scan and the production
-// reference), v2p2-eff-score.sh (the score-term study), v2p2-eff-fwd.sh,
-// v2p2-eff-chop.sh. Output is <prefix>.root + <prefix>.txt; the deck reads a
-// copy of the .root directly, see ~/mic-dev/inlayer-slides/plots/420-eff.html.
+// Drivers: Probe/v2p2-eff-v2-vs-v2p2.sh and Probe/v2p2-eff-knobs.sh.
+// probe_eff_report() writes <prefix>.root and <prefix>.txt.
 // ===========================================================================
 #include "RecoTracker/MkFitCMS/standalone/Probe/Probe.h"
 
@@ -259,8 +255,9 @@ namespace mkfit {
     const char *ve_regname[3] = {"barrel   |eta|<0.9", "transition 0.9-1.7", "endcap    >1.7"};
     int ve_region(float ae) { return ae < 0.9f ? 0 : (ae < 1.7f ? 1 : 2); }
 
-    // Uncut reco ranges, as mtvsum.C prints them: all, four |eta| ranges, five pT
-    // ranges, and 1.7 < |eta| < 2.7 split at pT 0.9.
+    // Uncut reco ranges, those of the MTV summary tables these numbers were read
+    // against: all, four |eta| ranges, five pT ranges, and 1.7 < |eta| < 2.7 split
+    // at pT 0.9.
     constexpr int VE_NU = 12;
     const char *ve_uname[VE_NU] = {"all", "eta 0-0.9", "eta 0.9-1.7", "eta 1.7-2.7", "eta 2.7-4.5",
                                    "pT 0-0.5", "pT 0.5-0.9", "pT 0.9-2", "pT 2-10", "pT > 10",
@@ -324,7 +321,7 @@ namespace mkfit {
       long sum_seed_hits[3] = {}, sum_seed_pix[3] = {};
       long n_ev = 0;
       std::vector<VeBins> ev_num, ev_den, ev_fake, ev_reco, ev_dup;
-      // Reco tracks WITHOUT the selection cuts, in mtvsum.C's ranges, per event.
+      // Reco tracks WITHOUT the selection cuts, in the uncut ranges, per event.
       // MTV's fake rate is over every reco track, and the pT > 0.9 cut above
       // hides the low-pT fakes from the totals.
       std::vector<std::array<long, VE_NU>> ev_ureco, ev_ufake;
@@ -898,7 +895,7 @@ namespace mkfit {
     ve_printf("  's' is the paired significance: the sum of the per-event difference over\n"
               "  the sigma of that sum, so it is the spread of the DIFFERENCE, not Poisson.\n");
 
-    // Fakes over EVERY reco track, no |eta| or pT cut, in mtvsum.C's ranges and
+    // Fakes over EVERY reco track, no |eta| or pT cut, in the uncut ranges and
     // by the reco track's own |eta| and pT, as MTV's fake rate is.
     ve_printf("\n--- fakes over ALL reco tracks (no selection cut; reco |eta|, pT) ---\n");
     ve_printf("%-16s", "range");

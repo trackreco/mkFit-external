@@ -389,7 +389,7 @@ struct ProbeSearchMiss {
 // Per layer the covariance should do two things, in opposite directions:
 //   propagation + material  GROW it
 //   the Kalman update       SHRINK it
-// Slide 350 shows the net result is a 11x contraction across |eta| while the
+// Measured, the net result is an 11x contraction across |eta| while the
 // residual it must contain grows. Only a per-step split can say whether that is
 // the update shrinking too hard or the propagation not growing enough -- the
 // aggregate cannot distinguish them.

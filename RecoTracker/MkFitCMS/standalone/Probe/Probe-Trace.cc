@@ -1,5 +1,12 @@
-// Compiled only in a trace build (EVENT_RDF_TRACE, which defines MKFIT_TRACE): every probe here
-// reads the Tr* records the v2p2 search writes into the Event.
+// Probe-Trace.cc -- TRACE probes. Compiled only in a trace build (EVENT_RDF_TRACE,
+// which defines MKFIT_TRACE): every probe here reads the Tr* records the v2p2
+// search writes into the Event.
+//   probe_search_*        one event's hit matches, layer searches and Kalman
+//                         updates, flattened into three TTrees
+//   probe_bkfit_trace_*   chi2 through the backward fit, hit by hit
+//   probe_kinfo_*         the exact gain test of the Kalman update
+//   probe_rank_*          the worst end-of-layer rank along a final candidate's
+//                         ancestry
 #ifdef MKFIT_TRACE
 
 #include "RecoTracker/MkFitCMS/standalone/Probe/Probe.h"
@@ -186,15 +193,15 @@ namespace mkfit {
     // builder was given, of which Event::build_trace_maps_etc() keeps a copy,
     // trSeeds_, and the truth, trSIFHforSeedByMeta_ (trace_seed_truth() above).
     //
-    // NOT by TrCandMeta::global_seed. MkBuilder.cc:425 sets that to
+    // NOT by TrCandMeta::global_seed. MkBuilder::export_best_comb_cands() sets that to
     // currentSeed(cm.seed).label(), a seed's LABEL, and a label equals its index
     // only after relabelSeedTracksSequentially() -- which ProcessEventHlt() calls
     // and ProcessEventStd deliberately does not. On the forward driver a seed's
     // label is its file label, i.e. the SIM index of the rec track that used it
     // (WriteMemoryFile's seedSimIdx) and -1 for seeds that produced none, so
     // indexing the seed array with it is silently WRONG rather than empty. This
-    // key is correct on both paths and retires the relabel dependency, the same
-    // trap val_bkfit_seed_truth() was removed for.
+    // key is correct on both paths and retires the relabel dependency;
+    // probe_bkfit_trace_event() uses it too.
     const bool have_truth = trace_seed_truth_built(ev, "probe_search_event");
     g_sh_evt = event_idx;
     const int n_ls = (int) ev->trLayerSearches_.size();
@@ -507,10 +514,9 @@ namespace mkfit {
   }
 
   // ==========================================================================
-  // chi2 through the backward fit, hit by hit -- the TRACE port of
-  // test/an-val-bkfit.C. Reads trBkFitUpdates_ instead of a ValFitHit TTree.
+  // chi2 through the backward fit, hit by hit, from trBkFitUpdates_.
   //
-  // Two things come for free that the TTree version had to build by hand:
+  // Two things the trace records give directly:
   // the per-track grouping (records carry state_id_in -> TrCandState.meta_id,
   // so a track IS a meta) and the seed truth (Event::trSIFHforSeedByMeta_ holds
   // the truth of each meta's seed, TrCandMeta::seed of Event::trSeeds_, so no
@@ -687,7 +693,7 @@ namespace mkfit {
       const TrHitMatch &hm = ev->trHitMatches_[ku.hit_match_id];
       if (!hm.mc_match || hm.layer < 0 || hm.layer >= 4) continue;   // pixel barrel
       // P is SINGULAR by construction -- the transported covariance is rank 5
-      // with a null direction along the momentum (S11). So P^-1 does not exist
+      // with a null direction along the momentum. So P^-1 does not exist
       // and the information form P'^-1 - P^-1 is ill-posed; measured, it gave a
       // negative eigenvalue in 54 % of updates, which is that null direction and
       // not a defect of the update. Use the form that needs NO inverse of P:

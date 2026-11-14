@@ -237,14 +237,14 @@ namespace mkfit {
 
     // Current default processing. N_events <= 0 means "use the configured
     // event range", see SetEventRangeFirstLast() / SetEventRangeBegCnt().
-    // NOTE on naming: Test() really is a test; TestVectorSource() and
-    // TestEventSource() are tracing drivers and want to be Trace*.
+    // Test() is a test; TraceVectorSource() and TraceEventSource() are tracing
+    // drivers of the inward search on HLT seeds.
     void Test(int Nevents = -1);
 #ifdef MKFIT_TRACE
-    void TestVectorSource();
+    void TraceVectorSource();
     // n_thr > 1 runs that many events in flight, each in its own EvCtx; the RDF
     // analysis afterwards is unchanged. n_thr < 0 takes --num-thr-ev.
-    void TestEventSource(int Nevents = -1, const char *prefix = "mkfit", int n_thr = 1);
+    void TraceEventSource(int Nevents = -1, const char *prefix = "mkfit", int n_thr = 1);
 #endif
 
   protected:

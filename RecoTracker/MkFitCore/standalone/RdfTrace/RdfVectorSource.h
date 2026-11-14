@@ -21,7 +21,7 @@ namespace mkfit {
   // via RdfSources::MakeEventDF() / EventSource instead. Kept because it is a
   // complete, compiling, runnable example of a custom ROOT RDataSource -- worth
   // more as working code than as notes. Its smoke test is
-  // Shell::TestVectorSource() -> AnRun::RunOldVecBased().
+  // Shell::TraceVectorSource() -> AnRun::RunOldVecBased().
   //
   // The template itself lives in RdfVectorSource.cc: it is only ever
   // instantiated by the factories below, so it needs no header exposure.
