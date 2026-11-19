@@ -8,6 +8,7 @@
 #include "RecoTracker/MkFitCore/interface/IterationConfig.h"
 #include "RecoTracker/MkFitCore/interface/HitStructures.h"
 #include "RecoTracker/MkFitCore/interface/TrackStructures.h"
+#include "RecoTracker/MkFitCMS/interface/LayerNumberConverter.h"
 
 // missing #include "CMS-phase2-HitSelectionWindows.h"
 
@@ -256,6 +257,10 @@ namespace {
       fprintf(stderr, "Create_CMS_phase2() FATAL TrackerInfo should have been initialized from a binary file\n"
                        "with the same name as the geometry library and a '.bin' suffix.\n");
       throw std::runtime_error("Create_CMS_phase2 TrackerIngo not initialized");
+    }
+    {
+      const LayerNumberConverter lnc(TkLayout::phase2);
+      ti.setup_double_layers([&lnc](int l) { return lnc.doubleLayerPartner(l); });
     }
     ti.print_tracker(1); // 1 - print layers, 2 - print layers and modules
 
