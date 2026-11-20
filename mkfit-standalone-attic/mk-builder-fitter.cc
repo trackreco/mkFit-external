@@ -25,6 +25,23 @@ namespace mkfit {
     void FitTracksSteered(const bool is_barrel[], const int N_proc, const Event * ev, const PropagationFlags pflags);
     void CollectFitValidation(const int hi, const int N_proc, const Event * ev) const;
 
+    //--------------------------
+    // Carryover from Track.h
+    //---------------------------
+
+    inline int calculateCharge(const Hit& hit0, const Hit& hit1, const Hit& hit2) {
+      return ((hit2.y() - hit0.y()) * (hit2.x() - hit1.x()) > (hit2.y() - hit1.y()) * (hit2.x() - hit0.x()) ? 1 : -1);
+    }
+
+    inline int calculateCharge(const float hit0_x,
+                               const float hit0_y,
+                               const float hit1_x,
+                               const float hit1_y,
+                               const float hit2_x,
+                               const float hit2_y) {
+      return ((hit2_y - hit0_y) * (hit2_x - hit1_x) > (hit2_y - hit1_y) * (hit2_x - hit0_x) ? 1 : -1);
+  }
+
 }
 
 

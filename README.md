@@ -9,20 +9,25 @@ CMSSW packages RecoTracker/MkFitCore and RecoTracker/MkFitCMS.
 
 ## Setting up standalone build
 
-Almost all sources will be used from an existing `RecoTracker/MkFitCore` and `RecoTracker/MkFitCMS` checkout. Others will be automatically taken from this repo (i.e., `trackreco/mkFit-external`). Some data files (geometry binary dumps) are automatically retrived from the web (from `phi1.t2.ucsd.edu`).
+The sources of `RecoTracker/MkFitCore`, `RecoTracker/MkFitCMS` and `FWCore/Utilities` come from a CMSSW src directory. Everything else comes from this repository: the standalone trees `RecoTracker/MkFitCore/standalone` and `RecoTracker/MkFitCMS/standalone`, at the same paths as they had in CMSSW, the external headers and the geometry plugins. Some data files (geometry binary dumps) are automatically retrived from the web (from `phi1.t2.ucsd.edu`).
 
-If you have an existing CMSSW environment setup, this should do the trick:
+Run `configure` from a build directory outside this checkout. It writes the top-level `Makefile`, creates the `objs-*` directories and copies the build options, `Makefile.config`, into the build directory; edit that copy. With an existing CMSSW environment:
 ```
+git clone git@github.com:trackreco/mkFit-external.git
+# the build also needs FWCore/Utilities in the src directory:
+(cd $CMSSW_BASE/src && git cms-addpkg FWCore/Utilities)
 mkdir standalone
 cd standalone
-$CMSSW_BASE/src/RecoTracker/MkFitCore/standalone/configure $CMSSW_BASE/src
+../mkFit-external/configure $CMSSW_BASE/src
 export -n INTEL_LICENSE_FILE
 make -j 32
 # or, for build with ROOT enabled
 make WITH_ROOT=1 -j 32
 ```
 
-Without CMSSW environment you still need to run the above `configure` script for initial setup. `tbb` can be taken from the system ... but will likely require some sym-link magick as CMSSW includes pick it up from `oneapi/tbb` directory which is not the standard tbb deployment on GNU/Linux.
+`configure` refuses a CMSSW src directory that still has its own `RecoTracker/MkFitCore/standalone`, i.e. one from before the standalone trees moved here. Such a tree builds with its own `RecoTracker/MkFitCore/standalone/configure`.
+
+Without CMSSW environment you still need to run `configure` as above for initial setup. `tbb` can be taken from the system ... but will likely require some sym-link magick as CMSSW includes pick it up from `oneapi/tbb` directory which is not the standard tbb deployment on GNU/Linux.
 
 Notes on running standalone:
 ```
@@ -65,6 +70,16 @@ Up to date samples for running standalone are listed below (tracking ntuples and
 /ceph/cms/store/user/legianni/generate-phase1/10mu-phase1-newgeom/ntuple_pt1to1000_*.bin
 /ceph/cms/store/user/legianni/generate-phase1/ttbar-phase1-newgeom/ntuple_ttbar_PU.bin
 ```
+
+## Probes, knobs and tracing
+
+Two READMEs map the tools for measuring the v2p2 finder from the standalone shell
+(builds with `WITH_ROOT`):
+- [RecoTracker/MkFitCMS/standalone/Probe/README.md](RecoTracker/MkFitCMS/standalone/Probe/README.md):
+  the probes, which read after the event and change nothing, the knobs and the
+  taps, which are `Shell` methods, and the driver scripts;
+- [RecoTracker/MkFitCore/standalone/RdfTrace/README.md](RecoTracker/MkFitCore/standalone/RdfTrace/README.md):
+  the trace of the v2p2 search (`EVENT_RDF_TRACE`) and its RDataFrame analysis.
 
 ## RntDumpers -- ROOT NTuple Dumpers
 

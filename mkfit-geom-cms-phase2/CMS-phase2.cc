@@ -8,6 +8,7 @@
 #include "RecoTracker/MkFitCore/interface/IterationConfig.h"
 #include "RecoTracker/MkFitCore/interface/HitStructures.h"
 #include "RecoTracker/MkFitCore/interface/TrackStructures.h"
+#include "RecoTracker/MkFitCMS/interface/LayerNumberConverter.h"
 
 // missing #include "CMS-phase2-HitSelectionWindows.h"
 
@@ -25,44 +26,136 @@ namespace {
     ic.m_region_order[3] = TrackerInfo::Reg_Endcap_Neg;
     ic.m_region_order[4] = TrackerInfo::Reg_Barrel;
 
+    // NOTE: v2p2 can potentially handle double OT layers, other build methods can not.
+    // This means runtime switching between build methods when double layers are active
+    // does not work.
+    // OBSOLETE COMMENT, kept for the record: "The swap is needed as S layers are
+    // before P in layer ordering, probably to be changed." That WAS changed --
+    // commit 10781bd48eb (2025-09-16) "Swap PS layer indices so P comes before S"
+    // added the `+1 - isStereo` in LayerNumberConverter::convertLayerNumber(), so
+    // P (isStereo=1, macro-pixel, 1.5 mm) now gets the LOWER mkFit layer number
+    // and S (isStereo=0, strip, 24 mm) the higher. OT_swap_pairs = false is
+    // therefore correct now; it no longer needs to compensate for anything.
+    //
+    // *** DOUBLE LAYERS ARE CURRENTLY OFF. *** With as_single_entry = false,
+    // fill_plan_pairs(4,9,...) emits LayerControl(4), LayerControl(5), ... which is
+    // identical to fill_plan(4,9). So LayerControl::m_layer_sec is never set,
+    // has_second_layer() is always false, and every double-layer path in
+    // MkFinderV2p2 (m_rz_limits.m_is_double, BL_s, the m_layer_sec block near
+    // MkFinderV2p2.cc:923) is dead code today.
+    //
+    // Three things to fix BEFORE switching this on -- see RecoTracker/CLAUDE.md,
+    // "Double layers: switched off at the config level":
+    //
+    //  1. TOB 2S (10-15) is never paired, though the geometry says it should be:
+    //     is_stereo alternates 0,1,0,1,0,1 across 10-15 exactly as across 4-9, and
+    //     the comments below call them "outer 3 double layers" -- but they go
+    //     through plain fill_plan(10, 15) while 4-9 go through fill_plan_pairs().
+    //     Enabling these flags pairs TBPS and TEC and silently leaves TOB 2S as
+    //     six singles, in all three regions that reference it.
+    //
+    //  2. SetupBackwardSearch() below hardcodes plan-INDEX arithmetic that assumes
+    //     the unpaired plan. The transition plan is 4+8+6+6+10 = 34 entries
+    //     unpaired but 4+8+3+6+5 = 26 paired, so its index 27 goes out of range --
+    //     and SteeringParams::iterator::is_valid() only tests != -1, making
+    //     m_layer_plan[27] an unchecked OOB read. Fix: capture m_layer_plan.size()
+    //     after each fill_plan* call here, or look the pickup up by layer number.
+    //
+    //  3. Pairing replaces two propagations -- hence two material applications --
+    //     per physical layer with one, so it roughly HALVES the applied multiple
+    //     scattering in TBPS and TEC. Direction of the error, carefully:
+    //     TrackerInfo::material_radl() is a true bin-local weighted average
+    //     (MkFitGeometryESProducer::aggregateMaterialInfo(): rl/weight), not a
+    //     per-layer effective value calibrated against this plan. But
+    //     applyMaterialEffects() samples exactly ONE bin, at the propagation
+    //     destination, with no path-length scaling -- while the 1 cm x 1 cm grid
+    //     means a 3.4-6.6 cm thick OT shell spans 3-7 bins. So one sample already
+    //     under-integrates the traversal, two samples under-integrate less, and
+    //     pairing moves FURTHER from the true integral: less scattering, tighter
+    //     covariance, the direction that already hurts. Expect an efficiency
+    //     regression from this alone, independent of any bug. The real fix is
+    //     path-length scaling / integration, listed in RecoTracker/CLAUDE.md
+    //     under "Revisit where material is applied".
+    //
+    //  Note also: mkFit SPLITS one physical CMS OT layer into two mkFit layers,
+    //  using CMSSW's TrackerTopology::isStereo(detid) as the criterion. So "double
+    //  layer" here means re-uniting what the layer numbering divided, not
+    //  modelling a genuine two-sensor stereo structure -- CMS phase-2 OT pairs are
+    //  parallel, no crossing angle, unlike ATLAS ITk. ("stereo" is CMSSW's word;
+    //  in phase-2 PS modules it happens to tag the P / macro-pixel sensor.)
+    //
+    // On OT_swap_pairs: nearly meaningless for this geometry. From the dump the
+    // pair members are nested, near-coincident shells -- L4 r(22.14, 28.73) and
+    // L5 r(22.39, 28.54), offset 2.5 mm out of a 6.5 cm shell, because TBPS is
+    // tilted. The sub-layers are radially INTERLEAVED, so "which one is first" is
+    // not well defined at layer granularity; the ordering that matters is the
+    // path-length ordering of individual hits, merged across both sub-layers.
+    const bool OT_as_single_entry = false;
+    const bool OT_swap_pairs = false;
+
     {
       SteeringParams &sp = ic.m_steering_params[TrackerInfo::Reg_Endcap_Neg];
       sp.reserve_plan(2 + 12);  // BPix + FPix-; BPix3 & 4 are out of acceptance
+
       sp.fill_plan(0, 1);
       sp.fill_plan(38, 49);     // FPix- all 12
+
       sp.set_iterator_limits(2, 0);
     }
     {
       SteeringParams &sp = ic.m_steering_params[TrackerInfo::Reg_Transition_Neg];
-      sp.reserve_plan(4 + 8 + 6 + 10);  // BPix + FPix- + TOB- +TEC-
+      sp.reserve_plan(4 + 8 + 12 + 10);     // BPix + FPix- + TOB- +TEC-
+
       sp.fill_plan( 0,  3);
-      sp.fill_plan(38, 45);  // FPix-, first 8 layers
-      sp.fill_plan( 4, 15);  // TOB, 6 double layers
-      sp.fill_plan(50, 59);  // TEC, 5 double disks
+      sp.fill_plan(38, 45);    // FPix-, first 8 layers
+
+      // TOB, inner 3 double layers, PS
+      sp.fill_plan_pairs( 4, 9, OT_as_single_entry, OT_swap_pairs);
+
+      sp.fill_plan_pairs(10, 15, OT_as_single_entry, OT_swap_pairs);  // TOB, outer 3 double layers, 2S
+
+      // TEC, 5 double disks, radially half PS, half 2S
+      sp.fill_plan_pairs(50, 59, OT_as_single_entry, OT_swap_pairs);
+
       sp.set_iterator_limits(2, 0);
     }
     {
       SteeringParams &sp = ic.m_steering_params[TrackerInfo::Reg_Barrel];
       sp.reserve_plan(4 + 6 + 6);  // BPix + TOB-1 + TOB-2
-      sp.fill_plan( 0,  3);          //                  [ 0,  3]
-      sp.fill_plan( 4,  9);          // TOB-1, 6 layers  [ 4,  9]
-      sp.fill_plan(10, 15);        // TOB-2, 8 layers  [10, 17]
+
+      sp.fill_plan( 0,  3);       //      [ 0,  3]
+
+      // TOB-1, 6 layers  [ 4,  9] PS
+      sp.fill_plan_pairs( 4,  9, OT_as_single_entry, OT_swap_pairs);
+
+      sp.fill_plan_pairs(10, 15, OT_as_single_entry, OT_swap_pairs);  // TOB-2, 6 layers [10,15] 2S
+
       sp.set_iterator_limits(2, 0);
     }
     {
       SteeringParams &sp = ic.m_steering_params[TrackerInfo::Reg_Transition_Pos];
-      sp.reserve_plan(4 + 3 + 6 + 6 + 8 + 18);  // BPix + FPix+ + TIB + TID+ + TOB + TEC+
+      sp.reserve_plan(4 + 8 + 12 + 10);  // BPix + FPix+ + TOB+ + TEC+
+
       sp.fill_plan( 0,  3);
-      sp.fill_plan(16, 23);  // FPix-, first 8 layers
-      sp.fill_plan( 4, 15);  // TOB, 6 double layers
-      sp.fill_plan(28, 37);  // TEC, 5 double disks
+      sp.fill_plan(16, 23);   // FPix-, first 8 layers
+
+      // TOB, inner 3 double layers, PS
+      sp.fill_plan_pairs( 4, 9, OT_as_single_entry, OT_swap_pairs);
+
+      sp.fill_plan_pairs(10, 15, OT_as_single_entry, OT_swap_pairs);  // TOB, outer 3 double layers, 2S
+
+      // TEC, 5 double disks, radially half PS, half 2S
+      sp.fill_plan_pairs(28, 37, OT_as_single_entry, OT_swap_pairs);
+
       sp.set_iterator_limits(2, 0);
     }
     {
       SteeringParams &sp = ic.m_steering_params[TrackerInfo::Reg_Endcap_Pos];
       sp.reserve_plan(2 + 12);  // BPix + FPix+; BPix3 & 4 are out of acceptance
+
       sp.fill_plan( 0,  1);
       sp.fill_plan(16, 27);     // FPix- all 12
+
       sp.set_iterator_limits(2, 0);
     }
   }
@@ -95,23 +188,62 @@ namespace {
     ic.m_backward_fit_min_hits = 99;
     auto &spv = ic.m_steering_params;
     // XXXX Recheck those limits !!!
-    spv[TrackerInfo::Reg_Endcap_Neg].set_iterator_limits(2, 0, 3);
-    spv[TrackerInfo::Reg_Transition_Neg].set_iterator_limits(2, 0, 4);
-    spv[TrackerInfo::Reg_Barrel].set_iterator_limits(2, 0, 2);
-    spv[TrackerInfo::Reg_Transition_Pos].set_iterator_limits(2, 0, 4);
-    spv[TrackerInfo::Reg_Endcap_Pos].set_iterator_limits(2, 0, 3);
+    // The bkw-search start layer is where the finder starts its walk inward over
+    // the plan; a candidate is picked up when the walk reaches the layer of its
+    // innermost hit. So the start must lie at or outside the innermost hit of
+    // every candidate in the region, or the candidate is never picked up. A start
+    // too far out only costs passes over layers where nothing is picked up. The
+    // layers below cover naked LST T5 and T4 objects. The phase-2 JSONs in
+    // cms-data (2026-10) start at layers 41 / 7 / 7 / 7 / 19, from the P-before-S
+    // plan renumbering; there a T5 or T4 whose innermost hit lies outside
+    // OTLayer2 would not be picked up.
+    //
+    // These USED TO BE plan INDICES, spelled as arithmetic restating the plan's
+    // structure ("4 + 8 + 2*6 + 3" = 27). That is not merely fragile, it is a
+    // latent out-of-range read: iterator::is_valid() only tests != -1, and the
+    // moment OT_as_single_entry flips, the two transition plans go from 34
+    // entries to 26 and index 27 walks off the end of m_layer_plan.
+    //
+    // Named by LAYER instead, which is a property of the detector and does not
+    // move when the plan is rebuilt. plan_index_of_layer() matches either member
+    // of a paired entry, so these resolve to the SAME plan entry in both configs
+    // (verified: transition 27 -> 22 unpaired -> paired, both being layer 31/53).
+    // The layers are unchanged from the indices they replace, so this commit does
+    // not move the pickup point.
+    spv[TrackerInfo::Reg_Endcap_Neg].set_iterator_limits(2, 0);
+    spv[TrackerInfo::Reg_Transition_Neg].set_iterator_limits(2, 0);
+    spv[TrackerInfo::Reg_Barrel].set_iterator_limits(2, 0);
+    spv[TrackerInfo::Reg_Transition_Pos].set_iterator_limits(2, 0);
+    spv[TrackerInfo::Reg_Endcap_Pos].set_iterator_limits(2, 0);
+
+    spv[TrackerInfo::Reg_Endcap_Neg    ].set_bkw_search_pickup_at_layer(43); // FPix- TFPX6
+    spv[TrackerInfo::Reg_Transition_Neg].set_bkw_search_pickup_at_layer(53); // TEC-  TEDD2
+    spv[TrackerInfo::Reg_Barrel        ].set_bkw_search_pickup_at_layer(10); // TB2S  OTLayer4
+    spv[TrackerInfo::Reg_Transition_Pos].set_bkw_search_pickup_at_layer(31); // TEC+  TEDD2
+    spv[TrackerInfo::Reg_Endcap_Pos    ].set_bkw_search_pickup_at_layer(21); // FPix+ TFPX6
   }
 
   void SetupIterationParams(IterationParams &ip, unsigned int it = 0) {
     if (it == 0) {
       ip.nlayers_per_seed = 4;
+      // 6, as the phase-2 initialStep JSON in cms-data, so that a standalone run
+      // uses the beam width CMSSW uses, and a JSON saved from here keeps it. The
+      // CMSSW MTV and the timing of the 2026-10-03 working point ran at 6.
+      // From 2026-09-23 to 2026-10-27 it was 3: with the in-layer combinatorial
+      // search on, 3 gave 89 % of 6's gain for 26 % of the extra build time, on 30
+      // events of ttbar-PU200-D121-C22 (3 -> 6: +39 found tracks of 18846).
+      // It applies to BOTH parameter sets, since SetupBackwardSearch() copies
+      // m_params into m_backward_params below, and the beam a candidate actually
+      // gets is MkJob::max_max_cands() = the max of the two -- so setting it here
+      // is the only place that takes effect. s.SetMaxCands(n) from the shell sets
+      // both parameter sets.
       ip.maxCandsPerSeed = 6;
       ip.maxHolesPerCand = 4;
       ip.maxConsecHoles = 2;
       ip.chi2Cut_min = 15.0;
       ip.chi2CutOverlap = 3.5;
       ip.pTCutOverlap = 0.0;
-      ip.useHitSelectionV2 = true;
+      ip.useHitSelectionV2 = true; // relevant for Std and CE, not for V2
       ip.minPtCut = 0.0;
       ip.maxClusterSize = 8;
     }
@@ -122,11 +254,28 @@ namespace {
   void Create_CMS_phase2(TrackerInfo &ti, IterationsInfo &ii, bool verbose) {
     // TrackerInfo needs to be loaded from a bin-file.
     if (ti.n_layers() != 60) {
-      fprintf(stderr, "Create_CMS_phase2() FATAL TrackerInfo shold have been initialized from a binary file\n"
+      fprintf(stderr, "Create_CMS_phase2() FATAL TrackerInfo should have been initialized from a binary file\n"
                        "with the same name as the geometry library and a '.bin' suffix.\n");
       throw std::runtime_error("Create_CMS_phase2 TrackerIngo not initialized");
     }
-    // ti.print_tracker(2); // 1 - print layers, 2 - print layers and modules
+    {
+      const LayerNumberConverter lnc(TkLayout::phase2);
+      ti.setup_double_layers([&lnc](int l) { return lnc.doubleLayerPartner(l); });
+    }
+    ti.print_tracker(1); // 1 - print layers, 2 - print layers and modules
+
+    // In cmssw, this is set in the GeometryESProducer for Phase2.
+    // We also have --use-p2p 0|1 in mkFit.exe
+    Config::usePropToPlane = true;
+
+    // Likewise set in the GeometryESProducer for Phase2 in cmssw
+    // (MkFitGeometryESProducer.cc:563) -- but Config.cc:8 defaults it to FALSE,
+    // so standalone was running without it and phase-2 set neither. With it off,
+    // applyMaterialEffects() adds multiple scattering only to err(4,4) and
+    // err(5,5) and puts NONE into 1/pT -- precisely the element a momentum
+    // resolution or chi2 study depends on. Every standalone covariance number
+    // taken before 2026-09-10 has that baked in. Also reachable as --use-ptms 0|1.
+    Config::usePtMultScat = true;
 
     PropagationConfig &pconf = ti.prop_config_nc();
     pconf.backward_fit_to_pca = Config::includePCA;
@@ -143,6 +292,9 @@ namespace {
     pconf.apply_tracker_info(&ti);
 
     const bool enable_all_iters_for_seed_cleaning_tests = false;
+    // NOTE: if setting the above to true, also set
+    //    Config::nItersCMSSW = 10; // or whatever number
+    // or use --num-iters-cmssw num
 
     ii.resize(enable_all_iters_for_seed_cleaning_tests ? 10 : 1);
 
@@ -153,7 +305,16 @@ namespace {
     setup_default_windows(ti, ii[0]);
 
     ii[0].m_seed_cleaner_name = "phase1:default";
+    // As the CMSSW initialStep JSON. "phase2:LstIntoPix" was a hack for longer tracks in the
+    // LST-into-pixels search; Shell::RunLSTintoPix() warns which scorer it runs with.
     ii[0].m_default_track_scorer_name = "phase1:default";
+    // Per-task scorers, as the CMSSW initialStep JSON: the final pick of the forward search by
+    // "v2p2:llh", the v2p2 search's likelihood minus the hole penalties; the score after the
+    // backward fit by the search scorer above; the duplicate cleaner ranks by the score it gets,
+    // without re-scoring. s.SetFinalPickLlh() / s.SetTrackScorerTask() change them in the shell.
+    ii[0].m_final_pick_track_scorer_name = "v2p2:llh";
+    ii[0].m_post_bkfit_track_scorer_name = "";
+    ii[0].m_duplicate_cleaner_track_scorer_name = "";
 
     ii[0].m_seed_partitioner_name = "phase2:1";
 
