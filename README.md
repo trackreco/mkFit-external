@@ -9,6 +9,8 @@ CMSSW packages RecoTracker/MkFitCore and RecoTracker/MkFitCMS.
 
 ## Setting up standalone build
 
+`main` goes with the CMSSW code of trackreco/cmssw#197 (MkFinderV2p2, branch `mkfinder-v2p2-final-2`) and trackreco/cmssw#196 (the standalone trees removed from CMSSW), both on cms-sw master, until they are merged into cms-sw. For CMSSW from before cms-sw#52259 use the tag `pre-v2p2`.
+
 The sources of `RecoTracker/MkFitCore`, `RecoTracker/MkFitCMS` and `FWCore/Utilities` come from a CMSSW src directory. Everything else comes from this repository: the standalone trees `RecoTracker/MkFitCore/standalone` and `RecoTracker/MkFitCMS/standalone`, at the same paths as they had in CMSSW, the external headers and the geometry plugins. Some data files (geometry binary dumps) are automatically retrived from the web (from `phi1.t2.ucsd.edu`).
 
 Run `configure` from a build directory outside this checkout. It writes the top-level `Makefile`, creates the `objs-*` directories and copies the build options, `Makefile.config`, into the build directory; edit that copy. With an existing CMSSW environment:
